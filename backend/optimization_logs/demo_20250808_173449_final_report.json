@@ -1,0 +1,70 @@
+{
+  "run_info": {
+    "run_id": "demo_20250808_173449",
+    "start_time": "2025-08-08T17:34:49.223079",
+    "end_time": "2025-08-08T17:34:49.921691",
+    "duration_seconds": 0.698612,
+    "total_generations": 0,
+    "total_individuals": 0
+  },
+  "configuration": {
+    "parameters": {
+      "population_size": 30,
+      "generations": 20,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_samples_split": 5,
+      "max_features_per_node": 3,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4,
+      "parameter_bounds": {
+        "triangular": [
+          0.0,
+          10.0
+        ],
+        "gaussian": [
+          0.0,
+          10.0
+        ],
+        "trapezoidal": [
+          0.0,
+          10.0
+        ]
+      }
+    },
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "training_samples": 800,
+    "test_samples": 200,
+    "target_column": "compatibility",
+    "random_seed": 42
+  },
+  "convergence_analysis": {
+    "convergence_detected": false,
+    "stagnation_generations": 0,
+    "max_fitness_achieved": 0.0,
+    "convergence_rate": 0.0
+  },
+  "diversity_analysis": {
+    "final_diversity": 0.0,
+    "max_diversity": 0.0,
+    "min_diversity": 0.0,
+    "avg_diversity": 0.0,
+    "diversity_trend": "unknown"
+  },
+  "best_individual_history": [],
+  "final_statistics": {
+    "best_fitness": 0.0,
+    "final_diversity": 0.0,
+    "pareto_front_size": 0
+  },
+  "plot_files": []
+}

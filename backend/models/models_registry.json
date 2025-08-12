@@ -1,0 +1,354 @@
+{
+  "genetic_model_20250808_172438": {
+    "model_id": "genetic_model_20250808_172438",
+    "creation_date": "2025-08-08T17:24:38.284715",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.786662065586804,
+    "fitness_components": {
+      "accuracy": 0.6243703236126598,
+      "simplicity": 0.89,
+      "interpretability": 0.8716694142508163,
+      "generalization": 0.8600015983460954,
+      "validity": 0.8829824980299078,
+      "overall": 0.786662065586804
+    },
+    "optimization_config": {
+      "population_size": 30,
+      "generations": 20,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_samples_split": 5,
+      "max_features_per_node": 3,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4,
+      "parameter_bounds": {
+        "triangular": [
+          0.0,
+          10.0
+        ],
+        "gaussian": [
+          0.0,
+          10.0
+        ],
+        "trapezoidal": [
+          0.0,
+          10.0
+        ]
+      }
+    },
+    "convergence_generation": true,
+    "total_generations": 6,
+    "model_complexity": 5,
+    "tree_depth": 2,
+    "feature_importance": {
+      "team_work": 1.0
+    },
+    "file_size_bytes": 990,
+    "checksum": "678c4bc2e71c4009053366bd5a2a7cc4",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250808_172438_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250808_172438_result.pkl.gz"
+  },
+  "genetic_model_20250808_174510": {
+    "model_id": "genetic_model_20250808_174510",
+    "creation_date": "2025-08-08T17:45:10.750734",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 30,
+      "generations": 20,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": true,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 987,
+    "checksum": "0fc884b3c8eb3fb39f7604e039362d46",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250808_174510_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250808_174510_result.pkl.gz"
+  },
+  "genetic_model_20250812_040048": {
+    "model_id": "genetic_model_20250812_040048",
+    "creation_date": "2025-08-12T04:00:48.588158",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 25,
+      "generations": 15,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": true,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 986,
+    "checksum": "963ce133b26c4cc2d7be41315f228c56",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250812_040048_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250812_040048_result.pkl.gz"
+  },
+  "genetic_model_20250812_040556": {
+    "model_id": "genetic_model_20250812_040556",
+    "creation_date": "2025-08-12T04:05:56.051876",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 20,
+      "generations": 10,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": true,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 986,
+    "checksum": "2c84dbe81aae3c07b1ccf1d94f841399",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250812_040556_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250812_040556_result.pkl.gz"
+  },
+  "genetic_model_20250812_042817": {
+    "model_id": "genetic_model_20250812_042817",
+    "creation_date": "2025-08-12T04:28:17.422298",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 20,
+      "generations": 10,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": true,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 987,
+    "checksum": "f70e11e53063c36f60708bcfaaed787f",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250812_042817_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250812_042817_result.pkl.gz"
+  },
+  "genetic_model_20250812_043812": {
+    "model_id": "genetic_model_20250812_043812",
+    "creation_date": "2025-08-12T04:38:12.625327",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 30,
+      "generations": 5,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": false,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 985,
+    "checksum": "5950d48f8b0baeaa1c966eaeb4bcf601",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250812_043812_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250812_043812_result.pkl.gz"
+  },
+  "genetic_model_20250812_044222": {
+    "model_id": "genetic_model_20250812_044222",
+    "creation_date": "2025-08-12T04:42:22.111353",
+    "model_type": "genetic_fuzzy_tree",
+    "version": "1.0",
+    "training_samples": 0,
+    "test_samples": 0,
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "target_column": "compatibility",
+    "best_fitness": 0.3050333333333333,
+    "fitness_components": {
+      "accuracy": 0.0,
+      "simplicity": 0.878,
+      "interpretability": 0.8666666666666667,
+      "generalization": 0.0,
+      "validity": 0.0,
+      "overall": 0.3050333333333333
+    },
+    "optimization_config": {
+      "population_size": 30,
+      "generations": 10,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "convergence_generation": true,
+    "total_generations": 0,
+    "model_complexity": 7,
+    "tree_depth": 2,
+    "feature_importance": {
+      "theory_practice": 1.0
+    },
+    "file_size_bytes": 987,
+    "checksum": "d2dcc9a01a9ab2204a3aa78c37f00320",
+    "description": "Demo optimization with 1000 samples",
+    "model_filepath": "models\\genetic_model_20250812_044222_model.pkl.gz",
+    "result_filepath": "models\\genetic_model_20250812_044222_result.pkl.gz"
+  }
+}

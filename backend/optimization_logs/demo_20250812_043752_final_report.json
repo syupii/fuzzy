@@ -1,0 +1,157 @@
+{
+  "run_info": {
+    "run_id": "demo_20250812_043752",
+    "start_time": "2025-08-12T04:37:52.190215",
+    "end_time": "2025-08-12T04:38:09.990557",
+    "duration_seconds": 17.800342,
+    "total_generations": 5,
+    "total_individuals": 116
+  },
+  "configuration": {
+    "parameters": {
+      "population_size": 30,
+      "generations": 5,
+      "mutation_rate": 0.15,
+      "crossover_rate": 0.8,
+      "elite_size": 5,
+      "tournament_size": 3,
+      "max_depth": 6,
+      "min_membership_functions": 2,
+      "max_membership_functions": 4
+    },
+    "feature_names": [
+      "research_intensity",
+      "advisor_style",
+      "team_work",
+      "workload",
+      "theory_practice"
+    ],
+    "training_samples": 800,
+    "test_samples": 200,
+    "target_column": "compatibility",
+    "random_seed": 42
+  },
+  "convergence_analysis": {
+    "convergence_detected": false,
+    "stagnation_generations": 4,
+    "max_fitness_achieved": 0.3050333333333333,
+    "convergence_rate": 0.0,
+    "final_fitness": 0.3050333333333333,
+    "initial_fitness": 0.3050333333333333,
+    "total_improvement": 0.0
+  },
+  "diversity_analysis": {
+    "final_diversity": 3.5540229885057473,
+    "max_diversity": 32.15229885057471,
+    "min_diversity": 1.2149425287356321,
+    "avg_diversity": 9.65942528735632,
+    "diversity_trend": "decreasing",
+    "diversity_variance": 130.236759889021
+  },
+  "best_individual_history": [
+    {
+      "generation": 4,
+      "individual_id": "gen0_ind6",
+      "fitness": 0.3050333333333333,
+      "fitness_components": {
+        "accuracy": 0.0,
+        "simplicity": 0.878,
+        "interpretability": 0.8666666666666667,
+        "generalization": 0.0,
+        "validity": 0.0,
+        "overall": 0.3050333333333333
+      },
+      "complexity": 0
+    },
+    {
+      "generation": 1,
+      "individual_id": "gen1_ind0",
+      "fitness": 0.3050333333333333,
+      "fitness_components": {
+        "individual_id": "gen0_ind6",
+        "overall_fitness": 0.3050333333333333,
+        "fitness_components": {
+          "accuracy": 0.0,
+          "simplicity": 0.878,
+          "interpretability": 0.8666666666666667,
+          "generalization": 0.0,
+          "validity": 0.0,
+          "overall": 0.3050333333333333
+        },
+        "evaluation_time": 0.08000516891479492,
+        "model_complexity": 7
+      },
+      "complexity": 0
+    },
+    {
+      "generation": 2,
+      "individual_id": "gen2_ind0",
+      "fitness": 0.3050333333333333,
+      "fitness_components": {
+        "individual_id": "gen0_ind6",
+        "overall_fitness": 0.3050333333333333,
+        "fitness_components": {
+          "accuracy": 0.0,
+          "simplicity": 0.878,
+          "interpretability": 0.8666666666666667,
+          "generalization": 0.0,
+          "validity": 0.0,
+          "overall": 0.3050333333333333
+        },
+        "evaluation_time": 0.07199835777282715,
+        "model_complexity": 7
+      },
+      "complexity": 0
+    },
+    {
+      "generation": 3,
+      "individual_id": "gen3_ind0",
+      "fitness": 0.3050333333333333,
+      "fitness_components": {
+        "individual_id": "gen0_ind6",
+        "overall_fitness": 0.3050333333333333,
+        "fitness_components": {
+          "accuracy": 0.0,
+          "simplicity": 0.878,
+          "interpretability": 0.8666666666666667,
+          "generalization": 0.0,
+          "validity": 0.0,
+          "overall": 0.3050333333333333
+        },
+        "evaluation_time": 0.07200241088867188,
+        "model_complexity": 7
+      },
+      "complexity": 0
+    },
+    {
+      "generation": 4,
+      "individual_id": "gen4_ind0",
+      "fitness": 0.3050333333333333,
+      "fitness_components": {
+        "individual_id": "gen0_ind6",
+        "overall_fitness": 0.3050333333333333,
+        "fitness_components": {
+          "accuracy": 0.0,
+          "simplicity": 0.878,
+          "interpretability": 0.8666666666666667,
+          "generalization": 0.0,
+          "validity": 0.0,
+          "overall": 0.3050333333333333
+        },
+        "evaluation_time": 0.0559992790222168,
+        "model_complexity": 7
+      },
+      "complexity": 0
+    }
+  ],
+  "final_statistics": {
+    "best_fitness": 0.3050333333333333,
+    "final_diversity": 3.5540229885057473,
+    "pareto_front_size": 30
+  },
+  "plot_files": [
+    "optimization_logs\\demo_20250812_043752_fitness_evolution.png",
+    "optimization_logs\\demo_20250812_043752_pareto_evolution.png",
+    "optimization_logs\\demo_20250812_043752_objectives_heatmap.png"
+  ]
+}
