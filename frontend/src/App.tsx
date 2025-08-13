@@ -78,7 +78,7 @@ function App() {
   const [results, setResults] = useState<EvaluationResponse | null>(null);
   const [healthStatus, setHealthStatus] = useState<HealthStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [useEnhancedForm, setUseEnhancedForm] = useState<boolean>(true);
+  const [useEnhancedForm, setUseEnhancedForm] = useState<boolean>(true); // 拡張モードをデフォルトに
 
   useEffect(() => {
     checkHealth();
