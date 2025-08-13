@@ -11,83 +11,127 @@ const api = axios.create({
   timeout: 10000, // 10秒タイムアウト
 });
 
-// 研究分野興味度の型定義
-export interface ResearchFieldInterest {
-  fieldId: string;
-  isSelected: boolean;
-  interestLevel: number;
-}
-
-// 拡張された評価設定
-export interface EnhancedEvaluationPreferences {
-  // 既存の基本設定
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
-  
-  // 新規: 研究分野興味度
-  research_field_interests?: {
-    [fieldId: string]: {
-      isSelected: boolean;
-      interestLevel: number;
-    };
-  };
-  
-  // メタデータ
-  selected_fields_count?: number;
-  average_field_interest?: number;
-  primary_category?: string;
-}
-
-// 後方互換性のため既存の型も保持
-export interface EvaluationPreferences {
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
-}
-
-// 研究分野定義
+// 研究分野の型定義
 export interface ResearchField {
   id: string;
   name: string;
   description: string;
   category: string;
-  icon?: string;
+  keywords: string[];
+}
+
+export interface FieldInterest {
+  isSelected: boolean;
+  interestLevel: number;
 }
 
 // 研究分野データ
 export const RESEARCH_FIELDS: ResearchField[] = [
-  // AI・データサイエンス系
-  { id: 'ai_ml', name: '人工知能・機械学習', description: 'AI、深層学習、パターン認識', category: 'AI・データ' },
-  { id: 'data_science', name: 'データサイエンス', description: 'データ解析、統計数理、ビッグデータ', category: 'AI・データ' },
-  { id: 'computer_vision', name: 'コンピュータビジョン', description: '画像認識、映像解析、医用画像処理', category: 'AI・データ' },
+  // 情報工学・AI分野
+  { id: 'ai', name: '人工知能', description: 'AI、機械学習、深層学習', category: '情報工学', keywords: ['AI', '機械学習', 'ディープラーニング'] },
+  { id: 'cv', name: 'コンピュータビジョン', description: '画像認識、映像解析', category: '情報工学', keywords: ['画像処理', '映像認識', 'パターン認識'] },
+  { id: 'nlp', name: '自然言語処理', description: 'テキスト解析、言語理解', category: '情報工学', keywords: ['テキストマイニング', '言語モデル', '翻訳'] },
+  { id: 'robotics', name: 'ロボティクス', description: 'ロボット工学、制御システム', category: '工学', keywords: ['ロボット', '制御', '自動化'] },
   
-  // メディア・デザイン系
-  { id: 'web_design', name: 'Web・UIデザイン', description: 'Webデザイン、ユーザーインターフェース、UX設計', category: 'メディア・デザイン' },
-  { id: 'visual_design', name: '視覚デザイン', description: 'グラフィック、イラスト、感性工学、ブランディング', category: 'メディア・デザイン' },
-  { id: 'video_animation', name: '映像・アニメーション', description: '映像制作、アニメーション表現、3DCG', category: 'メディア・デザイン' },
-  { id: 'media_art', name: 'メディアアート', description: 'デジタルアート、インスタレーション、インタラクティブアート', category: 'メディア・デザイン' },
+  // データサイエンス・分析分野
+  { id: 'data_science', name: 'データサイエンス', description: 'ビッグデータ、統計解析', category: 'データ科学', keywords: ['ビッグデータ', '統計', '予測'] },
+  { id: 'bioinformatics', name: 'バイオインフォマティクス', description: '生命情報学、ゲノム解析', category: '生命科学', keywords: ['ゲノム', '生命情報', 'バイオ'] },
   
-  // エンターテインメント系
-  { id: 'game_dev', name: 'ゲーム開発', description: 'ゲームプログラミング、eスポーツ、ゲームデザイン', category: 'エンターテインメント' },
-  { id: 'vr_ar', name: 'VR/AR技術', description: '仮想現実、拡張現実、メタバース、空間コンピューティング', category: 'エンターテインメント' },
-  { id: 'computer_music', name: 'コンピュータ音楽', description: '音響処理、サウンドアート、音声合成', category: 'エンターテインメント' },
+  // エンジニアリング分野
+  { id: 'software_engineering', name: 'ソフトウェア工学', description: 'システム設計、開発手法', category: '情報工学', keywords: ['システム開発', 'アーキテクチャ', 'プログラミング'] },
+  { id: 'cybersecurity', name: 'サイバーセキュリティ', description: '情報セキュリティ、暗号化', category: '情報工学', keywords: ['セキュリティ', '暗号', 'ネットワーク'] },
   
-  // システム・技術系
-  { id: 'network_security', name: 'ネットワーク・セキュリティ', description: '通信システム、情報セキュリティ、暗号技術', category: 'システム・技術' },
-  { id: 'system_programming', name: 'システムプログラミング', description: 'ソフトウェア開発、OS、コンパイラ、アーキテクチャ', category: 'システム・技術' },
-  { id: 'iot_embedded', name: 'IoT・組み込み', description: 'IoTシステム、組み込み開発、センサーネットワーク', category: 'システム・技術' },
-  
-  // 応用・学際系
-  { id: 'medical_informatics', name: '医療情報学', description: '医療システム、ヘルスケアIT、診療支援AI', category: '応用・学際' },
-  { id: 'tourism_informatics', name: '観光情報学', description: '観光システム、地域情報、位置情報サービス', category: '応用・学際' },
-  { id: 'educational_tech', name: '教育工学', description: '教育システム、HCI、e-learning、教育データ分析', category: '応用・学際' },
+  // 理論・数学分野
+  { id: 'algorithms', name: 'アルゴリズム理論', description: '計算理論、最適化', category: '数学・理論', keywords: ['アルゴリズム', '最適化', '計算量'] },
+  { id: 'quantum', name: '量子コンピューティング', description: '量子情報、量子アルゴリズム', category: '物理・量子', keywords: ['量子', '量子ビット', '量子アルゴリズム'] },
 ];
 
+// フィールドユーティリティ
+export const fieldUtils = {
+  getFieldName: (fieldId: string): string => {
+    const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
+    return field ? field.name : fieldId;
+  },
+  
+  getFieldDescription: (fieldId: string): string => {
+    const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
+    return field ? field.description : '';
+  },
+  
+  getFieldsByCategory: (category: string): ResearchField[] => {
+    return RESEARCH_FIELDS.filter(f => f.category === category);
+  },
+  
+  getAllCategories: (): string[] => {
+    const categories = RESEARCH_FIELDS.map(f => f.category);
+    return Array.from(new Set(categories));
+  },
+
+  groupFieldsByCategory: (fields: ResearchField[]): { [category: string]: ResearchField[] } => {
+    const grouped: { [category: string]: ResearchField[] } = {};
+    fields.forEach(field => {
+      if (!grouped[field.category]) {
+        grouped[field.category] = [];
+      }
+      grouped[field.category].push(field);
+    });
+    return grouped;
+  },
+
+  getCategoryIcon: (category: string): string => {
+    const iconMap: { [key: string]: string } = {
+      '情報工学': '💻',
+      'データ科学': '📊',
+      '生命科学': '🧬',
+      '工学': '⚙️',
+      '数学・理論': '🔢',
+      '物理・量子': '⚛️'
+    };
+    return iconMap[category] || '📚';
+  },
+
+  calculateFieldStats: (fieldInterests: { [fieldId: string]: FieldInterest }): {
+    selectedCount: number;
+    averageInterest: number;
+    primaryCategory: string;
+  } => {
+    const selectedFields = Object.entries(fieldInterests)
+      .filter(([_, data]) => data.isSelected);
+    
+    const selectedCount = selectedFields.length;
+    
+    if (selectedCount === 0) {
+      return {
+        selectedCount: 0,
+        averageInterest: 0,
+        primaryCategory: '未設定'
+      };
+    }
+
+    const averageInterest = selectedFields
+      .reduce((sum, [_, data]) => sum + data.interestLevel, 0) / selectedCount;
+
+    // 主要カテゴリーを計算
+    const categoryCount: { [category: string]: number } = {};
+    selectedFields.forEach(([fieldId, _]) => {
+      const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
+      if (field) {
+        categoryCount[field.category] = (categoryCount[field.category] || 0) + 1;
+      }
+    });
+
+    const primaryCategory = Object.entries(categoryCount)
+      .sort(([,a], [,b]) => b - a)[0]?.[0] || '未設定';
+
+    return {
+      selectedCount,
+      averageInterest,
+      primaryCategory
+    };
+  }
+};
+
+// 型定義（20項目対応）
 export interface Lab {
   id: number;
   name: string;
@@ -95,17 +139,101 @@ export interface Lab {
   research_area: string;
   description: string;
   features: {
+    // 既存項目
     research_intensity: number;
     advisor_style: number;
     team_work: number;
     workload: number;
     theory_practice: number;
-  };
-  // 研究分野対応度（新規追加）
-  field_alignment?: {
-    [fieldId: string]: number; // 0-10の対応度
+    
+    // 分野適合性（元からの重要項目）
+    research_field_match: number;
+    
+    // 学習・成長関連
+    skill_development: number;
+    learning_pace: number;
+    difficulty_preference: number;
+    
+    // コミュニケーション・環境関連
+    communication_style: number;
+    meeting_frequency: number;
+    lab_atmosphere: number;
+    
+    // 研究アプローチ関連
+    innovation_risk: number;
+    methodology_preference: number;
+    interdisciplinary: number;
+    
+    // 時間・ライフスタイル関連
+    flexibility: number;
+    evening_weekend_work: number;
+    
+    // 調査結果に基づく追加項目（最優先）
+    publication_opportunity: number;
+    financial_support: number;
+    lab_hierarchy: number;
+    core_time_flexibility: number;
   };
   created_at: string;
+}
+
+export interface EvaluationPreferences {
+  // 既存項目
+  research_intensity: number;
+  advisor_style: number;
+  team_work: number;
+  workload: number;
+  theory_practice: number;
+  
+  // 分野適合性（元からの重要項目）
+  research_field_match: number;
+  
+  // 学習・成長関連
+  skill_development: number;
+  learning_pace: number;
+  difficulty_preference: number;
+  
+  // コミュニケーション・環境関連
+  communication_style: number;
+  meeting_frequency: number;
+  lab_atmosphere: number;
+  
+  // 研究アプローチ関連
+  innovation_risk: number;
+  methodology_preference: number;
+  interdisciplinary: number;
+  
+  // 時間・ライフスタイル関連
+  flexibility: number;
+  evening_weekend_work: number;
+  
+  // 調査結果に基づく追加項目（最優先）
+  publication_opportunity: number;
+  financial_support: number;
+  lab_hierarchy: number;
+  core_time_flexibility: number;
+}
+
+// 拡張された評価設定（研究分野を含む）
+export interface EnhancedEvaluationPreferences extends EvaluationPreferences {
+  research_field_interests?: {
+    [fieldId: string]: FieldInterest;
+  };
+}
+
+// フィールドマッチング結果
+export interface FieldMatchingResult {
+  matched_fields: string[];
+  field_scores: { [fieldId: string]: number };
+  field_weight: number;
+}
+
+// フィールド分析結果
+export interface FieldAnalysis {
+  selected_fields_count: number;
+  average_interest: number;
+  primary_category: string;
+  field_coverage: number;
 }
 
 export interface CompatibilityResult {
@@ -119,15 +247,10 @@ export interface CompatibilityResult {
       weight: number;
     };
   };
-  // 研究分野マッチング結果（新規追加）
-  field_matching?: {
-    matched_fields: string[];
-    field_scores: { [fieldId: string]: number };
-    field_weight: number;
-  };
   confidence: number;
   weights_used: number[];
   explanation: string;
+  field_matching?: FieldMatchingResult; // 分野マッチング結果
 }
 
 export interface EvaluationResult {
@@ -141,13 +264,7 @@ export interface EvaluationSummary {
   avg_score: number;
   evaluation_id: number;
   session_id: string;
-  // 研究分野関連サマリー（新規追加）
-  field_analysis?: {
-    selected_fields_count: number;
-    average_interest: number;
-    primary_category: string;
-    field_coverage: number; // マッチする研究室の割合
-  };
+  field_analysis?: FieldAnalysis; // 分野分析結果
 }
 
 export interface EvaluationResponse {
@@ -156,8 +273,21 @@ export interface EvaluationResponse {
   algorithm_info: {
     engine: string;
     criteria_weights: { [key: string]: number };
-    field_weights?: { [fieldId: string]: number }; // 新規追加
   };
+}
+
+// フィールド推薦レスポンス
+export interface FieldRecommendationResponse {
+  recommended_fields: string[];
+  confidence_scores: { [fieldId: string]: number };
+  reasoning: string;
+}
+
+// デモデータレスポンス（拡張版）
+export interface EnhancedDemoDataResponse {
+  demo_preferences: EnhancedEvaluationPreferences;
+  suggested_fields?: string[];
+  message: string;
 }
 
 // API関数
@@ -168,146 +298,37 @@ export const apiService = {
     return response.data;
   },
 
-  // 適合度評価（拡張版）
-  async evaluateCompatibility(preferences: EnhancedEvaluationPreferences): Promise<EvaluationResponse> {
+  // 適合度評価（20項目対応）
+  async evaluateCompatibility(preferences: EvaluationPreferences | EnhancedEvaluationPreferences): Promise<EvaluationResponse> {
     const response = await api.post('/evaluate', preferences);
     return response.data;
   },
 
-  // 後方互換性のため既存API保持
-  async evaluateBasicCompatibility(preferences: EvaluationPreferences): Promise<EvaluationResponse> {
-    const response = await api.post('/evaluate', preferences);
+  // デモデータ取得（20項目対応）
+  async getDemoData(): Promise<EnhancedDemoDataResponse> {
+    const response = await api.get('/demo-data');
     return response.data;
   },
 
-  // デモデータ取得（拡張版）
-  async getDemoData(): Promise<{ 
-    demo_preferences: EnhancedEvaluationPreferences; 
-    message: string;
-    suggested_fields?: string[];
-  }> {
+  // フィールド推薦取得
+  async getFieldRecommendations(preferences: Partial<EvaluationPreferences>): Promise<FieldRecommendationResponse> {
     try {
-      const response = await api.get('/demo-data');
+      const response = await api.post('/field-recommendations', preferences);
       return response.data;
     } catch (error) {
-      // バックエンドに対応がない場合はデフォルトを返す
-      console.warn('デモデータAPIが利用できません。デフォルト値を使用します。');
+      // フォールバック: ランダムな推薦を返す
+      const randomFields = RESEARCH_FIELDS
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3)
+        .map(f => f.id);
+      
       return {
-        demo_preferences: {
-          research_intensity: 7.0,
-          advisor_style: 6.0,
-          team_work: 7.0,
-          workload: 6.0,
-          theory_practice: 7.0,
-          research_field_interests: {}
-        },
-        message: 'デフォルトデータを使用中'
+        recommended_fields: randomFields,
+        confidence_scores: Object.fromEntries(randomFields.map(id => [id, Math.random() * 0.5 + 0.5])),
+        reasoning: 'サーバーからの推薦が利用できないため、一般的な推薦を表示しています。'
       };
     }
   },
-
-  // 研究分野一覧取得
-  async getResearchFields(): Promise<ResearchField[]> {
-    try {
-      const response = await api.get('/research-fields');
-      return response.data.fields || RESEARCH_FIELDS;
-    } catch (error) {
-      // バックエンドに対応がない場合はフロントエンドの定義を使用
-      console.warn('研究分野APIが利用できません。フロントエンドの定義を使用します。');
-      return RESEARCH_FIELDS;
-    }
-  },
-
-  // 研究分野推薦取得
-  async getFieldRecommendations(basicPreferences: EvaluationPreferences): Promise<{
-    recommended_fields: string[];
-    reasons: { [fieldId: string]: string };
-  }> {
-    try {
-      const response = await api.post('/field-recommendations', basicPreferences);
-      return response.data;
-    } catch (error) {
-      // バックエンドに対応がない場合は空の推薦を返す
-      console.warn('研究分野推薦APIが利用できません。');
-      return { recommended_fields: [], reasons: {} };
-    }
-  },
-};
-
-// ユーティリティ関数
-export const fieldUtils = {
-  // カテゴリー別にフィールドをグループ化
-  groupFieldsByCategory(fields: ResearchField[] = RESEARCH_FIELDS): { [category: string]: ResearchField[] } {
-    return fields.reduce((groups, field) => {
-      const category = field.category;
-      if (!groups[category]) {
-        groups[category] = [];
-      }
-      groups[category].push(field);
-      return groups;
-    }, {} as { [category: string]: ResearchField[] });
-  },
-
-  // 選択されたフィールドから統計を計算
-  calculateFieldStats(fieldInterests: { [fieldId: string]: { isSelected: boolean; interestLevel: number } }): {
-    selectedCount: number;
-    averageInterest: number;
-    primaryCategory: string;
-    categoryDistribution: { [category: string]: number };
-  } {
-    const selectedFields = Object.entries(fieldInterests).filter(([_, data]) => data.isSelected);
-    const selectedCount = selectedFields.length;
-    
-    if (selectedCount === 0) {
-      return {
-        selectedCount: 0,
-        averageInterest: 0,
-        primaryCategory: '',
-        categoryDistribution: {}
-      };
-    }
-
-    const averageInterest = selectedFields.reduce((sum, [_, data]) => sum + data.interestLevel, 0) / selectedCount;
-    
-    // カテゴリー分布計算
-    const categoryDistribution: { [category: string]: number } = {};
-    selectedFields.forEach(([fieldId, _]) => {
-      const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-      if (field) {
-        categoryDistribution[field.category] = (categoryDistribution[field.category] || 0) + 1;
-      }
-    });
-
-    // 最多カテゴリー決定
-    const primaryCategory = Object.keys(categoryDistribution).reduce((a, b) => 
-      categoryDistribution[a] > categoryDistribution[b] ? a : b, ''
-    );
-
-    return {
-      selectedCount,
-      averageInterest,
-      primaryCategory,
-      categoryDistribution
-    };
-  },
-
-  // フィールドIDから名前を取得
-  getFieldName(fieldId: string): string {
-    const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-    return field ? field.name : fieldId;
-  },
-
-  // カテゴリーアイコンを取得
-  getCategoryIcon(category: string): string {
-    const iconMap: { [key: string]: string } = {
-      'AI・データ': '🤖',
-      'メディア・デザイン': '🎨',
-      'エンターテインメント': '🎮',
-      'システム・技術': '⚙️',
-      '応用・学際': '🏥'
-    };
-    return iconMap[category] || '📚';
-  }
 };
 
 export default api;
