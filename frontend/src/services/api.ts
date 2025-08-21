@@ -46,6 +46,143 @@ export const RESEARCH_FIELDS: ResearchField[] = [
   { id: 'quantum', name: '量子コンピューティング', description: '量子情報、量子アルゴリズム', category: '物理・量子', keywords: ['量子', '量子ビット', '量子アルゴリズム'] },
 ];
 
+// 🔥 修正版: 20項目対応のEvaluationPreferences
+export interface EvaluationPreferences {
+  // 既存項目（5項目）
+  research_intensity: number;
+  advisor_style: number;
+  team_work: number;
+  workload: number;
+  theory_practice: number;
+  
+  // 分野適合性（元からの重要項目）
+  research_field_match: number;
+  
+  // 学習・成長関連（3項目）
+  skill_development: number;
+  learning_pace: number;
+  difficulty_preference: number;
+  
+  // コミュニケーション・環境関連（3項目）
+  communication_style: number;
+  meeting_frequency: number;
+  lab_atmosphere: number;
+  
+  // 研究アプローチ関連（3項目）
+  innovation_risk: number;
+  methodology_preference: number;
+  interdisciplinary: number;
+  
+  // 時間・ライフスタイル関連（2項目）
+  flexibility: number;
+  evening_weekend_work: number;
+  
+  // 調査結果に基づく追加項目（最優先・4項目）
+  publication_opportunity: number;
+  financial_support: number;
+  lab_hierarchy: number;
+  core_time_flexibility: number;
+}
+
+// Lab型定義も20項目対応に修正
+export interface Lab {
+  id: number;
+  name: string;
+  professor: string;
+  research_area: string;
+  description: string;
+  features: EvaluationPreferences; // 20項目すべて含む
+  created_at: string;
+}
+
+// 拡張された評価設定（研究分野を含む）
+export interface EnhancedEvaluationPreferences extends EvaluationPreferences {
+  research_field_interests?: {
+    [fieldId: string]: FieldInterest;
+  };
+}
+
+// フィールドマッチング結果
+export interface FieldMatchingResult {
+  matched_fields: string[];
+  field_scores: { [fieldId: string]: number };
+  field_weight: number;
+}
+
+// フィールド分析結果
+export interface FieldAnalysis {
+  selected_fields_count: number;
+  average_interest: number;
+  primary_category: string;
+  field_coverage: number;
+}
+
+export interface CompatibilityResult {
+  overall_score: number;
+  criterion_scores: {
+    [key: string]: {
+      similarity: number;
+      weighted_score: number;
+      user_preference: number;
+      lab_feature: number;
+      weight: number;
+    };
+  };
+  confidence: number;
+  weights_used: number[];
+  explanation: string;
+  prediction_method?: string; // 'simple_fuzzy' | 'genetic_optimization'
+  engine_version?: string;
+  field_matching?: FieldMatchingResult;
+  decision_path?: any[];
+  genetic_info?: {
+    individual_id: string;
+    generation: number;
+    fitness: number;
+  };
+}
+
+export interface EvaluationResult {
+  lab: Lab;
+  compatibility: CompatibilityResult;
+}
+
+export interface EvaluationSummary {
+  total_labs: number;
+  best_match: string;
+  avg_score: number;
+  evaluation_id: number;
+  session_id: string;
+  engine_used?: string;
+  evaluation_time?: number;
+  field_analysis?: FieldAnalysis;
+}
+
+export interface EvaluationResponse {
+  results: EvaluationResult[];
+  summary: EvaluationSummary;
+  algorithm_info: {
+    engine?: string;
+    current_mode?: string;
+    genetic_model_loaded?: boolean;
+    criteria_weights?: { [key: string]: number };
+  };
+}
+
+// フィールド推薦レスポンス
+export interface FieldRecommendationResponse {
+  recommended_fields: string[];
+  confidence_scores: { [fieldId: string]: number };
+  reasoning: string;
+}
+
+// デモデータレスポンス（20項目対応）
+export interface EnhancedDemoDataResponse {
+  demo_preferences: EvaluationPreferences; // 20項目すべて含む
+  suggested_fields?: string[];
+  message: string;
+}
+
 // フィールドユーティリティ
 export const fieldUtils = {
   getFieldName: (fieldId: string): string => {
@@ -131,166 +268,7 @@ export const fieldUtils = {
   }
 };
 
-// 型定義（20項目対応）
-export interface Lab {
-  id: number;
-  name: string;
-  professor: string;
-  research_area: string;
-  description: string;
-  features: {
-    // 既存項目
-    research_intensity: number;
-    advisor_style: number;
-    team_work: number;
-    workload: number;
-    theory_practice: number;
-    
-    // 分野適合性（元からの重要項目）
-    research_field_match: number;
-    
-    // 学習・成長関連
-    skill_development: number;
-    learning_pace: number;
-    difficulty_preference: number;
-    
-    // コミュニケーション・環境関連
-    communication_style: number;
-    meeting_frequency: number;
-    lab_atmosphere: number;
-    
-    // 研究アプローチ関連
-    innovation_risk: number;
-    methodology_preference: number;
-    interdisciplinary: number;
-    
-    // 時間・ライフスタイル関連
-    flexibility: number;
-    evening_weekend_work: number;
-    
-    // 調査結果に基づく追加項目（最優先）
-    publication_opportunity: number;
-    financial_support: number;
-    lab_hierarchy: number;
-    core_time_flexibility: number;
-  };
-  created_at: string;
-}
-
-export interface EvaluationPreferences {
-  // 既存項目
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
-  
-  // 分野適合性（元からの重要項目）
-  research_field_match: number;
-  
-  // 学習・成長関連
-  skill_development: number;
-  learning_pace: number;
-  difficulty_preference: number;
-  
-  // コミュニケーション・環境関連
-  communication_style: number;
-  meeting_frequency: number;
-  lab_atmosphere: number;
-  
-  // 研究アプローチ関連
-  innovation_risk: number;
-  methodology_preference: number;
-  interdisciplinary: number;
-  
-  // 時間・ライフスタイル関連
-  flexibility: number;
-  evening_weekend_work: number;
-  
-  // 調査結果に基づく追加項目（最優先）
-  publication_opportunity: number;
-  financial_support: number;
-  lab_hierarchy: number;
-  core_time_flexibility: number;
-}
-
-// 拡張された評価設定（研究分野を含む）
-export interface EnhancedEvaluationPreferences extends EvaluationPreferences {
-  research_field_interests?: {
-    [fieldId: string]: FieldInterest;
-  };
-}
-
-// フィールドマッチング結果
-export interface FieldMatchingResult {
-  matched_fields: string[];
-  field_scores: { [fieldId: string]: number };
-  field_weight: number;
-}
-
-// フィールド分析結果
-export interface FieldAnalysis {
-  selected_fields_count: number;
-  average_interest: number;
-  primary_category: string;
-  field_coverage: number;
-}
-
-export interface CompatibilityResult {
-  overall_score: number;
-  criterion_scores: {
-    [key: string]: {
-      similarity: number;
-      weighted_score: number;
-      user_preference: number;
-      lab_feature: number;
-      weight: number;
-    };
-  };
-  confidence: number;
-  weights_used: number[];
-  explanation: string;
-  field_matching?: FieldMatchingResult; // 分野マッチング結果
-}
-
-export interface EvaluationResult {
-  lab: Lab;
-  compatibility: CompatibilityResult;
-}
-
-export interface EvaluationSummary {
-  total_labs: number;
-  best_match: string;
-  avg_score: number;
-  evaluation_id: number;
-  session_id: string;
-  field_analysis?: FieldAnalysis; // 分野分析結果
-}
-
-export interface EvaluationResponse {
-  results: EvaluationResult[];
-  summary: EvaluationSummary;
-  algorithm_info: {
-    engine: string;
-    criteria_weights: { [key: string]: number };
-  };
-}
-
-// フィールド推薦レスポンス
-export interface FieldRecommendationResponse {
-  recommended_fields: string[];
-  confidence_scores: { [fieldId: string]: number };
-  reasoning: string;
-}
-
-// デモデータレスポンス（拡張版）
-export interface EnhancedDemoDataResponse {
-  demo_preferences: EnhancedEvaluationPreferences;
-  suggested_fields?: string[];
-  message: string;
-}
-
-// API関数
+// 🔥 修正版: API関数（20項目対応）
 export const apiService = {
   // ヘルスチェック
   async healthCheck() {
@@ -329,6 +307,77 @@ export const apiService = {
       };
     }
   },
+
+  // エンジン情報取得
+  async getEngineInfo() {
+    const response = await api.get('/engine/info');
+    return response.data;
+  },
+
+  // エンジン切り替え
+  async switchEngine(mode: 'simple' | 'genetic') {
+    const response = await api.post('/engine/switch', { mode });
+    return response.data;
+  },
+
+  // 遺伝的モデル再読み込み
+  async reloadGeneticModel() {
+    const response = await api.post('/engine/reload');
+    return response.data;
+  },
+
+  // 説明付き予測
+  async predictWithExplanation(userPreferences: EvaluationPreferences, labFeatures: EvaluationPreferences, modelId?: string) {
+    const response = await api.post('/predict/explain', {
+      user_preferences: userPreferences,
+      lab_features: labFeatures,
+      model_id: modelId
+    });
+    return response.data;
+  },
+
+  // 研究室一覧取得
+  async getLabs(): Promise<Lab[]> {
+    const response = await api.get('/labs');
+    return response.data;
+  },
+
+  // 研究室詳細取得
+  async getLabById(id: number): Promise<Lab> {
+    const response = await api.get(`/labs/${id}`);
+    return response.data;
+  },
+
+  // 評価履歴取得
+  async getEvaluationHistory(sessionId?: string) {
+    const params = sessionId ? { session_id: sessionId } : {};
+    const response = await api.get('/evaluations/history', { params });
+    return response.data;
+  },
+
+  // 統計情報取得
+  async getStatistics() {
+    const response = await api.get('/statistics');
+    return response.data;
+  }
 };
+
+// エラーハンドリング
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response) {
+      // サーバーエラー
+      console.error('API Error:', error.response.data);
+    } else if (error.request) {
+      // ネットワークエラー
+      console.error('Network Error:', error.request);
+    } else {
+      // その他のエラー
+      console.error('Error:', error.message);
+    }
+    return Promise.reject(error);
+  }
+);
 
 export default api;

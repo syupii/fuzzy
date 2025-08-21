@@ -5,11 +5,9 @@ import json
 
 db = SQLAlchemy()
 
-# 既存のクラス（完全に保持）
-
-
+# 🔥 修正版: 20項目対応のLabモデル
 class Lab(db.Model):
-    """研究室モデル"""
+    """研究室モデル（20項目対応版）"""
     __tablename__ = 'labs'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -18,16 +16,40 @@ class Lab(db.Model):
     research_area = db.Column(db.String(500), nullable=False)
     description = db.Column(db.Text)
 
-    # ファジィ特徴量（1-10スケール）
+    # 🔥 20項目のファジィ特徴量（1-10スケール）
+    
+    # 基本的な研究環境（6項目）
     research_intensity = db.Column(db.Float, default=5.0)    # 研究強度
-    # 指導スタイル (1:厳格 ↔ 10:自由)
-    advisor_style = db.Column(db.Float, default=5.0)
-    # チームワーク (1:個人 ↔ 10:チーム)
-    team_work = db.Column(db.Float, default=5.0)
-    # ワークロード (1:軽い ↔ 10:重い)
-    workload = db.Column(db.Float, default=5.0)
-    theory_practice = db.Column(
-        db.Float, default=5.0)       # 理論/実践 (1:理論 ↔ 10:実践)
+    advisor_style = db.Column(db.Float, default=5.0)         # 指導スタイル (1:厳格 ↔ 10:自由)
+    team_work = db.Column(db.Float, default=5.0)             # チームワーク (1:個人 ↔ 10:チーム)
+    workload = db.Column(db.Float, default=5.0)              # ワークロード (1:軽い ↔ 10:重い)
+    theory_practice = db.Column(db.Float, default=5.0)       # 理論/実践 (1:理論 ↔ 10:実践)
+    research_field_match = db.Column(db.Float, default=5.0)  # 研究分野適合性
+    
+    # 学習・成長関連（3項目）
+    skill_development = db.Column(db.Float, default=5.0)     # スキル開発
+    learning_pace = db.Column(db.Float, default=5.0)         # 学習ペース
+    difficulty_preference = db.Column(db.Float, default=5.0) # 難易度志向
+    
+    # コミュニケーション・環境関連（3項目）
+    communication_style = db.Column(db.Float, default=5.0)   # コミュニケーション
+    meeting_frequency = db.Column(db.Float, default=5.0)     # ミーティング頻度
+    lab_atmosphere = db.Column(db.Float, default=5.0)        # 研究室雰囲気
+    
+    # 研究アプローチ関連（3項目）
+    innovation_risk = db.Column(db.Float, default=5.0)       # 革新性リスク
+    methodology_preference = db.Column(db.Float, default=5.0) # 手法志向
+    interdisciplinary = db.Column(db.Float, default=5.0)     # 学際性
+    
+    # 時間・ライフスタイル関連（2項目）
+    flexibility = db.Column(db.Float, default=5.0)           # 時間の柔軟性
+    evening_weekend_work = db.Column(db.Float, default=5.0)  # 時間外研究
+    
+    # 調査結果に基づく追加項目（3項目）
+    publication_opportunity = db.Column(db.Float, default=5.0) # 論文執筆機会
+    financial_support = db.Column(db.Float, default=5.0)       # 経済的支援
+    lab_hierarchy = db.Column(db.Float, default=5.0)           # 研究室上下関係
+    core_time_flexibility = db.Column(db.Float, default=5.0)   # コアタイム柔軟性
 
     # メタデータ
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -36,6 +58,7 @@ class Lab(db.Model):
     is_active = db.Column(db.Boolean, default=True)
 
     def to_dict(self):
+        """20項目すべてを含むdict形式で返す"""
         return {
             'id': self.id,
             'name': self.name,
@@ -43,18 +66,45 @@ class Lab(db.Model):
             'research_area': self.research_area,
             'description': self.description,
             'features': {
+                # 基本的な研究環境
                 'research_intensity': self.research_intensity,
                 'advisor_style': self.advisor_style,
                 'team_work': self.team_work,
                 'workload': self.workload,
-                'theory_practice': self.theory_practice
+                'theory_practice': self.theory_practice,
+                'research_field_match': self.research_field_match,
+                
+                # 学習・成長関連
+                'skill_development': self.skill_development,
+                'learning_pace': self.learning_pace,
+                'difficulty_preference': self.difficulty_preference,
+                
+                # コミュニケーション・環境関連
+                'communication_style': self.communication_style,
+                'meeting_frequency': self.meeting_frequency,
+                'lab_atmosphere': self.lab_atmosphere,
+                
+                # 研究アプローチ関連
+                'innovation_risk': self.innovation_risk,
+                'methodology_preference': self.methodology_preference,
+                'interdisciplinary': self.interdisciplinary,
+                
+                # 時間・ライフスタイル関連
+                'flexibility': self.flexibility,
+                'evening_weekend_work': self.evening_weekend_work,
+                
+                # 調査結果に基づく追加項目
+                'publication_opportunity': self.publication_opportunity,
+                'financial_support': self.financial_support,
+                'lab_hierarchy': self.lab_hierarchy,
+                'core_time_flexibility': self.core_time_flexibility,
             },
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
 
 class Evaluation(db.Model):
-    """評価履歴モデル"""
+    """評価履歴モデル（20項目対応版）"""
     __tablename__ = 'evaluations'
 
     id = db.Column(db.Integer, primary_key=True)
@@ -62,15 +112,46 @@ class Evaluation(db.Model):
     # セッション識別（匿名ユーザー用）
     session_id = db.Column(db.String(100), nullable=True)
 
-    # ユーザー入力データ（1-10スケール）
+    # ユーザー入力データ（20項目すべて）
+    # 基本的な研究環境
     research_intensity = db.Column(db.Float, nullable=False)
     advisor_style = db.Column(db.Float, nullable=False)
     team_work = db.Column(db.Float, nullable=False)
     workload = db.Column(db.Float, nullable=False)
     theory_practice = db.Column(db.Float, nullable=False)
+    research_field_match = db.Column(db.Float, nullable=False)
+    
+    # 学習・成長関連
+    skill_development = db.Column(db.Float, nullable=False)
+    learning_pace = db.Column(db.Float, nullable=False)
+    difficulty_preference = db.Column(db.Float, nullable=False)
+    
+    # コミュニケーション・環境関連
+    communication_style = db.Column(db.Float, nullable=False)
+    meeting_frequency = db.Column(db.Float, nullable=False)
+    lab_atmosphere = db.Column(db.Float, nullable=False)
+    
+    # 研究アプローチ関連
+    innovation_risk = db.Column(db.Float, nullable=False)
+    methodology_preference = db.Column(db.Float, nullable=False)
+    interdisciplinary = db.Column(db.Float, nullable=False)
+    
+    # 時間・ライフスタイル関連
+    flexibility = db.Column(db.Float, nullable=False)
+    evening_weekend_work = db.Column(db.Float, nullable=False)
+    
+    # 調査結果に基づく追加項目
+    publication_opportunity = db.Column(db.Float, nullable=False)
+    financial_support = db.Column(db.Float, nullable=False)
+    lab_hierarchy = db.Column(db.Float, nullable=False)
+    core_time_flexibility = db.Column(db.Float, nullable=False)
 
-    # 結果データ（JSON形式）
-    results_json = db.Column(db.Text)
+    # 結果データ（JSON形式で保存）
+    user_preferences = db.Column(db.Text)  # 完全なユーザー設定
+    evaluation_count = db.Column(db.Integer)  # 評価した研究室数
+    avg_score = db.Column(db.Float)        # 平均適合度スコア
+    best_lab_id = db.Column(db.Integer)    # 最高適合度の研究室ID
+    engine_used = db.Column(db.String(100)) # 使用したエンジン
 
     # メタデータ
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -81,28 +162,59 @@ class Evaluation(db.Model):
 
     def get_results(self):
         """結果をオブジェクト形式で取得"""
-        if self.results_json:
+        if hasattr(self, 'results_json') and self.results_json:
             return json.loads(self.results_json)
         return None
 
     def to_dict(self):
+        """20項目すべてを含むdict形式で返す"""
         return {
             'id': self.id,
             'session_id': self.session_id,
             'preferences': {
+                # 基本的な研究環境
                 'research_intensity': self.research_intensity,
                 'advisor_style': self.advisor_style,
                 'team_work': self.team_work,
                 'workload': self.workload,
-                'theory_practice': self.theory_practice
+                'theory_practice': self.theory_practice,
+                'research_field_match': self.research_field_match,
+                
+                # 学習・成長関連
+                'skill_development': self.skill_development,
+                'learning_pace': self.learning_pace,
+                'difficulty_preference': self.difficulty_preference,
+                
+                # コミュニケーション・環境関連
+                'communication_style': self.communication_style,
+                'meeting_frequency': self.meeting_frequency,
+                'lab_atmosphere': self.lab_atmosphere,
+                
+                # 研究アプローチ関連
+                'innovation_risk': self.innovation_risk,
+                'methodology_preference': self.methodology_preference,
+                'interdisciplinary': self.interdisciplinary,
+                
+                # 時間・ライフスタイル関連
+                'flexibility': self.flexibility,
+                'evening_weekend_work': self.evening_weekend_work,
+                
+                # 調査結果に基づく追加項目
+                'publication_opportunity': self.publication_opportunity,
+                'financial_support': self.financial_support,
+                'lab_hierarchy': self.lab_hierarchy,
+                'core_time_flexibility': self.core_time_flexibility,
             },
-            'results': self.get_results(),
+            'evaluation_summary': {
+                'evaluation_count': self.evaluation_count,
+                'avg_score': self.avg_score,
+                'best_lab_id': self.best_lab_id,
+                'engine_used': self.engine_used
+            },
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 
 # 🆕 新しいテーブル（遺伝的アルゴリズム用）
-
-
 class GeneticIndividual(db.Model):
     """遺伝的アルゴリズムの個体記録"""
     __tablename__ = 'genetic_individuals'
@@ -155,7 +267,10 @@ class GeneticIndividual(db.Model):
                 'validity': self.validity,
                 'overall': self.overall_fitness
             },
-            'parents': [self.parent1_id, self.parent2_id],
+            'genealogy': {
+                'parent1_id': self.parent1_id,
+                'parent2_id': self.parent2_id
+            },
             'model_info': {
                 'complexity': self.model_complexity,
                 'depth': self.tree_depth,
@@ -166,65 +281,46 @@ class GeneticIndividual(db.Model):
 
 
 class DecisionPath(db.Model):
-    """決定パス記録テーブル"""
+    """決定パス記録"""
     __tablename__ = 'decision_paths'
 
     id = db.Column(db.Integer, primary_key=True)
-    path_id = db.Column(db.String(100), nullable=False, unique=True)
     evaluation_id = db.Column(db.Integer, db.ForeignKey('evaluations.id'))
-
-    # 使用されたモデル情報
-    model_type = db.Column(db.String(50))  # 'simple' or 'genetic'
-    model_version = db.Column(db.String(50))
-    model_id = db.Column(db.String(100))  # genetic modelの場合のindividual_id
-
-    # 決定プロセス詳細（JSON）
-    decision_nodes = db.Column(db.Text)  # 通った決定ノード
-    feature_contributions = db.Column(db.Text)  # 特徴量の貢献度
-    confidence_scores = db.Column(db.Text)  # 各段階の信頼度
-
-    # 結果
-    final_prediction = db.Column(db.Float)
-    explanation_text = db.Column(db.Text)
-
-    # パフォーマンス情報
-    prediction_time = db.Column(db.Float)
-
+    step_order = db.Column(db.Integer)
+    
+    # 決定情報
+    criterion = db.Column(db.String(100))
+    threshold = db.Column(db.Float)
+    user_value = db.Column(db.Float)
+    lab_value = db.Column(db.Float)
+    decision_result = db.Column(db.String(50))  # 'match', 'partial', 'mismatch'
+    
+    # 重み情報
+    criterion_weight = db.Column(db.Float)
+    confidence = db.Column(db.Float)
+    
+    # 説明情報
+    rule_explanation = db.Column(db.Text)
+    
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    def set_decision_data(self, nodes, contributions, confidences):
-        """決定データをJSON形式で保存"""
-        self.decision_nodes = json.dumps(
-            nodes, ensure_ascii=False, default=str)
-        self.feature_contributions = json.dumps(
-            contributions, ensure_ascii=False, default=str)
-        self.confidence_scores = json.dumps(
-            confidences, ensure_ascii=False, default=str)
-
-    def get_decision_data(self):
-        """決定データをオブジェクト形式で取得"""
-        return {
-            'nodes': json.loads(self.decision_nodes) if self.decision_nodes else [],
-            'contributions': json.loads(self.feature_contributions) if self.feature_contributions else {},
-            'confidences': json.loads(self.confidence_scores) if self.confidence_scores else []
-        }
 
     def to_dict(self):
         return {
             'id': self.id,
-            'path_id': self.path_id,
             'evaluation_id': self.evaluation_id,
-            'model_info': {
-                'type': self.model_type,
-                'version': self.model_version,
-                'model_id': self.model_id
+            'step_order': self.step_order,
+            'decision': {
+                'criterion': self.criterion,
+                'threshold': self.threshold,
+                'user_value': self.user_value,
+                'lab_value': self.lab_value,
+                'result': self.decision_result
             },
-            'decision_data': self.get_decision_data(),
-            'prediction': self.final_prediction,
-            'explanation': self.explanation_text,
-            'performance': {
-                'prediction_time': self.prediction_time
+            'weights': {
+                'criterion_weight': self.criterion_weight,
+                'confidence': self.confidence
             },
+            'explanation': self.rule_explanation,
             'created_at': self.created_at.isoformat()
         }
 
@@ -262,8 +358,7 @@ class OptimizationRun(db.Model):
 
     # メタデータ
     execution_time = db.Column(db.Float)  # 秒
-    # running, completed, failed
-    status = db.Column(db.String(20), default='running')
+    status = db.Column(db.String(20), default='running')  # running, completed, failed
     description = db.Column(db.Text)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -356,21 +451,29 @@ class ModelRegistry(db.Model):
     # 性能情報
     best_fitness = db.Column(db.Float)
     model_complexity = db.Column(db.Integer)
-    tree_depth = db.Column(db.Integer)
+    validation_accuracy = db.Column(db.Float)
+    test_accuracy = db.Column(db.Float)
 
-    # 訓練情報
-    training_samples = db.Column(db.Integer)
-    test_samples = db.Column(db.Integer)
+    # 使用統計
+    usage_count = db.Column(db.Integer, default=0)
+    last_used_at = db.Column(db.DateTime)
+
+    # 状態
+    is_active = db.Column(db.Boolean, default=True)
+    is_production_ready = db.Column(db.Boolean, default=False)
 
     # メタデータ
     description = db.Column(db.Text)
     tags = db.Column(db.Text)  # JSON配列
-    is_active = db.Column(db.Boolean, default=True)
-    is_production = db.Column(db.Boolean, default=False)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_used_at = db.Column(db.DateTime)
-    usage_count = db.Column(db.Integer, default=0)
+    updated_at = db.Column(
+        db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def increment_usage(self):
+        """使用回数を増加"""
+        self.usage_count += 1
+        self.last_used_at = datetime.utcnow()
 
     def set_tags(self, tags):
         """タグをJSON形式で保存"""
@@ -381,11 +484,6 @@ class ModelRegistry(db.Model):
         if self.tags:
             return json.loads(self.tags)
         return []
-
-    def increment_usage(self):
-        """使用回数をインクリメント"""
-        self.usage_count = (self.usage_count or 0) + 1
-        self.last_used_at = datetime.utcnow()
 
     def to_dict(self):
         return {
@@ -403,24 +501,24 @@ class ModelRegistry(db.Model):
             'performance': {
                 'best_fitness': self.best_fitness,
                 'model_complexity': self.model_complexity,
-                'tree_depth': self.tree_depth
-            },
-            'training_info': {
-                'training_samples': self.training_samples,
-                'test_samples': self.test_samples
-            },
-            'metadata': {
-                'description': self.description,
-                'tags': self.get_tags(),
-                'is_active': self.is_active,
-                'is_production': self.is_production
+                'validation_accuracy': self.validation_accuracy,
+                'test_accuracy': self.test_accuracy
             },
             'usage': {
                 'usage_count': self.usage_count,
                 'last_used_at': self.last_used_at.isoformat() if self.last_used_at else None
             },
+            'status': {
+                'is_active': self.is_active,
+                'is_production_ready': self.is_production_ready
+            },
+            'metadata': {
+                'description': self.description,
+                'tags': self.get_tags()
+            },
             'timestamps': {
                 'created_at': self.created_at.isoformat(),
+                'updated_at': self.updated_at.isoformat()
             }
         }
 
@@ -432,8 +530,7 @@ class SystemConfig(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     config_key = db.Column(db.String(100), nullable=False, unique=True)
     config_value = db.Column(db.Text)
-    # string, int, float, bool, json
-    config_type = db.Column(db.String(20), default='string')
+    config_type = db.Column(db.String(20), default='string')  # string, int, float, bool, json
     description = db.Column(db.Text)
 
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -475,10 +572,83 @@ class SystemConfig(db.Model):
         }
 
 # ユーティリティ関数
+def get_system_config(key: str, default=None):
+    """システム設定取得"""
+    config = SystemConfig.query.filter_by(config_key=key).first()
+    if config:
+        return config.get_value()
+    return default
+
+
+def set_system_config(key: str, value, config_type: str = 'string', description: str = ''):
+    """システム設定更新"""
+    try:
+        config = SystemConfig.query.filter_by(config_key=key).first()
+        if config:
+            config.set_value(value)
+            if description:
+                config.description = description
+        else:
+            config = SystemConfig(
+                config_key=key,
+                config_type=config_type,
+                description=description
+            )
+            config.set_value(value)
+            db.session.add(config)
+        
+        db.session.commit()
+        return True
+    except Exception as e:
+        db.session.rollback()
+        print(f"❌ 設定保存エラー: {e}")
+        return False
+
+
+class DatabaseManager:
+    """データベース管理ユーティリティ"""
+    
+    @staticmethod
+    def get_table_counts():
+        """各テーブルのレコード数を取得"""
+        try:
+            return {
+                'labs': Lab.query.count(),
+                'evaluations': Evaluation.query.count(),
+                'genetic_individuals': GeneticIndividual.query.count(),
+                'decision_paths': DecisionPath.query.count(),
+                'optimization_runs': OptimizationRun.query.count(),
+                'model_registry': ModelRegistry.query.count(),
+                'system_config': SystemConfig.query.count()
+            }
+        except Exception as e:
+            print(f"⚠️ テーブル統計取得エラー: {e}")
+            return {}
+
+    @staticmethod
+    def get_database_size():
+        """データベースサイズ情報を取得"""
+        try:
+            import os
+            
+            # SQLiteファイルサイズ取得
+            db_file = 'fdtlss.db'
+            if os.path.exists(db_file):
+                size_bytes = os.path.getsize(db_file)
+                size_mb = size_bytes / (1024 * 1024)
+                return {
+                    'size_bytes': size_bytes,
+                    'size_mb': round(size_mb, 2),
+                    'file_path': os.path.abspath(db_file)
+                }
+        except Exception as e:
+            print(f"⚠️ データベースサイズ取得エラー: {e}")
+        
+        return {'size_bytes': 0, 'size_mb': 0, 'file_path': 'unknown'}
 
 
 def create_app():
-    """Flaskアプリケーション作成（既存の関数と同じ）"""
+    """Flaskアプリケーション作成"""
     from flask import Flask
 
     app = Flask(__name__)
@@ -504,176 +674,224 @@ def init_extended_database():
             print("✅ 全テーブルを作成しました")
 
             # 基本設定データ投入
-            init_system_config()
+            default_configs = [
+                ('default_fuzzy_engine', 'hybrid', 'string', 'デフォルトのファジィエンジン'),
+                ('max_evaluation_results', '20', 'int', '最大評価結果表示数'),
+                ('genetic_population_size', '50', 'int', '遺伝的アルゴリズムの個体数'),
+                ('genetic_generations', '100', 'int', '遺伝的アルゴリズムの世代数'),
+                ('mutation_rate', '0.1', 'float', '突然変異率'),
+                ('crossover_rate', '0.8', 'float', '交叉率'),
+                ('tournament_size', '5', 'int', 'トーナメント選択のサイズ'),
+                ('max_tree_depth', '10', 'int', '決定木の最大深度'),
+                ('enable_tracking', 'true', 'bool', '詳細追跡の有効化'),
+                ('model_auto_save', 'true', 'bool', 'モデル自動保存'),
+                ('evaluation_cache_size', '1000', 'int', '評価キャッシュサイズ'),
+                ('system_version', '2.0.0', 'string', 'システムバージョン'),
+            ]
+
+            for key, value, config_type, description in default_configs:
+                existing = SystemConfig.query.filter_by(config_key=key).first()
+                if not existing:
+                    config = SystemConfig(
+                        config_key=key,
+                        config_type=config_type,
+                        description=description
+                    )
+                    config.set_value(value)
+                    db.session.add(config)
+
+            db.session.commit()
+            print("✅ システム設定を初期化しました")
 
             print("🎉 拡張データベース初期化完了！")
             return True
 
         except Exception as e:
             print(f"❌ データベース初期化失敗: {e}")
+            db.session.rollback()
             return False
 
 
-def init_system_config():
-    """システム設定初期化"""
-
-    default_configs = [
-        {
-            'config_key': 'default_fuzzy_engine',
-            'config_value': 'hybrid',
-            'config_type': 'string',
-            'description': 'デフォルトで使用するファジィエンジンタイプ (simple/hybrid)'
-        },
-        {
-            'config_key': 'genetic_model_auto_reload',
-            'config_value': 'true',
-            'config_type': 'bool',
-            'description': '遺伝的モデルの自動再読み込み'
-        },
-        {
-            'config_key': 'max_prediction_cache',
-            'config_value': '1000',
-            'config_type': 'int',
-            'description': '予測結果の最大キャッシュ数'
-        },
-        {
-            'config_key': 'model_cleanup_threshold',
-            'config_value': '50',
-            'config_type': 'int',
-            'description': 'モデル自動清理のしきい値'
-        },
-        {
-            'config_key': 'feature_weights',
-            'config_value': '{"research_intensity": 0.25, "advisor_style": 0.20, "team_work": 0.20, "workload": 0.15, "theory_practice": 0.20}',
-            'config_type': 'json',
-            'description': '基準の重み設定'
+def check_database_schema():
+    """データベーススキーマの確認"""
+    try:
+        import sqlite3
+        
+        conn = sqlite3.connect('fdtlss.db')
+        cursor = conn.cursor()
+        
+        # 全テーブル一覧取得
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [row[0] for row in cursor.fetchall()]
+        
+        schema_info = {}
+        
+        for table in tables:
+            cursor.execute(f"PRAGMA table_info({table})")
+            columns = cursor.fetchall()
+            schema_info[table] = {
+                'columns': [col[1] for col in columns],
+                'column_count': len(columns)
+            }
+        
+        conn.close()
+        
+        return {
+            'tables': tables,
+            'table_count': len(tables),
+            'schema_details': schema_info
         }
-    ]
-
-    for config_data in default_configs:
-        existing = SystemConfig.query.filter_by(
-            config_key=config_data['config_key']).first()
-        if not existing:
-            config = SystemConfig(**config_data)
-            db.session.add(config)
-
-    db.session.commit()
-    print(f"✅ システム設定を初期化しました")
-
-
-def get_system_config(key: str, default=None):
-    """システム設定取得"""
-    try:
-        config = SystemConfig.query.filter_by(config_key=key).first()
-        if config:
-            return config.get_value()
-        return default
-    except:
-        return default
-
-
-def set_system_config(key: str, value, config_type: str = 'string', description: str = ''):
-    """システム設定保存"""
-    try:
-        config = SystemConfig.query.filter_by(config_key=key).first()
-        if config:
-            config.set_value(value)
-            config.config_type = config_type
-            if description:
-                config.description = description
-        else:
-            config = SystemConfig(
-                config_key=key,
-                config_type=config_type,
-                description=description
-            )
-            config.set_value(value)
-            db.session.add(config)
-
-        db.session.commit()
-        return True
+        
     except Exception as e:
-        print(f"⚠️ システム設定保存失敗: {e}")
-        db.session.rollback()
+        print(f"⚠️ スキーマ確認エラー: {e}")
+        return None
+
+
+def migrate_lab_data_to_20_items():
+    """既存の研究室データを20項目対応に移行"""
+    try:
+        import sqlite3
+        
+        conn = sqlite3.connect('fdtlss.db')
+        cursor = conn.cursor()
+        
+        # 既存の研究室データ取得
+        cursor.execute("SELECT id, name, professor, research_area, description FROM labs")
+        existing_labs = cursor.fetchall()
+        
+        print(f"📊 既存研究室データ: {len(existing_labs)}件")
+        
+        # 各研究室に20項目のデフォルト値を設定
+        for lab_id, name, professor, research_area, description in existing_labs:
+            # ランダムな値を生成（研究室の特性に応じて調整可能）
+            import random
+            
+            updates = {
+                'research_field_match': round(random.uniform(6, 9), 1),
+                'skill_development': round(random.uniform(5, 8), 1),
+                'learning_pace': round(random.uniform(5, 8), 1),
+                'difficulty_preference': round(random.uniform(6, 9), 1),
+                'communication_style': round(random.uniform(5, 8), 1),
+                'meeting_frequency': round(random.uniform(4, 7), 1),
+                'lab_atmosphere': round(random.uniform(6, 9), 1),
+                'innovation_risk': round(random.uniform(5, 8), 1),
+                'methodology_preference': round(random.uniform(5, 8), 1),
+                'interdisciplinary': round(random.uniform(5, 8), 1),
+                'flexibility': round(random.uniform(6, 9), 1),
+                'evening_weekend_work': round(random.uniform(3, 7), 1),
+                'publication_opportunity': round(random.uniform(6, 9), 1),
+                'financial_support': round(random.uniform(5, 8), 1),
+                'lab_hierarchy': round(random.uniform(5, 8), 1),
+                'core_time_flexibility': round(random.uniform(6, 9), 1),
+            }
+            
+            # 各カラムを更新
+            for column, value in updates.items():
+                cursor.execute(f"UPDATE labs SET {column} = ? WHERE id = ?", (value, lab_id))
+            
+            print(f"  ✅ {name} を20項目対応に更新")
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"🎉 {len(existing_labs)}件の研究室データを20項目対応に移行完了")
+        return True
+        
+    except Exception as e:
+        print(f"❌ データ移行エラー: {e}")
         return False
 
-# データベース管理ユーティリティ
 
-
-class DatabaseManager:
-    """データベース管理クラス"""
-
-    @staticmethod
-    def get_table_counts():
-        """各テーブルのレコード数取得"""
-        try:
-            return {
-                'labs': Lab.query.count(),
-                'evaluations': Evaluation.query.count(),
-                'genetic_individuals': GeneticIndividual.query.count(),
-                'decision_paths': DecisionPath.query.count(),
-                'optimization_runs': OptimizationRun.query.count(),
-                'model_registry': ModelRegistry.query.count(),
-                'system_config': SystemConfig.query.count()
-            }
-        except:
-            return {}
-
-    @staticmethod
-    def cleanup_old_records(days_threshold: int = 30):
-        """古いレコードの清理"""
-        from datetime import timedelta
-
-        cutoff_date = datetime.utcnow() - timedelta(days=days_threshold)
-
-        cleanup_count = 0
-
-        try:
-            # 古い評価データ
-            old_evaluations = Evaluation.query.filter(
-                Evaluation.created_at < cutoff_date).all()
-            for eval_record in old_evaluations:
-                # 関連する決定パスも削除
-                DecisionPath.query.filter_by(
-                    evaluation_id=eval_record.id).delete()
-                db.session.delete(eval_record)
-                cleanup_count += 1
-
-            # 古い遺伝的個体記録
-            old_individuals = GeneticIndividual.query.filter(
-                GeneticIndividual.created_at < cutoff_date).all()
-            for individual in old_individuals:
-                db.session.delete(individual)
-                cleanup_count += 1
-
-            db.session.commit()
-
-            print(f"🧹 {cleanup_count}件の古いレコードを清理しました")
-            return cleanup_count
-
-        except Exception as e:
-            db.session.rollback()
-            print(f"❌ レコード清理失敗: {e}")
-            return 0
-
-    @staticmethod
-    def get_database_size():
-        """データベースサイズ取得"""
-        try:
-            import os
-            db_path = 'fdtlss.db'
-            if os.path.exists(db_path):
-                size_bytes = os.path.getsize(db_path)
-                size_mb = size_bytes / (1024 * 1024)
-                return {
-                    'size_bytes': size_bytes,
-                    'size_mb': round(size_mb, 2)
-                }
-        except:
-            pass
-
-        return {'size_bytes': 0, 'size_mb': 0}
+def main():
+    """メインマイグレーション実行"""
+    print("🚀 20項目対応マイグレーション開始")
+    print("=" * 50)
+    
+    # 1. バックアップ作成
+    print("1️⃣ データベースバックアップ作成...")
+    backup_database()
+    
+    # 2. 現在のスキーマ確認
+    print("\n2️⃣ 現在のデータベーススキーマ確認...")
+    schema_info = check_database_schema()
+    if schema_info:
+        print(f"📊 既存テーブル: {schema_info['tables']}")
+        if 'labs' in schema_info['schema_details']:
+            lab_columns = schema_info['schema_details']['labs']['columns']
+            print(f"📊 Labテーブルの現在のカラム数: {len(lab_columns)}")
+    
+    # 3. 新しいカラム追加
+    print("\n3️⃣ 新しいカラムを追加中...")
+    
+    # 追加する新しいカラム（15項目）
+    new_columns = [
+        ('research_field_match', 'REAL DEFAULT 5.0'),
+        ('skill_development', 'REAL DEFAULT 5.0'),
+        ('learning_pace', 'REAL DEFAULT 5.0'),
+        ('difficulty_preference', 'REAL DEFAULT 5.0'),
+        ('communication_style', 'REAL DEFAULT 5.0'),
+        ('meeting_frequency', 'REAL DEFAULT 5.0'),
+        ('lab_atmosphere', 'REAL DEFAULT 5.0'),
+        ('innovation_risk', 'REAL DEFAULT 5.0'),
+        ('methodology_preference', 'REAL DEFAULT 5.0'),
+        ('interdisciplinary', 'REAL DEFAULT 5.0'),
+        ('flexibility', 'REAL DEFAULT 5.0'),
+        ('evening_weekend_work', 'REAL DEFAULT 5.0'),
+        ('publication_opportunity', 'REAL DEFAULT 5.0'),
+        ('financial_support', 'REAL DEFAULT 5.0'),
+        ('lab_hierarchy', 'REAL DEFAULT 5.0'),
+        ('core_time_flexibility', 'REAL DEFAULT 5.0'),
+    ]
+    
+    try:
+        conn = sqlite3.connect('fdtlss.db')
+        cursor = conn.cursor()
+        
+        # 既存のカラムチェック
+        cursor.execute("PRAGMA table_info(labs)")
+        existing_columns = {col[1] for col in cursor.fetchall()}
+        
+        added_count = 0
+        
+        for col_name, col_definition in new_columns:
+            if col_name not in existing_columns:
+                try:
+                    cursor.execute(f"ALTER TABLE labs ADD COLUMN {col_name} {col_definition}")
+                    print(f"  ✅ 追加: {col_name}")
+                    added_count += 1
+                except sqlite3.Error as e:
+                    print(f"  ❌ エラー {col_name}: {e}")
+        
+        conn.commit()
+        conn.close()
+        
+        print(f"\n🎉 {added_count}個の新しいカラムを追加しました")
+        
+    except Exception as e:
+        print(f"❌ カラム追加エラー: {e}")
+        return False
+    
+    # 4. 既存データの移行
+    print("\n4️⃣ 既存データを20項目対応に移行中...")
+    migrate_lab_data_to_20_items()
+    
+    # 5. 完了確認
+    print("\n5️⃣ マイグレーション完了確認...")
+    final_schema = check_database_schema()
+    if final_schema and 'labs' in final_schema['schema_details']:
+        final_column_count = final_schema['schema_details']['labs']['column_count']
+        print(f"📊 マイグレーション後のLabテーブルカラム数: {final_column_count}")
+        
+        if final_column_count >= 25:  # 基本情報5 + 20項目 + メタデータ
+            print("✅ 20項目マイグレーション成功！")
+        else:
+            print("⚠️ 一部のカラムが不足している可能性があります")
+    
+    print("\n🎉 マイグレーション完了！")
+    print("次のステップ:")
+    print("  1. python create_sample_labs.py を実行")
+    print("  2. python app.py でサーバー起動")
 
 
 if __name__ == '__main__':
-    init_extended_database()
+    main()
