@@ -25,10 +25,6 @@ import {
   Groups,
   Explore,
   Schedule,
-  Article,
-  AttachMoney,
-  AccountTree,
-  AccessTime
 } from '@mui/icons-material';
 import { apiService, EvaluationPreferences, EvaluationResponse } from '../services/api';
 
@@ -79,170 +75,165 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults }) => {
 
   // カテゴリ別の評価基準情報
   const criteriaCategories = {
+    priority: {
+      title: '🔥 最重要項目（学生調査結果）',
+      icon: <TrendingUp color="error" />,
+      criteria: {
+        publication_opportunity: {
+          label: '論文発表機会',
+          description: '学会発表や論文投稿の機会が多い',
+          min: '機会少ない',
+          max: '機会豊富'
+        },
+        financial_support: {
+          label: '経済的支援',
+          description: '奨学金や研究費支給の充実度',
+          min: '支援なし',
+          max: '充実支援'
+        },
+        research_field_match: {
+          label: '研究分野適合性',
+          description: 'あなたの興味と研究室の専門分野の一致度',
+          min: '不一致',
+          max: '完全一致'
+        },
+        core_time_flexibility: {
+          label: 'コアタイム柔軟性',
+          description: '研究室の時間拘束の柔軟さ',
+          min: '厳格',
+          max: '完全自由'
+        }
+      }
+    },
     basic: {
       title: '基本的な研究環境',
       icon: <Science color="primary" />,
       criteria: {
         research_intensity: {
           label: '研究強度',
-          description: '研究にどれだけ集中したいか',
+          description: '研究にどれだけ集中的に取り組むか',
           min: '基礎的',
-          max: '最先端',
+          max: '最先端'
         },
         advisor_style: {
           label: '指導スタイル',
-          description: '希望する指導の方法',
-          min: '厳格',
-          max: '自由',
+          description: '教授の指導方針',
+          min: '放任主義',
+          max: '厳格指導'
         },
         team_work: {
           label: 'チームワーク',
-          description: '研究での協働の度合い',
+          description: '研究での協働スタイル',
           min: '個人研究',
-          max: 'チーム研究',
+          max: 'チーム重視'
         },
         workload: {
           label: 'ワークロード',
           description: '研究の負荷・忙しさ',
-          min: '軽め',
-          max: '重め',
+          min: 'ゆったり',
+          max: 'ハード'
         },
         theory_practice: {
           label: '理論・実践バランス',
-          description: '理論と実践のどちらを重視するか',
+          description: '理論研究と実践的研究の比重',
           min: '理論重視',
-          max: '実践重視',
-        },
-        research_field_match: {
-          label: '研究分野適合性',
-          description: '自分の興味と研究分野のマッチ度',
-          min: '分野外も可',
-          max: '完全一致重視',
+          max: '実践重視'
         }
       }
     },
-    
-    learning: {
+    growth: {
       title: '学習・成長',
-      icon: <School color="secondary" />,
+      icon: <School color="success" />,
       criteria: {
         skill_development: {
           label: 'スキル開発',
-          description: '身につけたいスキルの範囲',
+          description: '技能習得のアプローチ',
           min: '専門特化',
-          max: '幅広いスキル',
+          max: '幅広習得'
         },
         learning_pace: {
           label: '学習ペース',
-          description: '希望する学習の進行速度',
+          description: '知識習得の速度',
           min: 'じっくり型',
-          max: '高速習得型',
+          max: '高速習得'
         },
         difficulty_preference: {
           label: '難易度志向',
-          description: '取り組みたい課題の難易度',
-          min: '安定した課題',
-          max: '挑戦的課題',
+          description: '挑戦する課題のレベル',
+          min: '安定志向',
+          max: '挑戦志向'
         }
       }
     },
-    
     communication: {
       title: 'コミュニケーション・環境',
-      icon: <Groups color="success" />,
+      icon: <Groups color="info" />,
       criteria: {
         communication_style: {
           label: 'コミュニケーション',
-          description: '研究室内での交流スタイル',
-          min: '少人数密接',
-          max: 'オープン交流',
+          description: '研究室での交流スタイル',
+          min: '少数密接',
+          max: 'オープン'
         },
         meeting_frequency: {
           label: 'ミーティング頻度',
-          description: '相談・報告の頻度',
-          min: '必要最小限',
-          max: '頻繁な相談',
+          description: '定期的な相談・報告の頻度',
+          min: '最小限',
+          max: '頻繁'
         },
         lab_atmosphere: {
           label: '研究室雰囲気',
-          description: '研究環境の雰囲気',
+          description: '研究環境の特徴',
           min: '静寂集中',
-          max: '活発議論',
+          max: '活発議論'
         }
       }
     },
-    
     approach: {
       title: '研究アプローチ',
       icon: <Explore color="warning" />,
       criteria: {
         innovation_risk: {
-          label: '革新性リスク',
-          description: '研究の革新性とリスクのバランス',
-          min: '確実な成果',
-          max: '革新的挑戦',
+          label: '革新性・リスク',
+          description: '新しいことへの挑戦度',
+          min: '安全路線',
+          max: 'リスク歓迎'
         },
         methodology_preference: {
-          label: '手法志向',
-          description: '研究手法の選択傾向',
-          min: '伝統的手法',
-          max: '新しい手法',
+          label: '手法選好',
+          description: '研究手法の傾向',
+          min: '定量分析',
+          max: '定性分析'
         },
         interdisciplinary: {
           label: '学際性',
-          description: '分野を超えた研究への関心',
+          description: '他分野との融合度',
           min: '専門特化',
-          max: '分野横断',
+          max: '学際融合'
         }
       }
     },
-    
     lifestyle: {
       title: '時間・ライフスタイル',
-      icon: <Schedule color="info" />,
+      icon: <Schedule color="secondary" />,
       criteria: {
         flexibility: {
-          label: '時間の柔軟性',
-          description: 'スケジュールの自由度',
-          min: '規則正しい',
-          max: '自由なスケジュール',
+          label: '柔軟性',
+          description: '研究スケジュールの自由度',
+          min: '固定的',
+          max: '柔軟'
         },
         evening_weekend_work: {
-          label: '時間外研究',
-          description: '夜間・休日の研究活動',
+          label: '夜間・休日研究',
+          description: '通常時間外の研究への意欲',
           min: '平日のみ',
-          max: '夜間・休日も',
-        }
-      }
-    },
-    
-    priority: {
-      title: '重要成功要因（調査結果重視項目）',
-      icon: <TrendingUp color="error" />,
-      criteria: {
-        publication_opportunity: {
-          label: '論文執筆機会',
-          description: '在学中に論文著者になれる可能性',
-          min: '執筆機会少ない',
-          max: '積極的に著者',
-        },
-        financial_support: {
-          label: '経済的支援',
-          description: '研究費用・経済面でのサポート',
-          min: '自己負担多い',
-          max: '研究費潤沢',
+          max: '365日'
         },
         lab_hierarchy: {
-          label: '研究室上下関係',
-          description: '研究室内の人間関係の構造',
-          min: '厳格な上下関係',
-          max: 'フラットな関係',
-        },
-        core_time_flexibility: {
-          label: 'コアタイム柔軟性',
-          description: '研究室での必須滞在時間の自由度',
-          min: '厳格な時間管理',
-          max: '自由度高い',
+          label: '研究室階層',
+          description: '研究室内の上下関係の強さ',
+          min: 'フラット',
+          max: '階層明確'
         }
       }
     }
