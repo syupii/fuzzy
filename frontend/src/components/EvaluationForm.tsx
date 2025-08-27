@@ -34,8 +34,8 @@ import {
 
 interface EvaluationFormProps {
   onResults: (preferences: EvaluationPreferences) => void;
-  fieldSelections: { [fieldId: string]: FieldInterest };
-  techStackPreferences: TechStackPreference;
+  fieldSelections?: { [fieldId: string]: FieldInterest };
+  techStackPreferences?: TechStackPreference;
 }
 
 const EvaluationForm: React.FC<EvaluationFormProps> = ({
@@ -276,12 +276,12 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({
 
   // 選択サマリーの作成
   const getSelectionSummary = () => {
-    const selectedFields = Object.entries(fieldSelections)
+    const selectedFields = fieldSelections ? Object.entries(fieldSelections)
       .filter(([, interest]) => interest.isSelected)
-      .map(([fieldId]) => fieldUtils.getFieldName(fieldId));
+      .map(([fieldId]) => fieldUtils.getFieldName(fieldId)) : [];
     
-    const selectedLanguages = techStackPreferences.languagePreferences
-      .map(langId => languageUtils.getLanguageName(langId));
+    const selectedLanguages = techStackPreferences ? techStackPreferences.languagePreferences
+      .map(langId => languageUtils.getLanguageName(langId)) : [];
 
     return { selectedFields, selectedLanguages };
   };
@@ -330,8 +330,8 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({
         </Grid>
         <Box sx={{ mt: 2 }}>
           <Typography variant="body2" color="text.secondary">
-            学習意欲: {techStackPreferences.learningWillingness}/10 • 
-            キャリア目標: {techStackPreferences.careerGoals.length}個選択
+            学習意欲: {techStackPreferences?.learningWillingness || 'N/A'}/10 • 
+            キャリア目標: {techStackPreferences?.careerGoals.length || 0}個選択
           </Typography>
         </Box>
       </Paper>
