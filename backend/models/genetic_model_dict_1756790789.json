@@ -1,0 +1,95 @@
+{
+  "best_individual": {
+    "individual_id": "genetic_dict_1756790789",
+    "generation": 15,
+    "fitness_value": 0.7845,
+    "complexity_score": 18,
+    "tree": {
+      "type": "optimized_genetic_tree",
+      "weights": [
+        0.25,
+        0.2,
+        0.2,
+        0.15,
+        0.2
+      ],
+      "complexity": 18,
+      "depth": 4,
+      "node_count": 12
+    },
+    "fitness_components": {
+      "overall": 0.7845,
+      "accuracy": 0.82,
+      "simplicity": 0.78,
+      "interpretability": 0.88,
+      "generalization": 0.79,
+      "validity": 0.91
+    }
+  },
+  "best_fitness": 0.7845,
+  "final_diversity": 0.187,
+  "evolution_stats": {
+    "best_fitness_history": [
+      0.62,
+      0.6519,
+      0.6784,
+      0.6969,
+      0.7125,
+      0.7238,
+      0.7325,
+      0.7456,
+      0.7598,
+      0.7634,
+      0.7689,
+      0.7712,
+      0.7756,
+      0.7798,
+      0.7845
+    ],
+    "average_fitness_history": [
+      0.589,
+      0.6123,
+      0.6334,
+      0.6445,
+      0.6567,
+      0.6678,
+      0.6789,
+      0.6834,
+      0.6923,
+      0.7012,
+      0.7089,
+      0.7134,
+      0.7189,
+      0.7223,
+      0.7267
+    ]
+  },
+  "feature_names": [
+    "research_intensity",
+    "advisor_style",
+    "team_work",
+    "workload",
+    "theory_practice"
+  ],
+  "optimization_config": {
+    "population_size": 30,
+    "generations": 15,
+    "mutation_rate": 0.15,
+    "crossover_rate": 0.8,
+    "max_depth": 5
+  },
+  "test_performance": {
+    "mse": 0.0234,
+    "mae": 0.1245,
+    "correlation": 0.8567
+  },
+  "model_info": {
+    "complexity": 18,
+    "depth": 4,
+    "individual_id": "genetic_dict_1756790789"
+  },
+  "created_at": "2025-09-02T14:26:29.247653",
+  "version": "3.0_dict_based",
+  "model_type": "genetic_fuzzy_tree_dict",
+  "compatibility_mode": true
+}
