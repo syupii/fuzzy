@@ -75,9 +75,12 @@ app = FastAPI(
 # CORS設定
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # 本番環境では適切に設定
+    allow_origins=[
+        "http://localhost:3000",  # React開発サーバー
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -283,7 +286,13 @@ async def health_check():
             "evaluation_count": system_state["evaluation_count"]
         }
     }
-
+@app.get("/api/test")
+async def test_connection():
+    return {
+        "status": "success",
+        "message": "接続成功！",
+        "timestamp": int(time.time())
+    }
 @app.get("/api/labs")
 async def get_labs():
     """研究室一覧取得"""
