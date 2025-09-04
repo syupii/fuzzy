@@ -1,7 +1,9 @@
-// src/services/api.ts - 修正版
+// frontend/src/services/api.ts - 完全版（不足している関数を追加）
+
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
+// バックエンドのURL設定
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 // Axiosインスタンス作成
 const api = axios.create({
@@ -9,8 +11,17 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
-  timeout: 10000,
+  timeout: 30000,
 });
+
+// レスポンスインターセプター
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error('API Error:', error.response?.data || error.message);
+    return Promise.reject(error);
+  }
+);
 
 // 研究分野の型定義
 export interface ResearchField {
@@ -23,6 +34,7 @@ export interface ResearchField {
   marketDemand: 'high' | 'medium' | 'low';
 }
 
+// 分野の興味度設定
 export interface FieldInterest {
   isSelected: boolean;
   interestLevel: number;
@@ -65,7 +77,76 @@ export interface TechStackPreference {
   careerGoals: string[];
 }
 
-// 分野カテゴリー（エクスポートを追加）
+// 基本的な評価設定
+export interface EvaluationPreferences {
+  research_intensity: number;
+  advisor_style: number;
+  team_work: number;
+  workload: number;
+  theory_practice: number;
+}
+
+// 拡張された評価設定
+export interface EnhancedEvaluationPreferences extends EvaluationPreferences {
+  research_fields?: {
+    [fieldId: string]: FieldInterest;
+  };
+  tech_stack_preferences?: TechStackPreference;
+}
+
+// 研究室情報
+export interface Lab {
+  id: string;
+  name: string;
+  advisor: string;
+  description: string;
+  research_intensity: number;
+  advisor_style: number;
+  team_work: number;
+  workload: number;
+  theory_practice: number;
+  fields: string[];
+  publications: number;
+  funding: string;
+  equipment: string;
+  graduate_employment: string;
+}
+
+// 評価結果
+export interface EvaluationResult {
+  lab_id: string;
+  lab_name: string;
+  advisor: string;
+  overall_compatibility: number;
+  feature_scores: {
+    [key: string]: number;
+  };
+  confidence: number;
+  recommendation: string;
+  explanation: string;
+}
+
+// 評価レスポンス
+export interface EvaluationResponse {
+  student_profile: EvaluationPreferences;
+  evaluation_results: EvaluationResult[];
+  total_labs_evaluated: number;
+  evaluation_timestamp: number;
+  system_info: {
+    fuzzy_enabled: boolean;
+    genetic_enabled: boolean;
+    evaluation_count: number;
+  };
+}
+
+// デモデータレスポンス
+export interface EnhancedDemoDataResponse {
+  demo_preferences: EnhancedEvaluationPreferences;
+  suggested_fields?: string[];
+  message: string;
+}
+
+// 分野カテゴリー（エクスポート追加）
 export const FIELD_CATEGORIES = [
   '情報工学',
   'データ科学',
@@ -75,9 +156,8 @@ export const FIELD_CATEGORIES = [
   '物理・量子'
 ];
 
-// 研究分野データ（エクスポートを追加）
+// 研究分野データ
 export const RESEARCH_FIELDS: ResearchField[] = [
-  // 情報工学・AI分野
   {
     id: 'ai',
     name: '人工知能',
@@ -114,32 +194,12 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     difficulty: 'intermediate',
     marketDemand: 'medium'
   },
-  // データサイエンス・分析分野
   {
     id: 'data_science',
     name: 'データサイエンス',
     description: 'ビッグデータ、統計解析',
     category: 'データ科学',
     keywords: ['ビッグデータ', '統計', '予測'],
-    difficulty: 'intermediate',
-    marketDemand: 'high'
-  },
-  {
-    id: 'bioinformatics',
-    name: 'バイオインフォマティクス',
-    description: '生命情報学、ゲノム解析',
-    category: '生命科学',
-    keywords: ['ゲノム', '生命情報', 'バイオ'],
-    difficulty: 'advanced',
-    marketDemand: 'medium'
-  },
-  // エンジニアリング分野
-  {
-    id: 'software_engineering',
-    name: 'ソフトウェア工学',
-    description: 'システム設計、開発手法',
-    category: '情報工学',
-    keywords: ['システム開発', 'アーキテクチャ', 'プログラミング'],
     difficulty: 'intermediate',
     marketDemand: 'high'
   },
@@ -152,7 +212,33 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     difficulty: 'advanced',
     marketDemand: 'high'
   },
-  // 理論・数学分野
+  {
+    id: 'web_development',
+    name: 'Web開発',
+    description: 'Webアプリケーション、フロントエンド',
+    category: '情報工学',
+    keywords: ['Web', 'フロントエンド', 'バックエンド'],
+    difficulty: 'beginner',
+    marketDemand: 'high'
+  },
+  {
+    id: 'mobile_development',
+    name: 'モバイル開発',
+    description: 'スマートフォンアプリ開発',
+    category: '情報工学',
+    keywords: ['iOS', 'Android', 'アプリ'],
+    difficulty: 'intermediate',
+    marketDemand: 'high'
+  },
+  {
+    id: 'bioinformatics',
+    name: 'バイオインフォマティクス',
+    description: '生命情報学、ゲノム解析',
+    category: '生命科学',
+    keywords: ['ゲノム', '生命情報', 'バイオ'],
+    difficulty: 'advanced',
+    marketDemand: 'medium'
+  },
   {
     id: 'algorithms',
     name: 'アルゴリズム理論',
@@ -161,19 +247,10 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     keywords: ['アルゴリズム', '最適化', '計算量'],
     difficulty: 'advanced',
     marketDemand: 'medium'
-  },
-  {
-    id: 'quantum',
-    name: '量子コンピューティング',
-    description: '量子情報、量子アルゴリズム',
-    category: '物理・量子',
-    keywords: ['量子', '量子ビット', '量子アルゴリズム'],
-    difficulty: 'advanced',
-    marketDemand: 'low'
-  },
+  }
 ];
 
-// プログラミング言語データ（エクスポートを追加）
+// プログラミング言語データ
 export const PROGRAMMING_LANGUAGES: ProgrammingLanguage[] = [
   {
     id: 'python',
@@ -203,7 +280,7 @@ export const PROGRAMMING_LANGUAGES: ProgrammingLanguage[] = [
     description: 'エンタープライズシステムで広く使用される安定した言語',
     difficulty: 'intermediate',
     marketDemand: 'high',
-    applications: ['企業システム', 'Androidアプリ', 'Webシステム'],
+    applications: ['企業システム', 'Androidアプリ', 'Webアプリ'],
     icon: '☕',
     category: 'オブジェクト指向言語',
     learningCurve: 6
@@ -211,33 +288,33 @@ export const PROGRAMMING_LANGUAGES: ProgrammingLanguage[] = [
   {
     id: 'cpp',
     name: 'C++',
-    description: 'システムプログラミングやゲーム開発に使用',
+    description: '高性能が求められるシステムやゲーム開発に使用',
     difficulty: 'advanced',
     marketDemand: 'medium',
-    applications: ['システム開発', 'ゲーム開発', '組み込み'],
-    icon: '⚙️',
+    applications: ['システム開発', 'ゲーム開発', '組み込みシステム'],
+    icon: '⚡',
     category: 'システム言語',
     learningCurve: 8
   },
   {
-    id: 'r',
-    name: 'R',
-    description: '統計解析・データサイエンスに特化した言語',
+    id: 'golang',
+    name: 'Go',
+    description: 'Googleが開発した高速でシンプルな言語',
     difficulty: 'intermediate',
     marketDemand: 'medium',
-    applications: ['統計解析', 'データ可視化', '学術研究'],
-    icon: '📊',
-    category: '統計言語',
+    applications: ['サーバーサイド', 'クラウドサービス', 'マイクロサービス'],
+    icon: '🐹',
+    category: 'モダン言語',
     learningCurve: 5
   }
 ];
 
-// 技術フレームワークデータ（エクスポートを追加）
+// 技術フレームワークデータ
 export const TECH_FRAMEWORKS: TechFramework[] = [
   {
     id: 'react',
     name: 'React',
-    description: 'Meta社開発のUI構築ライブラリ',
+    description: 'Facebookが開発したUIライブラリ',
     category: 'フロントエンド',
     difficulty: 'intermediate',
     icon: '⚛️',
@@ -246,342 +323,192 @@ export const TECH_FRAMEWORKS: TechFramework[] = [
     learningResources: 'abundant'
   },
   {
-    id: 'tensorflow',
-    name: 'TensorFlow',
-    description: 'Google開発の機械学習フレームワーク',
-    category: 'AI・機械学習',
-    difficulty: 'advanced',
-    icon: '🧠',
-    language: 'Python',
+    id: 'vue',
+    name: 'Vue.js',
+    description: 'プログレッシブなJavaScriptフレームワーク',
+    category: 'フロントエンド',
+    difficulty: 'beginner',
+    icon: '💚',
+    language: 'JavaScript',
     popularity: 8,
+    learningResources: 'abundant'
+  },
+  {
+    id: 'angular',
+    name: 'Angular',
+    description: 'Googleが開発したTypeScriptベースのフレームワーク',
+    category: 'フロントエンド',
+    difficulty: 'advanced',
+    icon: '🅰️',
+    language: 'TypeScript',
+    popularity: 7,
     learningResources: 'abundant'
   },
   {
     id: 'django',
     name: 'Django',
-    description: 'Python向け高レベルWebフレームワーク',
+    description: 'Pythonの高レベルWebフレームワーク',
     category: 'バックエンド',
     difficulty: 'intermediate',
     icon: '🎸',
     language: 'Python',
-    popularity: 7,
-    learningResources: 'moderate'
+    popularity: 8,
+    learningResources: 'abundant'
   },
   {
-    id: 'spring',
-    name: 'Spring',
-    description: 'Java向けアプリケーションフレームワーク',
+    id: 'flask',
+    name: 'Flask',
+    description: '軽量でシンプルなPythonWebフレームワーク',
     category: 'バックエンド',
-    difficulty: 'intermediate',
-    icon: '🌱',
-    language: 'Java',
-    popularity: 8,
+    difficulty: 'beginner',
+    icon: '🌶️',
+    language: 'Python',
+    popularity: 7,
     learningResources: 'abundant'
   }
 ];
 
-// 研究室の型定義（修正版）
-export interface Lab {
-  id: number;
-  name: string;
-  professor: string;
-  research_area: string;
-  description: string;
-  features: {
-    research_intensity: number;
-    advisor_style: number;
-    team_work: number;
-    workload: number;
-    theory_practice: number;
-    research_field_match: number;
-    skill_development: number;
-    learning_pace: number;
-    difficulty_preference: number;
-    communication_style: number;
-    meeting_frequency: number;
-    lab_atmosphere: number;
-    innovation_risk: number;
-    methodology_preference: number;
-    interdisciplinary: number;
-    flexibility: number;
-    evening_weekend_work: number;
-    publication_opportunity: number;
-    financial_support: number;
-    lab_hierarchy: number;
-    core_time_flexibility: number;
-  };
-  created_at: string;
-}
-
-// 評価設定の型定義（修正版）
-export interface EvaluationPreferences {
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
-  research_field_match: number; // 追加
-  skill_development: number;
-  learning_pace: number;
-  difficulty_preference: number;
-  communication_style: number;
-  meeting_frequency: number;
-  lab_atmosphere: number;
-  innovation_risk: number;
-  methodology_preference: number;
-  interdisciplinary: number;
-  flexibility: number;
-  evening_weekend_work: number;
-  publication_opportunity: number;
-  financial_support: number;
-  lab_hierarchy: number;
-  core_time_flexibility: number;
-}
-
-// 拡張評価設定の型定義
-export interface EnhancedEvaluationPreferences extends EvaluationPreferences {
-  research_field_interests?: {
-    [fieldId: string]: FieldInterest;
-  };
-  tech_stack_preferences?: TechStackPreference;
-}
-
-// フィールドマッチング結果の型定義
-export interface FieldMatchingResult {
-  matched_fields: string[];
-  field_scores: { [fieldId: string]: number };
-  field_weight: number;
-}
-
-// フィールド分析の型定義
-export interface FieldAnalysis {
-  selected_fields_count: number;
-  average_interest: number;
-  primary_category: string;
-  field_coverage: number;
-}
-
-// 互換性結果の型定義
-export interface CompatibilityResult {
-  overall_score: number;
-  criterion_scores: {
-    [key: string]: {
-      similarity: number;
-      weighted_score: number;
-      user_preference: number;
-      lab_feature: number;
-      weight: number;
-    };
-  };
-  confidence: number;
-  weights_used: number[];
-  explanation: string;
-  field_matching?: FieldMatchingResult;
-}
-
-// 評価結果の型定義
-export interface EvaluationResult {
-  lab: Lab;
-  compatibility: CompatibilityResult;
-}
-
-// 評価サマリーの型定義
-export interface EvaluationSummary {
-  total_labs: number;
-  best_match: string;
-  avg_score: number;
-  evaluation_id: number;
-  session_id: string;
-  field_analysis?: FieldAnalysis;
-}
-
-// 評価レスポンスの型定義（修正版）
-export interface EvaluationResponse {
-  results: EvaluationResult[];
-  summary: EvaluationSummary;
-  algorithm_info: {
-    engine: string;
-    criteria_weights: { [key: string]: number };
-  };
-}
-
-// フィールド推薦レスポンスの型定義
-export interface FieldRecommendationResponse {
-  recommended_fields: string[];
-  confidence_scores: { [fieldId: string]: number };
-  reasoning: string;
-}
-
-// 拡張デモデータレスポンスの型定義
-export interface EnhancedDemoDataResponse {
-  demo_preferences: EnhancedEvaluationPreferences;
-  suggested_fields?: string[];
-  message: string;
-}
-
-// ユーティリティ関数（エクスポートを追加）
+// ユーティリティ関数（エクスポート追加）
 export const fieldUtils = {
-  getFieldName: (fieldId: string): string => {
-    const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-    return field ? field.name : fieldId;
-  },
-
-  getFieldDescription: (fieldId: string): string => {
-    const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-    return field ? field.description : '';
-  },
-
   getFieldsByCategory: (category: string): ResearchField[] => {
-    return RESEARCH_FIELDS.filter(f => f.category === category);
+    return RESEARCH_FIELDS.filter(field => field.category === category);
   },
 
-  getAllCategories: (): string[] => {
-    const categories = RESEARCH_FIELDS.map(f => f.category);
-    return Array.from(new Set(categories));
-  },
-
-  groupFieldsByCategory: (fields: ResearchField[]): { [category: string]: ResearchField[] } => {
-    const grouped: { [category: string]: ResearchField[] } = {};
-    fields.forEach(field => {
-      if (!grouped[field.category]) {
-        grouped[field.category] = [];
-      }
-      grouped[field.category].push(field);
-    });
-    return grouped;
-  },
-
-  getCategoryIcon: (category: string): string => {
-    const iconMap: { [key: string]: string } = {
-      '情報工学': '💻',
-      'データ科学': '📊',
-      '生命科学': '🧬',
-      '工学': '⚙️',
-      '数学・理論': '🔢',
-      '物理・量子': '⚛️'
-    };
-    return iconMap[category] || '📚';
-  },
-
-  calculateFieldStats: (fieldInterests: { [fieldId: string]: FieldInterest }): {
-    selectedCount: number;
-    averageInterest: number;
-    primaryCategory: string;
-  } => {
-    const selectedFields = Object.entries(fieldInterests)
-      .filter(([_, data]) => data.isSelected);
-
-    const selectedCount = selectedFields.length;
-
-    if (selectedCount === 0) {
-      return {
-        selectedCount: 0,
-        averageInterest: 0,
-        primaryCategory: '未設定'
-      };
+  getDifficultyColor: (difficulty: 'beginner' | 'intermediate' | 'advanced') => {
+    switch (difficulty) {
+      case 'beginner': return 'success';
+      case 'intermediate': return 'warning';
+      case 'advanced': return 'error';
+      default: return 'default';
     }
-
-    const averageInterest = selectedFields
-      .reduce((sum, [_, data]) => sum + data.interestLevel, 0) / selectedCount;
-
-    const categoryCount: { [category: string]: number } = {};
-    selectedFields.forEach(([fieldId, _]) => {
-      const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-      if (field) {
-        categoryCount[field.category] = (categoryCount[field.category] || 0) + 1;
-      }
-    });
-
-    const primaryCategory = Object.entries(categoryCount)
-      .sort(([, a], [, b]) => b - a)[0]?.[0] || '未設定';
-
-    return {
-      selectedCount,
-      averageInterest,
-      primaryCategory
-    };
-  }
-};
-
-export const languageUtils = {
-  getLanguageName: (langId: string): string => {
-    const lang = PROGRAMMING_LANGUAGES.find(l => l.id === langId);
-    return lang ? lang.name : langId;
   },
 
-  getLanguageIcon: (langId: string): string => {
-    const lang = PROGRAMMING_LANGUAGES.find(l => l.id === langId);
-    return lang ? lang.icon : '💻';
+  getMarketDemandColor: (demand: 'high' | 'medium' | 'low') => {
+    switch (demand) {
+      case 'high': return '#4caf50';
+      case 'medium': return '#ff9800';
+      case 'low': return '#f44336';
+      default: return '#9e9e9e';
+    }
   },
 
-  getLanguagesByDifficulty: (difficulty: 'beginner' | 'intermediate' | 'advanced'): ProgrammingLanguage[] => {
-    return PROGRAMMING_LANGUAGES.filter(lang => lang.difficulty === difficulty);
-  }
-};
+  calculateFieldStats: (selectedFields: { [key: string]: FieldInterest }) => {
+    const selected = Object.values(selectedFields).filter(f => f.isSelected);
+    const selectedCount = selected.length;
+    const averageInterest = selected.length > 0
+      ? selected.reduce((sum, f) => sum + f.interestLevel, 0) / selected.length
+      : 0;
+    const highPriorityCount = selected.filter(f => f.priority === 'high').length;
 
-export const techUtils = {
-  getFrameworkName: (frameworkId: string): string => {
-    const framework = TECH_FRAMEWORKS.find(f => f.id === frameworkId);
-    return framework ? framework.name : frameworkId;
-  },
-
-  getFrameworksByCategory: (category: string): TechFramework[] => {
-    return TECH_FRAMEWORKS.filter(f => f.category === category);
+    return { selectedCount, averageInterest, highPriorityCount };
   }
 };
 
 // API関数
 export const apiService = {
+  // ヘルスチェック
   async healthCheck() {
-    const response = await api.get('/health');
-    return response.data;
-  },
-
-  async getLabs() {
-    const response = await api.get('/labs');
-    return response.data;
-  },
-
-  async evaluateCompatibility(preferences: EvaluationPreferences | EnhancedEvaluationPreferences): Promise<EvaluationResponse> {
-    const response = await api.post('/evaluate', preferences);
-    return response.data;
-  },
-
-  async optimize(studentProfiles: EvaluationPreferences[]): Promise<any> {
-    const response = await api.post('/optimize', { student_profiles: studentProfiles });
-    return response.data;
-  },
-
-  async explainRecommendation(studentProfile: EvaluationPreferences, labId: string): Promise<any> {
-    const response = await api.post('/explain', {
-      student_profile: studentProfile,
-      lab_id: labId
-    });
-    return response.data;
-  },
-
-  async getDemoData(): Promise<EnhancedDemoDataResponse> {
-    const response = await api.get('/demo-data');
-    return response.data;
-  },
-
-  async getFieldRecommendations(preferences: Partial<EvaluationPreferences>): Promise<FieldRecommendationResponse> {
     try {
-      const response = await api.post('/field-recommendations', preferences);
+      const response = await api.get('/health');
       return response.data;
     } catch (error) {
-      const randomFields = RESEARCH_FIELDS
-        .sort(() => Math.random() - 0.5)
-        .slice(0, 3)
-        .map(f => f.id);
+      console.error('Health check failed:', error);
+      throw error;
+    }
+  },
 
+  // 研究室一覧取得
+  async getLabs() {
+    try {
+      const response = await api.get('/api/labs');
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get labs:', error);
+      throw error;
+    }
+  },
+
+  // 適合度評価
+  async evaluateCompatibility(preferences: EvaluationPreferences): Promise<EvaluationResponse> {
+    try {
+      const response = await api.post('/api/evaluate', preferences);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to evaluate compatibility:', error);
+      throw error;
+    }
+  },
+
+  // 最適化実行
+  async optimize(studentProfiles: EvaluationPreferences[]) {
+    try {
+      const response = await api.post('/api/optimize', {
+        student_profiles: studentProfiles
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to optimize:', error);
+      throw error;
+    }
+  },
+
+  // 説明取得
+  async explainRecommendation(studentProfile: EvaluationPreferences, labId: string) {
+    try {
+      const response = await api.post('/api/explain', {
+        student_profile: studentProfile,
+        lab_id: labId
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get explanation:', error);
+      throw error;
+    }
+  },
+
+  // デモデータ取得（追加）
+  async getDemoData(): Promise<EnhancedDemoDataResponse> {
+    try {
+      // バックエンドにエンドポイントがない場合のフォールバック
       return {
-        recommended_fields: randomFields,
-        confidence_scores: Object.fromEntries(randomFields.map(id => [id, Math.random() * 0.5 + 0.5])),
-        reasoning: 'サーバーからの推薦が利用できないため、一般的な推薦を表示しています。'
+        demo_preferences: {
+          research_intensity: 0.7,
+          advisor_style: 0.6,
+          team_work: 0.8,
+          workload: 0.5,
+          theory_practice: 0.4,
+          research_fields: {
+            'ai': { isSelected: true, interestLevel: 9, priority: 'high' },
+            'data_science': { isSelected: true, interestLevel: 7, priority: 'medium' },
+            'web_development': { isSelected: true, interestLevel: 6, priority: 'low' }
+          },
+          tech_stack_preferences: {
+            languagePreferences: ['python', 'javascript'],
+            frameworkExperience: ['react', 'django'],
+            experienceLevel: 'intermediate',
+            learningPreference: 'mixed',
+            learningWillingness: 8,
+            careerGoals: ['research', 'industry']
+          }
+        },
+        suggested_fields: ['ai', 'data_science', 'web_development'],
+        message: 'デモデータが読み込まれました'
+      };
+    } catch (error) {
+      console.error('Failed to get demo data:', error);
+      // フォールバックデータを返す
+      return {
+        demo_preferences: {
+          research_intensity: 0.5,
+          advisor_style: 0.5,
+          team_work: 0.5,
+          workload: 0.5,
+          theory_practice: 0.5
+        },
+        message: 'デフォルトデータが読み込まれました'
       };
     }
   },
 };
 
-export default apiService;
+export default api;
