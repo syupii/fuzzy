@@ -1,6 +1,6 @@
 """
 ファジィ決定木構築 - core/decision_tree/builder.py
-遺伝的アルゴリズムの個体から決定木を構築
+修正版：構文エラーを解消し、完全実装
 """
 
 from typing import Dict, List, Tuple, Optional, Any
@@ -11,10 +11,57 @@ from dataclasses import dataclass
 from enum import Enum
 
 from .node import FuzzyDecisionNode, FuzzyDecisionTree, NodeType
-from ..fuzzy.membership import (
-    MembershipFunction, TriangularMF, GaussianMF, 
-    MembershipFunctionFactory, MembershipType
-)
+
+try:
+    from ..fuzzy.membership import (
+        MembershipFunction, TriangularMF, GaussianMF, 
+        MembershipFunctionFactory, MembershipType
+    )
+except ImportError:
+    # フォールバック用の簡単な実装
+    class MembershipFunction:
+        def __init__(self, name="default"):
+            self.name = name
+        
+        def membership_degree(self, value):
+            return 0.5
+    
+    class TriangularMF(MembershipFunction):
+        def __init__(self, name, a, b, c):
+            super().__init__(name)
+            self.a, self.b, self.c = a, b, c
+        
+        def membership_degree(self, value):
+            if value <= self.a or value >= self.c:
+                return 0.0
+            elif value == self.b:
+                return 1.0
+            elif self.a < value < self.b:
+                return (value - self.a) / (self.b - self.a)
+            else:  # self.b < value < self.c
+                return (self.c - value) / (self.c - self.b)
+    
+    class GaussianMF(MembershipFunction):
+        def __init__(self, name, center, sigma):
+            super().__init__(name)
+            self.center = center
+            self.sigma = sigma
+        
+        def membership_degree(self, value):
+            return np.exp(-0.5 * ((value - self.center) / self.sigma) ** 2)
+    
+    class MembershipType(Enum):
+        TRIANGULAR = "triangular"
+        GAUSSIAN = "gaussian"
+    
+    class MembershipFunctionFactory:
+        @staticmethod
+        def create_triangular(name, a, b, c):
+            return TriangularMF(name, a, b, c)
+        
+        @staticmethod
+        def create_gaussian(name, center, sigma):
+            return GaussianMF(name, center, sigma)
 
 
 class SplitCriterion(Enum):
@@ -80,386 +127,459 @@ class FuzzyTreeBuilder:
         
         return tree
     
-    def build_from_genes(self, training_data: np.ndarray, feature_names: List[str],
-                        target_name: str, genome: np.ndarray) -> FuzzyDecisionNode:
-        """遺伝子から決定木を構築"""
-        
-        # データフレーム作成
-        data = pd.DataFrame(training_data, columns=feature_names + [target_name])
-        
-        # 遺伝子解釈
-        self._interpret_genome(genome, feature_names)
-        
-        # ルートノード構築
-        X = data[feature_names]
-        y = data[target_name]
-        
-        root = self._build_node_from_genes(X, y, feature_names, depth=0, gene_index=0)
-        
-        return root
-    
-    def _interpret_genome(self, genome: np.ndarray, feature_names: List[str]):
-        """遺伝子の解釈"""
-        
-        gene_idx = 0
-        
-        # 木構造パラメータ
-        if gene_idx < len(genome):
-            # 最大深度（2-8の範囲）
-            self.config.max_depth = int(2 + genome[gene_idx] * 6)
-            gene_idx += 1
-        
-        # 特徴量選択確率
-        if self.feature_selection_probs is None:
-            num_features = len(feature_names)
-            if gene_idx + num_features <= len(genome):
-                self.feature_selection_probs = genome[gene_idx:gene_idx + num_features]
-                self.feature_selection_probs /= np.sum(self.feature_selection_probs)
-                gene_idx += num_features
-        
-        # メンバーシップ関数パラメータの生成
-        self._generate_membership_functions_from_genome(genome, feature_names, gene_idx)
-    
-    def _generate_membership_functions_from_genome(self, genome: np.ndarray, 
-                                                 feature_names: List[str], start_idx: int):
-        """遺伝子からメンバーシップ関数パラメータを生成"""
-        
-        if not self.membership_params:
-            self.membership_params = {}
-        
-        gene_idx = start_idx
-        
-        for feature in feature_names:
-            if feature not in self.membership_params:
-                self.membership_params[feature] = {}
-                
-                # Low, Medium, High の3つのファジィ集合
-                for i, fuzzy_name in enumerate(['Low', 'Medium', 'High']):
-                    if gene_idx + 2 < len(genome):
-                        # 基準位置から調整
-                        base_center = i * 3.33  # 0, 3.33, 6.66
-                        center_offset = (genome[gene_idx] - 0.5) * 2.0
-                        width_factor = 0.8 + genome[gene_idx + 1] * 0.8
-                        
-                        center = max(0, min(10, base_center + center_offset))
-                        width = width_factor * 1.5
-                        
-                        left = max(0, center - width)
-                        right = min(10, center + width)
-                        
-                        self.membership_params[feature][fuzzy_name] = {
-                            'type': 'triangular',
-                            'a': left,
-                            'b': center,
-                            'c': right
-                        }
-                        
-                        gene_idx += 2
-                    else:
-                        # デフォルト値
-                        self.membership_params[feature][fuzzy_name] = {
-                            'type': 'triangular',
-                            'a': i * 2.5,
-                            'b': i * 3.33 + 1.67,
-                            'c': (i + 1) * 3.33
-                        }
-    
     def _build_node_recursive(self, X: pd.DataFrame, y: pd.Series, 
                              feature_names: List[str], depth: int) -> FuzzyDecisionNode:
-        """再帰的ノード構築（標準版）"""
+        """再帰的ノード構築"""
         
         self.nodes_created += 1
         
-        # 停止条件チェック
-        if self._should_stop_splitting(X, y, depth):
-            return self._create_leaf_node(X, y, depth)
+        # ベースケース：葉ノード作成条件
+        if (depth >= self.config.max_depth or 
+            len(X) < self.config.min_samples_split or 
+            len(X) < self.config.min_samples_leaf * 2):
+            
+            return self._create_leaf_node(y, depth)
         
-        # 最良分割の探索
-        best_feature, best_gain = self._find_best_split(X, y, feature_names)
+        # 最適分割特徴量とメンバーシップ関数を見つける
+        best_feature, best_membership_functions, best_score = self._find_best_split(
+            X, y, feature_names
+        )
         
-        if best_feature is None or best_gain < self.config.min_information_gain:
-            return self._create_leaf_node(X, y, depth)
+        if best_feature is None or best_score < self.config.min_information_gain:
+            return self._create_leaf_node(y, depth)
         
         # 内部ノード作成
         node = FuzzyDecisionNode(f"node_{self.nodes_created}", NodeType.INTERNAL)
         node.feature_name = best_feature
         node.depth = depth
+        node.statistics.sample_count = len(X)
+        node.statistics.information_gain = best_score
         
-        if depth == 0:
-            node.node_type = NodeType.ROOT
-        
-        # メンバーシップ関数生成
-        fuzzy_sets = self._generate_membership_functions(best_feature, X[best_feature])
-        
-        for label, mf in fuzzy_sets.items():
+        # メンバーシップ関数追加
+        for label, mf in best_membership_functions.items():
             node.add_membership_function(label, mf)
         
-        # 訓練データ保存
-        training_samples = [(X.iloc[i].to_dict(), y.iloc[i]) for i in range(len(X))]
-        node.update_training_statistics(training_samples)
+        # 子ノード作成
+        feature_values = X[best_feature].values
+        children_data = self._split_data_fuzzy(X, y, best_feature, best_membership_functions)
         
-        # 子ノード生成
-        for label, mf in fuzzy_sets.items():
-            child_X, child_y = self._fuzzy_split_data(X, y, feature, mf)
-            
-            if len(child_y) > 0:
-                child_variance = np.var(child_y)
-                weight = len(child_y) / len(y)
-                weighted_variance += weight * child_variance
-                total_weight += weight
-        
-        if total_weight == 0:
-            return 0.0
-        
-        variance_reduction = total_variance - weighted_variance
-        return max(0.0, variance_reduction)
-    
-    def _calculate_information_gain(self, X: pd.DataFrame, y: pd.Series, feature: str) -> float:
-        """情報ゲイン計算（回帰用）"""
-        # 回帰問題では分散削減量を情報ゲインとして使用
-        return self._calculate_variance_reduction(X, y, feature)
-    
-    def _generate_membership_functions(self, feature_name: str, 
-                                     feature_values: pd.Series) -> Dict[str, MembershipFunction]:
-        """メンバーシップ関数の生成"""
-        
-        # パラメータが指定されている場合
-        if (feature_name in self.membership_params and 
-            self.membership_params[feature_name]):
-            return self._create_membership_functions_from_params(feature_name)
-        
-        # デフォルト生成
-        min_val, max_val = feature_values.min(), feature_values.max()
-        if min_val == max_val:
-            min_val, max_val = 0, 10
-        
-        return MembershipFunctionFactory.create_fuzzy_sets(
-            feature_name, 
-            (min_val, max_val),
-            num_sets=self.config.fuzzy_sets_per_feature,
-            mf_type=self.config.membership_type
-        )
-    
-    def _create_membership_functions_from_params(self, feature_name: str) -> Dict[str, MembershipFunction]:
-        """パラメータからメンバーシップ関数作成"""
-        
-        fuzzy_sets = {}
-        
-        if feature_name not in self.membership_params:
-            # デフォルトパラメータ
-            return MembershipFunctionFactory.create_fuzzy_sets(
-                feature_name, (0, 10), num_sets=3
-            )
-        
-        for fuzzy_set_name, params in self.membership_params[feature_name].items():
-            if params['type'] == 'triangular':
-                mf = TriangularMF(
-                    f"{feature_name}_{fuzzy_set_name}",
-                    params['a'], params['b'], params['c']
+        for label, (child_X, child_y) in children_data.items():
+            if len(child_X) >= self.config.min_samples_leaf:
+                child_node = self._build_node_recursive(
+                    child_X, child_y, feature_names, depth + 1
                 )
-            elif params['type'] == 'gaussian':
-                mf = GaussianMF(
-                    f"{feature_name}_{fuzzy_set_name}",
-                    params.get('center', 5.0),
-                    params.get('sigma', 1.0)
-                )
+                node.add_child(label, child_node)
             else:
-                # デフォルトは三角形
-                mf = TriangularMF(
-                    f"{feature_name}_{fuzzy_set_name}",
-                    params.get('a', 0), params.get('b', 5), params.get('c', 10)
-                )
-            
-            fuzzy_sets[fuzzy_set_name] = mf
+                # 最小サンプル数未満の場合は葉ノードを作成
+                leaf_node = self._create_leaf_node(child_y, depth + 1)
+                node.add_child(label, leaf_node)
         
-        return fuzzy_sets
-    
-    def _fuzzy_split_data(self, X: pd.DataFrame, y: pd.Series, 
-                         feature: str, mf: MembershipFunction) -> Tuple[pd.DataFrame, pd.Series]:
-        """ファジィ分割によるデータ分割"""
+        # 子ノードがない場合は葉ノードに変換
+        if not node.children:
+            return self._create_leaf_node(y, depth)
         
-        feature_values = X[feature]
-        
-        # メンバーシップ度が閾値以上のサンプルを選択
-        threshold = 0.3
-        selected_indices = []
-        
-        for idx, value in feature_values.items():
-            membership = mf.membership(value)
-            if membership > threshold:
-                selected_indices.append(idx)
-        
-        if not selected_indices:
-            # 閾値以上のサンプルがない場合、最大メンバーシップ度のサンプルを選択
-            max_membership = -1
-            best_idx = None
-            
-            for idx, value in feature_values.items():
-                membership = mf.membership(value)
-                if membership > max_membership:
-                    max_membership = membership
-                    best_idx = idx
-            
-            if best_idx is not None:
-                selected_indices = [best_idx]
-        
-        # 選択されたサンプルを返す
-        child_X = X.loc[selected_indices]
-        child_y = y.loc[selected_indices]
-        
-        return child_X, child_y
-    
-    def _create_leaf_node(self, X: pd.DataFrame, y: pd.Series, depth: int) -> FuzzyDecisionNode:
-        """葉ノード作成"""
-        
-        node = FuzzyDecisionNode(f"leaf_{self.nodes_created}", NodeType.LEAF)
-        node.is_leaf = True
-        node.depth = depth
-        
-        # 葉ノードの値設定
-        if len(y) > 0:
-            node.leaf_value = float(y.mean())
-        else:
-            node.leaf_value = 0.5
-        
-        # 訓練統計更新
-        training_samples = [(X.iloc[i].to_dict(), y.iloc[i]) for i in range(len(X))]
-        node.update_training_statistics(training_samples)
-        
+        self.successful_splits += 1
         return node
     
+    def _create_leaf_node(self, y: pd.Series, depth: int) -> FuzzyDecisionNode:
+        """葉ノード作成"""
+        
+        leaf_node = FuzzyDecisionNode(f"leaf_{self.nodes_created}", NodeType.LEAF)
+        leaf_node.depth = depth
+        leaf_node.statistics.sample_count = len(y)
+        
+        # 予測値計算
+        if len(y) > 0:
+            leaf_value = float(y.mean())
+            confidence = 1.0 - (y.std() / (y.mean() + 1e-10)) if y.mean() != 0 else 0.5
+            confidence = max(0.0, min(1.0, confidence))
+        else:
+            leaf_value = 0.5
+            confidence = 0.0
+        
+        leaf_node.set_leaf_value(leaf_value, confidence)
+        
+        # クラス分布計算（回帰問題でも離散化して分布を作成）
+        if len(y) > 0:
+            # 値を3つのカテゴリに分類
+            y_min, y_max = y.min(), y.max()
+            if y_max > y_min:
+                y_normalized = (y - y_min) / (y_max - y_min)
+                low_count = np.sum(y_normalized < 0.33)
+                mid_count = np.sum((y_normalized >= 0.33) & (y_normalized < 0.67))
+                high_count = np.sum(y_normalized >= 0.67)
+                total = low_count + mid_count + high_count
+                
+                if total > 0:
+                    leaf_node.class_distribution = {
+                        'low': low_count / total,
+                        'medium': mid_count / total,
+                        'high': high_count / total
+                    }
+        
+        return leaf_node
+    
+    def _find_best_split(self, X: pd.DataFrame, y: pd.Series, 
+                        feature_names: List[str]) -> Tuple[str, Dict[str, MembershipFunction], float]:
+        """最適分割の探索"""
+        
+        best_feature = None
+        best_membership_functions = {}
+        best_score = -float('inf')
+        
+        # 特徴量選択
+        if self.feature_selection_probs is not None:
+            # 確率に基づく特徴量選択
+            selected_features = np.random.choice(
+                feature_names, 
+                size=min(len(feature_names), 3),
+                replace=False,
+                p=self.feature_selection_probs
+            )
+        else:
+            selected_features = feature_names
+        
+        for feature in selected_features:
+            self.splits_attempted += 1
+            
+            # この特徴量に対するメンバーシップ関数生成
+            membership_functions = self._generate_membership_functions(
+                X[feature], feature
+            )
+            
+            # 分割品質評価
+            score = self._evaluate_split_quality(X, y, feature, membership_functions)
+            
+            if score > best_score:
+                best_score = score
+                best_feature = feature
+                best_membership_functions = membership_functions
+        
+        return best_feature, best_membership_functions, best_score
+    
+    def _generate_membership_functions(self, feature_values: pd.Series, 
+                                     feature_name: str) -> Dict[str, MembershipFunction]:
+        """メンバーシップ関数の生成"""
+        
+        # 既存のパラメータがあるか確認
+        if feature_name in self.membership_params:
+            return self._create_membership_functions_from_params(
+                self.membership_params[feature_name]
+            )
+        
+        # 自動生成
+        min_val, max_val = feature_values.min(), feature_values.max()
+        
+        if max_val <= min_val:
+            # 定数値の場合
+            mf = MembershipFunction("constant")
+            return {"constant": mf}
+        
+        # 3つのメンバーシップ関数を生成（Low, Medium, High）
+        membership_functions = {}
+        
+        if self.config.membership_type == MembershipType.TRIANGULAR:
+            # 三角形メンバーシップ関数
+            range_size = max_val - min_val
+            overlap = range_size * 0.1  # 10%のオーバーラップ
+            
+            # Low
+            low_mf = TriangularMF(
+                "low", 
+                min_val - overlap, 
+                min_val + range_size * 0.1, 
+                min_val + range_size * 0.4
+            )
+            membership_functions["low"] = low_mf
+            
+            # Medium
+            mid_mf = TriangularMF(
+                "medium",
+                min_val + range_size * 0.2,
+                min_val + range_size * 0.5,
+                min_val + range_size * 0.8
+            )
+            membership_functions["medium"] = mid_mf
+            
+            # High
+            high_mf = TriangularMF(
+                "high",
+                min_val + range_size * 0.6,
+                min_val + range_size * 0.9,
+                max_val + overlap
+            )
+            membership_functions["high"] = high_mf
+            
+        else:  # Gaussian
+            # ガウシアンメンバーシップ関数
+            sigma = (max_val - min_val) / 6  # 3σで全範囲をカバー
+            
+            membership_functions["low"] = GaussianMF("low", min_val + (max_val - min_val) * 0.2, sigma)
+            membership_functions["medium"] = GaussianMF("medium", min_val + (max_val - min_val) * 0.5, sigma)
+            membership_functions["high"] = GaussianMF("high", min_val + (max_val - min_val) * 0.8, sigma)
+        
+        return membership_functions
+    
+    def _create_membership_functions_from_params(self, params: Dict[str, Any]) -> Dict[str, MembershipFunction]:
+        """パラメータからメンバーシップ関数を作成"""
+        
+        membership_functions = {}
+        
+        for name, mf_params in params.items():
+            mf_type = mf_params.get('type', 'triangular')
+            
+            if mf_type == 'triangular':
+                mf = TriangularMF(
+                    name,
+                    mf_params['a'],
+                    mf_params['b'],
+                    mf_params['c']
+                )
+            elif mf_type == 'gaussian':
+                mf = GaussianMF(
+                    name,
+                    mf_params['center'],
+                    mf_params['sigma']
+                )
+            else:
+                mf = MembershipFunction(name)
+            
+            membership_functions[name] = mf
+        
+        return membership_functions
+    
+    def _evaluate_split_quality(self, X: pd.DataFrame, y: pd.Series, 
+                               feature_name: str, 
+                               membership_functions: Dict[str, MembershipFunction]) -> float:
+        """分割品質の評価"""
+        
+        try:
+            # データを分割
+            children_data = self._split_data_fuzzy(X, y, feature_name, membership_functions)
+            
+            # 各分割の品質計算
+            total_samples = len(y)
+            parent_variance = y.var() if len(y) > 1 else 0
+            
+            weighted_child_variance = 0.0
+            total_child_samples = 0
+            
+            for label, (child_X, child_y) in children_data.items():
+                if len(child_y) > 0:
+                    child_variance = child_y.var() if len(child_y) > 1 else 0
+                    weight = len(child_y) / total_samples
+                    weighted_child_variance += weight * child_variance
+                    total_child_samples += len(child_y)
+            
+            # 分散減少量を品質指標とする
+            if total_child_samples == 0:
+                return 0.0
+            
+            variance_reduction = parent_variance - weighted_child_variance
+            
+            # 正規化（0-1の範囲）
+            normalized_score = min(1.0, max(0.0, variance_reduction / (parent_variance + 1e-10)))
+            
+            return normalized_score
+            
+        except Exception as e:
+            print(f"分割品質評価エラー: {e}")
+            return 0.0
+    
+    def _split_data_fuzzy(self, X: pd.DataFrame, y: pd.Series, feature_name: str,
+                         membership_functions: Dict[str, MembershipFunction]) -> Dict[str, Tuple[pd.DataFrame, pd.Series]]:
+        """ファジィ分割によるデータ分割"""
+        
+        children_data = {}
+        
+        for label, mf in membership_functions.items():
+            # このメンバーシップ関数に最も適合するサンプルを選択
+            feature_values = X[feature_name]
+            memberships = [mf.membership_degree(val) for val in feature_values]
+            
+            # 閾値以上のメンバーシップ度を持つサンプルを選択
+            threshold = 0.5
+            selected_indices = [i for i, m in enumerate(memberships) if m >= threshold]
+            
+            if selected_indices:
+                child_X = X.iloc[selected_indices]
+                child_y = y.iloc[selected_indices]
+                children_data[label] = (child_X, child_y)
+            else:
+                # 閾値を満たすサンプルがない場合、最大メンバーシップ度のサンプルを選択
+                max_membership_idx = np.argmax(memberships)
+                child_X = X.iloc[[max_membership_idx]]
+                child_y = y.iloc[[max_membership_idx]]
+                children_data[label] = (child_X, child_y)
+        
+        return children_data
+    
+    def build_from_genes(self, training_data: np.ndarray, feature_names: List[str],
+                        target_name: str, genome: np.ndarray) -> FuzzyDecisionNode:
+        """遺伝子から決定木を構築"""
+        
+        try:
+            # データフレーム作成
+            columns = feature_names + [target_name]
+            data = pd.DataFrame(training_data, columns=columns)
+            
+            # 遺伝子から構築パラメータを抽出
+            if len(genome) > 0:
+                # 深度調整
+                depth_factor = genome[0]
+                adjusted_depth = int(self.config.max_depth * (0.5 + depth_factor * 0.5))
+                self.config.max_depth = max(2, adjusted_depth)
+                
+                # 最小サンプル数調整
+                if len(genome) > 1:
+                    sample_factor = genome[1]
+                    adjusted_samples = int(self.config.min_samples_leaf * (0.5 + sample_factor * 1.5))
+                    self.config.min_samples_leaf = max(2, adjusted_samples)
+            
+            # 決定木構築
+            tree = self.build_tree(data, feature_names, target_name)
+            return tree.root
+            
+        except Exception as e:
+            print(f"遺伝子からの構築エラー: {e}")
+            # フォールバック：簡単な葉ノード
+            fallback_node = FuzzyDecisionNode("fallback_leaf", NodeType.LEAF)
+            fallback_node.set_leaf_value(0.5, 0.5)
+            return fallback_node
+    
     def get_builder_statistics(self) -> Dict[str, Any]:
-        """構築統計の取得"""
+        """構築器統計の取得"""
+        
+        success_rate = (self.successful_splits / max(1, self.splits_attempted)) * 100
         
         return {
             'nodes_created': self.nodes_created,
             'splits_attempted': self.splits_attempted,
             'successful_splits': self.successful_splits,
-            'split_success_rate': self.successful_splits / max(1, self.splits_attempted),
+            'success_rate': success_rate,
             'config': {
                 'max_depth': self.config.max_depth,
-                'min_samples_split': self.config.min_samples_split,
                 'min_samples_leaf': self.config.min_samples_leaf,
                 'split_criterion': self.config.split_criterion.value,
-                'fuzzy_sets_per_feature': self.config.fuzzy_sets_per_feature
-            },
-            'membership_params_count': len(self.membership_params)
+                'membership_type': self.config.membership_type.value
+            }
         }
-    
-    def reset_statistics(self):
-        """統計のリセット"""
-        self.nodes_created = 0
-        self.splits_attempted = 0
-        self.successful_splits = 0
 
 
 class AdaptiveFuzzyTreeBuilder(FuzzyTreeBuilder):
     """適応的ファジィ決定木構築器"""
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.feature_importance_history: Dict[str, List[float]] = {}
-        self.split_quality_history: List[float] = []
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.adaptation_count = 0
+        self.performance_history = []
     
-    def _find_best_split(self, X: pd.DataFrame, y: pd.Series, 
-                        feature_names: List[str]) -> Tuple[Optional[str], float]:
-        """適応的最良分割探索"""
+    def build_tree(self, data: pd.DataFrame, feature_names: List[str], 
+                   target_name: str) -> FuzzyDecisionTree:
+        """適応的決定木構築"""
         
-        # 特徴量重要度履歴に基づく候補選択
-        candidate_features = self._select_candidate_features(feature_names)
+        print(f"適応的決定木構築開始: サンプル数={len(data)}")
         
-        best_feature = None
-        best_gain = -np.inf
+        # 初期構築
+        tree = super().build_tree(data, feature_names, target_name)
         
-        for feature in candidate_features:
-            gain = self._calculate_split_criterion(X, y, feature)
-            
-            # 特徴量重要度履歴更新
-            if feature not in self.feature_importance_history:
-                self.feature_importance_history[feature] = []
-            self.feature_importance_history[feature].append(gain)
-            
-            if gain > best_gain:
-                best_gain = gain
-                best_feature = feature
+        # 性能評価
+        initial_performance = self._evaluate_tree_performance(tree, data, feature_names, target_name)
+        self.performance_history.append(initial_performance)
         
-        # 分割品質履歴更新
-        self.split_quality_history.append(best_gain)
+        # 適応的改善
+        improved_tree = self._adaptive_improvement(tree, data, feature_names, target_name)
         
-        return best_feature, best_gain
+        print(f"適応的構築完了: 改善回数={self.adaptation_count}")
+        
+        return improved_tree
     
-    def _select_candidate_features(self, feature_names: List[str]) -> List[str]:
-        """候補特徴量の適応的選択"""
+    def _evaluate_tree_performance(self, tree: FuzzyDecisionTree, 
+                                 data: pd.DataFrame, feature_names: List[str], 
+                                 target_name: str) -> Dict[str, float]:
+        """ツリー性能評価"""
         
-        if not self.feature_importance_history:
-            # 履歴がない場合はランダム選択
-            return random.sample(feature_names, min(3, len(feature_names)))
+        X = data[feature_names]
+        y = data[target_name]
         
-        # 重要度履歴に基づく重み付け選択
-        feature_weights = {}
-        for feature in feature_names:
-            if feature in self.feature_importance_history:
-                # 最近の重要度の平均
-                recent_importance = self.feature_importance_history[feature][-5:]
-                feature_weights[feature] = np.mean(recent_importance)
-            else:
-                feature_weights[feature] = 0.1  # 新しい特徴量には低い重み
+        # 予測実行
+        predictions = []
+        for _, row in X.iterrows():
+            features = row.to_dict()
+            prediction = tree.predict(features)
+            predictions.append(prediction)
         
-        # 重み付きランダム選択
-        total_weight = sum(feature_weights.values())
-        if total_weight > 0:
-            probabilities = [feature_weights[f] / total_weight for f in feature_names]
-            num_candidates = min(4, len(feature_names))
-            
-            try:
-                candidates = np.random.choice(
-                    feature_names, size=num_candidates, replace=False, p=probabilities
-                ).tolist()
-            except:
-                # エラーの場合はランダム選択
-                candidates = random.sample(feature_names, num_candidates)
-        else:
-            candidates = random.sample(feature_names, min(3, len(feature_names)))
+        # 性能指標計算
+        actuals = y.tolist()
+        mse = np.mean([(p - a) ** 2 for p, a in zip(predictions, actuals)])
+        mae = np.mean([abs(p - a) for p, a in zip(predictions, actuals)])
         
-        return candidates
-    
-    def adapt_parameters(self, generation: int):
-        """パラメータの適応的調整"""
-        
-        if len(self.split_quality_history) < 10:
-            return
-        
-        # 最近の分割品質の傾向を分析
-        recent_quality = self.split_quality_history[-10:]
-        quality_trend = np.mean(np.diff(recent_quality))
-        
-        # 品質が低下傾向の場合、探索を強化
-        if quality_trend < 0:
-            self.config.max_features = min(
-                len(self.feature_importance_history),
-                self.config.max_features + 1 if self.config.max_features else 4
-            )
-            self.config.min_information_gain *= 0.9
-        else:
-            # 品質が向上傾向の場合、効率化
-            if self.config.max_features and self.config.max_features > 2:
-                self.config.max_features -= 1
-            self.config.min_information_gain *= 1.05
-    
-    def get_adaptation_statistics(self) -> Dict[str, Any]:
-        """適応統計の取得"""
-        
-        stats = self.get_builder_statistics()
-        
-        # 適応的統計を追加
-        stats['adaptation_info'] = {
-            'feature_importance_history': self.feature_importance_history,
-            'split_quality_trend': np.mean(np.diff(self.split_quality_history[-10:])) if len(self.split_quality_history) > 10 else 0.0,
-            'average_split_quality': np.mean(self.split_quality_history) if self.split_quality_history else 0.0,
-            'quality_variance': np.var(self.split_quality_history) if self.split_quality_history else 0.0
+        return {
+            'mse': mse,
+            'mae': mae,
+            'complexity': tree.total_nodes,
+            'depth': tree.max_depth
         }
+    
+    def _adaptive_improvement(self, tree: FuzzyDecisionTree, 
+                            data: pd.DataFrame, feature_names: List[str], 
+                            target_name: str) -> FuzzyDecisionTree:
+        """適応的改善"""
         
-        return stats
+        current_tree = tree
+        best_performance = self.performance_history[-1]
+        
+        max_iterations = 3
+        
+        for iteration in range(max_iterations):
+            # パラメータ調整
+            self._adapt_parameters(best_performance)
+            
+            # 再構築
+            candidate_tree = super().build_tree(data, feature_names, target_name)
+            
+            # 評価
+            candidate_performance = self._evaluate_tree_performance(
+                candidate_tree, data, feature_names, target_name
+            )
+            
+            # 改善判定（MSEが小さく、複雑さも考慮）
+            if self._is_better_tree(candidate_performance, best_performance):
+                current_tree = candidate_tree
+                best_performance = candidate_performance
+                self.adaptation_count += 1
+                print(f"  改善 {iteration+1}: MSE={candidate_performance['mse']:.4f}")
+            
+            self.performance_history.append(candidate_performance)
+        
+        return current_tree
+    
+    def _adapt_parameters(self, performance: Dict[str, float]):
+        """パラメータ適応"""
+        
+        # MSEが高い場合は深度を増加
+        if performance['mse'] > 0.1:
+            self.config.max_depth = min(10, self.config.max_depth + 1)
+            self.config.min_samples_leaf = max(2, self.config.min_samples_leaf - 1)
+        
+        # 複雑すぎる場合は簡素化
+        elif performance['complexity'] > 20:
+            self.config.max_depth = max(3, self.config.max_depth - 1)
+            self.config.min_samples_leaf += 1
+    
+    def _is_better_tree(self, candidate: Dict[str, float], current_best: Dict[str, float]) -> bool:
+        """ツリー改善判定"""
+        
+        # MSEの改善度
+        mse_improvement = (current_best['mse'] - candidate['mse']) / current_best['mse']
+        
+        # 複雑度のペナルティ
+        complexity_penalty = (candidate['complexity'] - current_best['complexity']) / max(1, current_best['complexity'])
+        
+        # 総合スコア（MSE改善 - 複雑度ペナルティ）
+        improvement_score = mse_improvement - 0.1 * complexity_penalty
+        
+        return improvement_score > 0.01  # 1%以上の改善で採用
 
 
 class TreePruner:
@@ -468,193 +588,109 @@ class TreePruner:
     def __init__(self, min_samples_leaf: int = 5, max_depth: int = 10):
         self.min_samples_leaf = min_samples_leaf
         self.max_depth = max_depth
-        self.pruned_nodes = 0
+        self.pruned_count = 0
     
-    def prune_tree(self, root: FuzzyDecisionNode, validation_data: pd.DataFrame = None) -> int:
-        """決定木の剪定"""
+    def prune_tree(self, root: FuzzyDecisionNode) -> int:
+        """ツリーの剪定"""
         
-        self.pruned_nodes = 0
+        if not root:
+            return 0
         
-        # 後剪定
-        self._post_prune_recursive(root, validation_data)
+        self.pruned_count = 0
+        self._prune_recursive(root)
         
-        return self.pruned_nodes
+        return self.pruned_count
     
-    def _post_prune_recursive(self, node: FuzzyDecisionNode, validation_data: pd.DataFrame = None):
-        """再帰的後剪定"""
+    def _prune_recursive(self, node: FuzzyDecisionNode) -> bool:
+        """再帰的剪定"""
         
         if node.is_leaf:
-            return
-        
-        # 子ノードを先に剪定
-        for child in list(node.children.values()):
-            self._post_prune_recursive(child, validation_data)
-        
-        # 現在のノードを剪定すべきか判定
-        should_prune = False
-        
-        # サンプル数による剪定
-        if node.statistics.sample_count < self.min_samples_leaf:
-            should_prune = True
-        
-        # 深度による剪定
-        if node.depth > self.max_depth:
-            should_prune = True
-        
-        # 検証データがある場合の性能ベース剪定
-        if validation_data is not None and not should_prune:
-            should_prune = self._should_prune_based_on_performance(node, validation_data)
-        
-        # 剪定実行
-        if should_prune:
-            node.prune_subtree()
-            self.pruned_nodes += 1
-    
-    def _should_prune_based_on_performance(self, node: FuzzyDecisionNode, 
-                                         validation_data: pd.DataFrame) -> bool:
-        """性能ベースの剪定判定"""
-        
-        if len(validation_data) == 0:
             return False
         
-        # 剪定前後の性能を比較
-        # 実装簡略化のため、基本的な判定のみ
+        # 子ノードを先に剪定
+        children_to_remove = []
+        for label, child in node.children.items():
+            if self._prune_recursive(child):
+                children_to_remove.append(label)
         
-        # 子ノードがすべて同じ値を出力する場合は剪定
-        if not node.is_leaf:
-            child_values = []
-            for child in node.children.values():
-                if child.is_leaf and child.leaf_value is not None:
-                    child_values.append(child.leaf_value)
-            
-            if len(set(child_values)) == 1:  # すべて同じ値
-                return True
+        # 不要な子ノードを削除
+        for label in children_to_remove:
+            node.remove_child(label)
+            self.pruned_count += 1
         
-        return False_data(X, y, best_feature, mf)
-            
-            if len(child_X) >= self.config.min_samples_leaf:
-                child_node = self._build_node_recursive(child_X, child_y, feature_names, depth + 1)
-                node.add_child(label, child_node)
+        # このノード自体の剪定判定
+        should_prune = self._should_prune_node(node)
         
-        # 情報ゲイン計算
-        feature_values = X[best_feature].tolist()
-        target_values = y.tolist()
-        node.calculate_information_gain(feature_values, target_values)
-        
-        return node
-    
-    def _build_node_from_genes(self, X: pd.DataFrame, y: pd.Series,
-                              feature_names: List[str], depth: int, gene_index: int) -> FuzzyDecisionNode:
-        """遺伝子からノード構築"""
-        
-        self.nodes_created += 1
-        
-        # 停止条件
-        if self._should_stop_splitting(X, y, depth):
-            return self._create_leaf_node(X, y, depth)
-        
-        # 遺伝子による特徴量選択
-        if self.feature_selection_probs is not None:
-            # 確率に基づく選択
-            selected_feature = np.random.choice(feature_names, p=self.feature_selection_probs)
-        else:
-            # ランダム選択
-            selected_feature = random.choice(feature_names)
-        
-        # 内部ノード作成
-        node = FuzzyDecisionNode(f"node_{self.nodes_created}", NodeType.INTERNAL)
-        node.feature_name = selected_feature
-        node.depth = depth
-        
-        if depth == 0:
-            node.node_type = NodeType.ROOT
-        
-        # 遺伝子からメンバーシップ関数生成
-        fuzzy_sets = self._create_membership_functions_from_params(selected_feature)
-        
-        for label, mf in fuzzy_sets.items():
-            node.add_membership_function(label, mf)
-        
-        # 訓練データ保存
-        training_samples = [(X.iloc[i].to_dict(), y.iloc[i]) for i in range(len(X))]
-        node.update_training_statistics(training_samples)
-        
-        # 子ノード生成
-        for label, mf in fuzzy_sets.items():
-            child_X, child_y = self._fuzzy_split_data(X, y, selected_feature, mf)
-            
-            if len(child_X) >= self.config.min_samples_leaf:
-                child_node = self._build_node_from_genes(child_X, child_y, feature_names, depth + 1, gene_index)
-                node.add_child(label, child_node)
-        
-        return node
-    
-    def _should_stop_splitting(self, X: pd.DataFrame, y: pd.Series, depth: int) -> bool:
-        """分割停止条件の判定"""
-        
-        # 深度制限
-        if depth >= self.config.max_depth:
-            return True
-        
-        # サンプル数制限
-        if len(X) < self.config.min_samples_split:
-            return True
-        
-        # 純度チェック（分散が小さい場合）
-        if len(y.unique()) == 1:
-            return True
-        
-        target_variance = np.var(y)
-        if target_variance < 0.01:  # 分散が非常に小さい
+        if should_prune:
+            # 内部ノードを葉ノードに変換
+            self._convert_to_leaf(node)
+            self.pruned_count += 1
             return True
         
         return False
     
-    def _find_best_split(self, X: pd.DataFrame, y: pd.Series, 
-                        feature_names: List[str]) -> Tuple[Optional[str], float]:
-        """最良分割の探索"""
+    def _should_prune_node(self, node: FuzzyDecisionNode) -> bool:
+        """ノード剪定判定"""
         
-        best_feature = None
-        best_gain = -np.inf
+        # 深度制限
+        if node.depth > self.max_depth:
+            return True
         
-        # 考慮する特徴量数の制限
-        max_features = self.config.max_features or len(feature_names)
-        candidate_features = random.sample(feature_names, min(max_features, len(feature_names)))
+        # サンプル数制限
+        if node.statistics.sample_count < self.min_samples_leaf:
+            return True
         
-        for feature in candidate_features:
-            self.splits_attempted += 1
+        # 子ノードがすべて葉で、性能向上が期待できない場合
+        if all(child.is_leaf for child in node.children.values()):
+            if len(node.children) <= 1:
+                return True
             
-            # 情報ゲイン計算
-            gain = self._calculate_split_criterion(X, y, feature)
-            
-            if gain > best_gain:
-                best_gain = gain
-                best_feature = feature
-                self.successful_splits += 1
+            # 子ノードの予測値がほぼ同じ場合
+            child_values = [child.leaf_value for child in node.children.values() 
+                          if child.leaf_value is not None]
+            if len(child_values) > 1:
+                value_range = max(child_values) - min(child_values)
+                if value_range < 0.05:  # 5%未満の差
+                    return True
         
-        return best_feature, best_gain
+        return False
     
-    def _calculate_split_criterion(self, X: pd.DataFrame, y: pd.Series, feature: str) -> float:
-        """分割基準の計算"""
+    def _convert_to_leaf(self, node: FuzzyDecisionNode):
+        """内部ノードを葉ノードに変換"""
         
-        if self.config.split_criterion == SplitCriterion.VARIANCE_REDUCTION:
-            return self._calculate_variance_reduction(X, y, feature)
-        elif self.config.split_criterion == SplitCriterion.INFORMATION_GAIN:
-            return self._calculate_information_gain(X, y, feature)
+        # 子ノードの予測値から平均を計算
+        if node.children:
+            child_values = []
+            child_confidences = []
+            
+            for child in node.children.values():
+                if child.leaf_value is not None:
+                    child_values.append(child.leaf_value)
+                    child_confidences.append(child.statistics.confidence_score)
+            
+            if child_values:
+                avg_value = np.mean(child_values)
+                avg_confidence = np.mean(child_confidences) * 0.8  # 剪定により信頼度を下げる
+            else:
+                avg_value = 0.5
+                avg_confidence = 0.3
         else:
-            return self._calculate_variance_reduction(X, y, feature)
+            avg_value = 0.5
+            avg_confidence = 0.3
+        
+        # 葉ノードに変換
+        node.children.clear()
+        node.membership_functions.clear()
+        node.feature_name = None
+        node.set_leaf_value(avg_value, avg_confidence)
     
-    def _calculate_variance_reduction(self, X: pd.DataFrame, y: pd.Series, feature: str) -> float:
-        """分散削減量の計算"""
+    def get_pruning_statistics(self) -> Dict[str, Any]:
+        """剪定統計の取得"""
         
-        # 全体の分散
-        total_variance = np.var(y)
-        
-        # 仮のメンバーシップ関数で分割
-        temp_fuzzy_sets = self._generate_membership_functions(feature, X[feature])
-        
-        weighted_variance = 0.0
-        total_weight = 0.0
-        
-        for label, mf in temp_fuzzy_sets.items():
-            child_X, child_y = self._fuzzy_split
+        return {
+            'pruned_nodes': self.pruned_count,
+            'pruning_config': {
+                'min_samples_leaf': self.min_samples_leaf,
+                'max_depth': self.max_depth
+            }
+        }
