@@ -378,9 +378,9 @@ class EvolutionEngine:
             convergence_generation = self.generation
         
         return EvolutionResult(
-            best_individual=self.population.best_individual.copy() if self.population.best_individual else None,
+            best_individual=self.population.best_individual.clone() if self.population.best_individual else None,
             best_fitness=self.population.best_individual.fitness if self.population.best_individual else 0.0,
-            final_population=[ind.copy() for ind in self.population.individuals],
+            final_population=[ind.clone() for ind in self.population.individuals],
             fitness_history=self.best_fitness_history.copy(),
             generation_count=self.generation + 1,
             total_time=total_time,

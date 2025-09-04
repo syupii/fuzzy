@@ -2,7 +2,7 @@ from typing import List, Tuple, Dict, Any
 import numpy as np
 import random
 from enum import Enum
-
+from dataclasses import dataclass
 from .individual import GeneticIndividual
 
 
@@ -22,11 +22,29 @@ class MutationType(Enum):
     SWAP = "swap"
     TREE_MUTATION = "tree_mutation"
 
+@dataclass
+class OperatorConfig:
+    """遺伝的操作設定"""
+    crossover_rate: float = 0.8
+    mutation_rate: float = 0.1
+    mutation_strength: float = 0.1
+    tournament_size: int = 3
+    elite_size: int = 3
+    
+    # 操作タイプ
+    crossover_type: CrossoverType = CrossoverType.ONE_POINT
+    mutation_type: MutationType = MutationType.GAUSSIAN
+    
+    # 適応制御
+    adaptive_rates: bool = True
+    diversity_threshold: float = 0.3
+
 
 class GeneticOperators:
     """遺伝的操作集合"""
     
-    def __init__(self):
+    def __init__(self, config: OperatorConfig = None):
+        self.config = config or OperatorConfig()
         self.crossover_count = 0
         self.mutation_count = 0
     

@@ -1,3 +1,8 @@
+"""
+集団管理 - core/genetic/population.py
+遺伝的アルゴリズムの個体集団を管理するクラス
+"""
+
 from typing import List, Dict, Any, Optional, Callable, Tuple
 import numpy as np
 import random
@@ -28,11 +33,50 @@ class SelectionMethod(Enum):
     ELITE = "elite"
 
 
+class ReplacementStrategy(Enum):
+    """世代交代戦略"""
+    GENERATIONAL = "generational"
+    STEADY_STATE = "steady_state"
+    ELITE_REPLACEMENT = "elite_replacement"
+    TOURNAMENT_REPLACEMENT = "tournament_replacement"
+
+
 class Population:
     """遺伝的アルゴリズムの集団"""
     
-    def __init__(self, config: PopulationConfig = None):
-        self.config = config or PopulationConfig()
+    def __init__(self, *args, **kwargs):
+        """
+        柔軟な初期化：複数の呼び出しパターンに対応
+        
+        パターン1: Population(config)
+        パターン2: Population(population_size, individual_type) 
+        パターン3: Population() (デフォルト)
+        """
+        
+        # 引数解析
+        if len(args) == 0:
+            # デフォルト初期化
+            self.config = kwargs.get('config', PopulationConfig())
+        elif len(args) == 1:
+            # 設定オブジェクトまたは集団サイズ
+            if hasattr(args[0], 'population_size'):  # PopulationConfig オブジェクト
+                self.config = args[0]
+            else:  # 集団サイズ（整数）
+                self.config = PopulationConfig(population_size=int(args[0]))
+        elif len(args) == 2:
+            # (population_size, individual_type) の形式
+            population_size = int(args[0])
+            individual_type = args[1]  # 使用しないが受け入れる
+            self.config = PopulationConfig(population_size=population_size)
+        else:
+            # それ以外はエラー
+            raise ValueError(f"Population() takes 0-2 positional arguments but {len(args)} were given")
+        
+        # キーワード引数で設定を上書き
+        if 'config' in kwargs:
+            self.config = kwargs['config']
+        
+        # インスタンス変数初期化
         self.individuals: List[GeneticIndividual] = []
         self.generation = 0
         self.best_individual: Optional[GeneticIndividual] = None
@@ -45,8 +89,9 @@ class Population:
         self.last_improvement_generation = 0
     
     def initialize_random(self, genome_length: int, feature_names: List[str],
-                         individual_type: IndividualType = IndividualType.HYBRID):
-        """ランダム初期化"""
+                         individual_type: IndividualType = IndividualType.HYBRID,
+                         max_depth: int = 6, min_samples_leaf: int = 5):
+        """ランダム初期化（拡張版）"""
         
         print(f"集団ランダム初期化: サイズ={self.config.population_size}")
         
@@ -54,7 +99,7 @@ class Population:
         
         for i in range(self.config.population_size):
             individual = GeneticIndividual(individual_type)
-            individual.initialize_random(genome_length, feature_names)
+            individual.initialize_random(genome_length, feature_names, max_depth, min_samples_leaf)
             individual.generation = 0
             self.individuals.append(individual)
         
@@ -95,24 +140,97 @@ class Population:
         print(f"  平均適応度: {avg_fitness:.4f}")
         print(f"  多様性: {diversity:.4f}")
     
-    def select_parents(self, selection_method: SelectionMethod = SelectionMethod.TOURNAMENT,
-                      num_parents: int = None) -> List[GeneticIndividual]:
-        """親個体選択"""
+    def evaluate_population(self, training_data: np.ndarray, test_data: np.ndarray,
+                          feature_names: List[str], target_name: str,
+                          fitness_weights: Dict[str, float] = None) -> Dict[str, Any]:
+        """集団評価（拡張版）"""
         
+        evaluated_count = 0
+        
+        for individual in self.individuals:
+            if individual.fitness == 0.0:  # 未評価の個体のみ
+                individual.evaluate_fitness(training_data, feature_names, target_name)
+                evaluated_count += 1
+                self.total_evaluations += 1
+        
+        # ソートと統計更新
+        self.individuals.sort(key=lambda x: x.fitness, reverse=True)
+        self._update_best_individual()
+        self._update_statistics()
+        
+        return {
+            'evaluated_count': evaluated_count,
+            'best_fitness': self.best_individual.fitness if self.best_individual else 0.0,
+            'average_fitness': np.mean([ind.fitness for ind in self.individuals]),
+            'diversity': self.diversity_history[-1] if self.diversity_history else 0.0
+        }
+    
+    def _update_best_individual(self):
+        """最良個体の更新"""
+        
+        if not self.individuals:
+            return
+        
+        current_best = self.individuals[0]
+        if self.best_individual is None or current_best.fitness > self.best_individual.fitness:
+            self.best_individual = current_best.clone()
+            self.last_improvement_generation = self.generation
+            self.stagnation_count = 0
+        else:
+            self.stagnation_count += 1
+    
+    def _update_statistics(self):
+        """統計情報の更新"""
+        
+        if not self.individuals:
+            return
+        
+        fitness_values = [ind.fitness for ind in self.individuals]
+        avg_fitness = np.mean(fitness_values)
+        self.fitness_history.append(avg_fitness)
+        
+        diversity = self._calculate_diversity()
+        self.diversity_history.append(diversity)
+    
+    def select_parents(self, selection_method: SelectionMethod = SelectionMethod.TOURNAMENT,
+                      tournament_size: int = None, num_parents: int = None) -> List[GeneticIndividual]:
+        """
+        親個体選択（拡張版）
+        
+        Args:
+            selection_method: 選択方法
+            tournament_size: トーナメントサイズ（evolution.pyから渡される）
+            num_parents: 選択する親個体数
+        
+        Returns:
+            選択された親個体のリスト
+        """
+        
+        # 引数の調整
         if num_parents is None:
             num_parents = self.config.population_size - self.config.elite_size
         
+        if tournament_size is not None:
+            # tournament_size が指定された場合は設定を一時的に更新
+            original_tournament_size = self.config.tournament_size
+            self.config.tournament_size = tournament_size
+        
         parents = []
         
-        if selection_method == SelectionMethod.TOURNAMENT:
-            parents = self._tournament_selection(num_parents)
-        elif selection_method == SelectionMethod.ROULETTE:
-            parents = self._roulette_selection(num_parents)
-        elif selection_method == SelectionMethod.RANK:
-            parents = self._rank_selection(num_parents)
-        else:
-            # デフォルトはトーナメント選択
-            parents = self._tournament_selection(num_parents)
+        try:
+            if selection_method == SelectionMethod.TOURNAMENT:
+                parents = self._tournament_selection(num_parents)
+            elif selection_method == SelectionMethod.ROULETTE:
+                parents = self._roulette_selection(num_parents)
+            elif selection_method == SelectionMethod.RANK:
+                parents = self._rank_selection(num_parents)
+            else:
+                # デフォルトはトーナメント選択
+                parents = self._tournament_selection(num_parents)
+        finally:
+            # tournament_size を元に戻す（指定されていた場合）
+            if tournament_size is not None:
+                self.config.tournament_size = original_tournament_size
         
         return parents
     
@@ -122,7 +240,8 @@ class Population:
         parents = []
         
         for _ in range(num_parents):
-            tournament = random.sample(self.individuals, self.config.tournament_size)
+            tournament = random.sample(self.individuals, 
+                                     min(self.config.tournament_size, len(self.individuals)))
             winner = max(tournament, key=lambda x: x.fitness)
             parents.append(winner)
         
@@ -221,6 +340,74 @@ class Population:
         
         return next_generation
     
+    def create_offspring(self, parents: List[GeneticIndividual],
+                        crossover_rate: float = 0.8,
+                        mutation_rate: float = 0.1) -> List[GeneticIndividual]:
+        """子個体生成"""
+        
+        offspring = []
+        offspring_count = self.config.population_size - self.config.elite_size
+        
+        for _ in range(0, offspring_count, 2):
+            # 親選択
+            parent1 = random.choice(parents)
+            parent2 = random.choice(parents)
+            
+            # 交叉
+            if random.random() < crossover_rate and parent1 != parent2:
+                child1, child2 = parent1.crossover(parent2, crossover_rate)
+            else:
+                child1 = parent1.clone()
+                child2 = parent2.clone()
+            
+            # 突然変異
+            child1 = child1.mutate(mutation_rate)
+            child2 = child2.mutate(mutation_rate)
+            
+            # 世代設定
+            child1.generation = self.generation + 1
+            child2.generation = self.generation + 1
+            
+            offspring.extend([child1, child2])
+        
+        return offspring[:offspring_count]
+    
+    def replace_population(self, offspring: List[GeneticIndividual],
+                          strategy: ReplacementStrategy = ReplacementStrategy.ELITE_REPLACEMENT,
+                          elite_count: int = None):
+        """世代交代"""
+        
+        if elite_count is None:
+            elite_count = self.config.elite_size
+        
+        if strategy == ReplacementStrategy.GENERATIONAL:
+            # 全世代交代
+            self.individuals = offspring
+        elif strategy == ReplacementStrategy.ELITE_REPLACEMENT:
+            # エリート保存世代交代
+            new_population = []
+            
+            # エリート保存
+            for i in range(min(elite_count, len(self.individuals))):
+                elite = self.individuals[i].clone()
+                elite.generation = self.generation + 1
+                new_population.append(elite)
+            
+            # 残りを子個体で置換
+            remaining_count = self.config.population_size - len(new_population)
+            new_population.extend(offspring[:remaining_count])
+            
+            self.individuals = new_population
+        elif strategy == ReplacementStrategy.STEADY_STATE:
+            # 定常状態交代（最悪個体を置換）
+            sorted_population = sorted(self.individuals, key=lambda x: x.fitness)
+            worst_count = min(len(offspring), len(sorted_population))
+            
+            for i in range(worst_count):
+                self.individuals[self.individuals.index(sorted_population[i])] = offspring[i]
+        
+        self.generation += 1
+    
     def advance_generation(self, new_individuals: List[GeneticIndividual]):
         """世代進行"""
         
@@ -265,6 +452,29 @@ class Population:
         if replaced_count > 0:
             print(f"  多様性維持: {replaced_count}個体を置換")
     
+    def maintain_diversity(self, injection_rate: float = 0.1) -> int:
+        """多様性維持（注入率指定版）"""
+        
+        diversity = self._calculate_diversity()
+        if diversity > 0.3:  # 十分な多様性がある
+            return 0
+        
+        # 注入する個体数
+        injection_count = max(1, int(self.config.population_size * injection_rate))
+        
+        # 最悪個体を置換
+        sorted_individuals = sorted(self.individuals, key=lambda x: x.fitness)
+        
+        replaced_count = 0
+        for i in range(min(injection_count, len(sorted_individuals))):
+            new_individual = self._create_random_individual()
+            # 最悪個体を見つけて置換
+            worst_idx = self.individuals.index(sorted_individuals[i])
+            self.individuals[worst_idx] = new_individual
+            replaced_count += 1
+        
+        return replaced_count
+    
     def _create_random_individual(self) -> GeneticIndividual:
         """ランダム個体作成"""
         
@@ -275,7 +485,13 @@ class Population:
             if example.genome is not None:
                 genome_length = len(example.genome)
                 feature_names = list(example.tree_genes.get('membership_params', {}).keys())
+                if not feature_names:
+                    feature_names = ['feature_1', 'feature_2', 'feature_3']
                 individual.initialize_random(genome_length, feature_names)
+        else:
+            # フォールバック：デフォルト設定
+            default_features = ['research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice']
+            individual.initialize_random(10, default_features)
         
         individual.generation = self.generation
         return individual
@@ -286,15 +502,18 @@ class Population:
         if ind1.genome is None or ind2.genome is None:
             return 0.0
         
-        # ゲノム類似度（コサイン類似度）
-        dot_product = np.dot(ind1.genome, ind2.genome)
-        norm1 = np.linalg.norm(ind1.genome)
-        norm2 = np.linalg.norm(ind2.genome)
-        
-        if norm1 == 0 or norm2 == 0:
+        try:
+            # ゲノム類似度（コサイン類似度）
+            dot_product = np.dot(ind1.genome, ind2.genome)
+            norm1 = np.linalg.norm(ind1.genome)
+            norm2 = np.linalg.norm(ind2.genome)
+            
+            if norm1 == 0 or norm2 == 0:
+                return 0.0
+            
+            return dot_product / (norm1 * norm2)
+        except:
             return 0.0
-        
-        return dot_product / (norm1 * norm2)
     
     def _calculate_diversity(self) -> float:
         """集団多様性計算"""
@@ -318,6 +537,12 @@ class Population:
         diversity = 1.0 - avg_similarity  # 類似度が低いほど多様性が高い
         
         return max(0.0, min(1.0, diversity))
+    
+    def is_low_diversity(self, threshold: float = 0.2) -> bool:
+        """多様性の低さ判定"""
+        
+        current_diversity = self._calculate_diversity()
+        return current_diversity < threshold
     
     def is_converged(self) -> bool:
         """収束判定"""
@@ -371,6 +596,18 @@ class Population:
             }
         }
     
+    def get_diversity_statistics(self) -> Dict[str, Any]:
+        """多様性統計情報"""
+        
+        return {
+            'current_diversity': self._calculate_diversity(),
+            'diversity_history': self.diversity_history,
+            'is_low_diversity': self.is_low_diversity(),
+            'average_diversity': np.mean(self.diversity_history) if self.diversity_history else 0.0,
+            'diversity_trend': 'increasing' if len(self.diversity_history) >= 2 and 
+                             self.diversity_history[-1] > self.diversity_history[-2] else 'decreasing'
+        }
+    
     def export_population(self) -> Dict[str, Any]:
         """集団のエクスポート"""
         
@@ -421,4 +658,22 @@ class Population:
         population.diversity_history = data.get('diversity_history', [])
         
         return population
-
+    
+    def __len__(self) -> int:
+        """集団サイズを返す"""
+        return len(self.individuals)
+    
+    def __getitem__(self, index: int) -> GeneticIndividual:
+        """インデックスアクセス"""
+        return self.individuals[index]
+    
+    def __iter__(self):
+        """イテレータ"""
+        return iter(self.individuals)
+    
+    def __repr__(self) -> str:
+        """文字列表現"""
+        best_fitness = self.best_individual.fitness if self.best_individual else 0.0
+        return (f"Population(size={len(self.individuals)}, "
+                f"generation={self.generation}, "
+                f"best_fitness={best_fitness:.4f})")
