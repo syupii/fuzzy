@@ -1,0 +1,218 @@
+{
+    "version": "1.0.0",
+    "last_updated": "2024-12-07",
+    "description": "研究室選択支援システム用研究室データベース",
+    "total_labs": 5,
+    "labs": [
+        {
+            "id": "lab_001",
+            "name": "人工知能研究室",
+            "professor": "伊藤雅彦",
+            "research_area": "人工知能・機械学習",
+            "specialization": "情報可視化、ユーザインタフェース、データ工学",
+            "research_fields": [
+                "人工知能・機械学習",
+                "データベース・情報システム"
+            ],
+            "description": "情報可視化、ユーザインタフェース、データ工学の研究を行っています",
+            "features": {
+                "research_intensity": 8.5,
+                "advisor_style": 7.0,
+                "team_work": 8.0,
+                "workload": 8.0,
+                "theory_practice": 6.5,
+                "research_field_match": 9.0,
+                "skill_development": 8.5,
+                "learning_pace": 7.0,
+                "difficulty_preference": 8.0,
+                "lab_atmosphere": 7.5,
+                "communication_style": 7.5,
+                "meeting_frequency": 7.0,
+                "flexibility": 6.0,
+                "evening_weekend_work": 7.0,
+                "innovation_risk": 8.0,
+                "methodology_preference": 7.5,
+                "interdisciplinary": 7.0,
+                "publication_opportunity": 9.0,
+                "financial_support": 8.0,
+                "lab_hierarchy": 6.0,
+                "core_time_flexibility": 6.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 15,
+                "funding_level": "高",
+                "equipment_rating": 9
+            }
+        },
+        {
+            "id": "lab_002",
+            "name": "ゲーム開発研究室",
+            "professor": "森川悟",
+            "research_area": "ゲーム開発・eスポーツ",
+            "specialization": "ゲームプログラミング、eスポーツ技術",
+            "research_fields": [
+                "ゲーム開発・eスポーツ",
+                "VR/AR・メディアアート"
+            ],
+            "description": "ゲームプログラミングとeスポーツ技術の研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 8.0,
+                "team_work": 9.0,
+                "workload": 7.5,
+                "theory_practice": 8.0,
+                "research_field_match": 8.5,
+                "skill_development": 9.0,
+                "learning_pace": 8.0,
+                "difficulty_preference": 7.5,
+                "lab_atmosphere": 9.0,
+                "communication_style": 9.0,
+                "meeting_frequency": 8.0,
+                "flexibility": 8.5,
+                "evening_weekend_work": 6.0,
+                "innovation_risk": 9.0,
+                "methodology_preference": 8.5,
+                "interdisciplinary": 8.0,
+                "publication_opportunity": 8.5,
+                "financial_support": 8.5,
+                "lab_hierarchy": 6.5,
+                "core_time_flexibility": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 18,
+                "funding_level": "高",
+                "equipment_rating": 9
+            }
+        },
+        {
+            "id": "lab_003",
+            "name": "Webデザイン研究室",
+            "professor": "杉沢愛美",
+            "research_area": "Webデザイン・UI/UX",
+            "specialization": "UX・UIデザイン、ブランディングデザイン",
+            "research_fields": [
+                "Webデザイン・UI/UX",
+                "デザイン・視覚表現"
+            ],
+            "description": "UX・UIデザイン、ブランディングデザインの研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 8.5,
+                "team_work": 8.5,
+                "workload": 6.0,
+                "theory_practice": 7.5,
+                "research_field_match": 8.0,
+                "skill_development": 8.0,
+                "learning_pace": 7.5,
+                "difficulty_preference": 6.0,
+                "lab_atmosphere": 8.5,
+                "communication_style": 8.5,
+                "meeting_frequency": 6.5,
+                "flexibility": 9.0,
+                "evening_weekend_work": 4.0,
+                "innovation_risk": 7.0,
+                "methodology_preference": 7.0,
+                "interdisciplinary": 8.5,
+                "publication_opportunity": 7.0,
+                "financial_support": 6.5,
+                "lab_hierarchy": 8.5,
+                "core_time_flexibility": 9.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 10,
+                "recent_publications": 12,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_004",
+            "name": "コンピュータビジョン研究室",
+            "professor": "向田茂",
+            "research_area": "画像・映像処理",
+            "specialization": "画像処理、VR/AR、3DCG、メディアアート",
+            "research_fields": [
+                "画像・映像処理",
+                "VR/AR・メディアアート"
+            ],
+            "description": "画像処理、VR/AR、3DCG、メディアアートの研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.5,
+                "team_work": 7.0,
+                "workload": 7.5,
+                "theory_practice": 6.0,
+                "research_field_match": 8.5,
+                "skill_development": 8.0,
+                "learning_pace": 7.5,
+                "difficulty_preference": 8.5,
+                "lab_atmosphere": 7.0,
+                "communication_style": 6.5,
+                "meeting_frequency": 7.0,
+                "flexibility": 7.0,
+                "evening_weekend_work": 7.5,
+                "innovation_risk": 9.0,
+                "methodology_preference": 8.5,
+                "interdisciplinary": 8.0,
+                "publication_opportunity": 8.5,
+                "financial_support": 8.5,
+                "lab_hierarchy": 6.5,
+                "core_time_flexibility": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 18,
+                "funding_level": "高",
+                "equipment_rating": 9
+            }
+        },
+        {
+            "id": "lab_005",
+            "name": "ネットワークセキュリティ研究室",
+            "professor": "中島潤",
+            "research_area": "コンピュータネットワーク・セキュリティ",
+            "specialization": "情報セキュリティ、ITマネジメント",
+            "research_fields": [
+                "コンピュータネットワーク・セキュリティ",
+                "組込み・IoT"
+            ],
+            "description": "情報セキュリティ、ITマネジメントの研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 6.0,
+                "team_work": 6.5,
+                "workload": 7.0,
+                "theory_practice": 5.0,
+                "research_field_match": 8.0,
+                "skill_development": 7.5,
+                "learning_pace": 6.5,
+                "difficulty_preference": 7.0,
+                "lab_atmosphere": 6.5,
+                "communication_style": 6.0,
+                "meeting_frequency": 6.0,
+                "flexibility": 6.0,
+                "evening_weekend_work": 6.5,
+                "innovation_risk": 6.5,
+                "methodology_preference": 6.0,
+                "interdisciplinary": 6.0,
+                "publication_opportunity": 7.5,
+                "financial_support": 7.0,
+                "lab_hierarchy": 5.5,
+                "core_time_flexibility": 6.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        }
+    ]
+}
