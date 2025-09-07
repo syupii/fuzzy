@@ -1,0 +1,49 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-09-07T20:18:02.788846",
+  "description": "研究室選択支援システム用研究室データベース",
+  "total_labs": 1,
+  "labs": [
+    {
+      "id": "lab_sample",
+      "name": "サンプル研究室",
+      "professor": "サンプル教授",
+      "research_area": "人工知能・機械学習",
+      "specialization": "サンプル専門分野",
+      "research_fields": [
+        "人工知能・機械学習"
+      ],
+      "description": "サンプル研究室の説明",
+      "features": {
+        "research_intensity": 7.0,
+        "advisor_style": 7.0,
+        "team_work": 7.0,
+        "workload": 7.0,
+        "theory_practice": 7.0,
+        "research_field_match": 7.0,
+        "skill_development": 7.0,
+        "learning_pace": 7.0,
+        "difficulty_preference": 7.0,
+        "lab_atmosphere": 7.0,
+        "communication_style": 7.0,
+        "meeting_frequency": 7.0,
+        "flexibility": 7.0,
+        "evening_weekend_work": 7.0,
+        "innovation_risk": 7.0,
+        "methodology_preference": 7.0,
+        "interdisciplinary": 7.0,
+        "publication_opportunity": 7.0,
+        "financial_support": 7.0,
+        "lab_hierarchy": 7.0,
+        "core_time_flexibility": 7.0
+      },
+      "metadata": {
+        "faculty_count": 1,
+        "student_count": 5,
+        "recent_publications": 10,
+        "funding_level": "中",
+        "equipment_rating": 7
+      }
+    }
+  ]
+}
