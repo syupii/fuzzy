@@ -1,4 +1,4 @@
-// ResultsList.tsx - 修正版
+// src/components/ResultsList.tsx - 完全修正版
 import React, { useState } from 'react';
 import {
   Box,
@@ -33,8 +33,17 @@ import {
   Category,
   StarRate,
   Assessment,
+  Groups,
+  Explore,
+  Schedule,
+  Article,
+  AccountTree,
+  ConnectWithoutContact,
+  Lightbulb,
+  AccessTime,
+  Settings
 } from '@mui/icons-material';
-import { EvaluationResponse, fieldUtils } from '../services/api';
+import { EvaluationResponse, CRITERIA_INFO, fieldUtils } from '../services/api';
 
 interface ResultsListProps {
   data: EvaluationResponse;
@@ -95,285 +104,404 @@ const ResultsList: React.FC<ResultsListProps> = ({ data }) => {
     return `${rank}位`;
   };
 
+  // 13項目の評価基準ラベル
   const criteriaLabels: Record<string, string> = {
-    research_intensity: '研究強度',
-    advisor_style: '指導スタイル',
-    team_work: 'チームワーク',
-    workload: 'ワークロード',
-    theory_practice: '理論・実践',
-    research_field_match: '分野適合性',
-    skill_development: 'スキル開発',
-    learning_pace: '学習ペース',
-    difficulty_preference: '難易度選好',
-    communication_style: 'コミュニケーション',
-    meeting_frequency: 'ミーティング頻度',
-    lab_atmosphere: '研究室雰囲気',
-    innovation_risk: '革新性・リスク',
-    methodology_preference: '手法選好',
-    interdisciplinary: '学際性',
-    flexibility: '柔軟性',
-    evening_weekend_work: '夜間・休日作業',
-    publication_opportunity: '論文機会',
-    financial_support: '経済支援',
-    lab_hierarchy: '研究室階層',
-    core_time_flexibility: 'コアタイム柔軟性'
+    // 基本項目（5項目）
+    research_intensity: "研究強度",
+    advisor_style: "指導スタイル",
+    team_work: "チームワーク",
+    workload: "ワークロード",
+    theory_practice: "理論・実践バランス",
+
+    // 拡張項目（5項目）
+    research_field_match: "研究分野適合性",
+    skill_development: "スキル開発",
+    lab_atmosphere: "研究室雰囲気",
+    flexibility: "柔軟性",
+    publication_opportunity: "論文発表機会",
+
+    // 特殊項目（3項目）
+    interdisciplinary: "学際性",
+    communication_style: "コミュニケーション",
+    innovation_risk: "革新性・リスク許容度"
   };
 
-  const criteriaEmojis: Record<string, string> = {
-    research_intensity: '🔬',
-    advisor_style: '👨‍🏫',
-    team_work: '🤝',
-    workload: '⚡',
-    theory_practice: '⚖️',
-    research_field_match: '🎯',
-    skill_development: '📈',
-    learning_pace: '🏃',
-    difficulty_preference: '🎢',
-    communication_style: '💬',
-    meeting_frequency: '📅',
-    lab_atmosphere: '🌟',
-    innovation_risk: '🚀',
-    methodology_preference: '🔧',
-    interdisciplinary: '🌐',
-    flexibility: '🤸',
-    evening_weekend_work: '🌙',
-    publication_opportunity: '📝',
-    financial_support: '💰',
-    lab_hierarchy: '👥',
-    core_time_flexibility: '⏰'
+  const getCriteriaIcon = (criteriaKey: string) => {
+    const iconMap: { [key: string]: React.ReactElement } = {
+      research_intensity: <Science fontSize="small" />,
+      advisor_style: <School fontSize="small" />,
+      team_work: <Groups fontSize="small" />,
+      workload: <Schedule fontSize="small" />,
+      theory_practice: <Psychology fontSize="small" />,
+      research_field_match: <Explore fontSize="small" />,
+      skill_development: <TrendingUp fontSize="small" />,
+      lab_atmosphere: <Groups fontSize="small" />,
+      flexibility: <AccessTime fontSize="small" />,
+      publication_opportunity: <Article fontSize="small" />,
+      interdisciplinary: <AccountTree fontSize="small" />,
+      communication_style: <ConnectWithoutContact fontSize="small" />,
+      innovation_risk: <Lightbulb fontSize="small" />
+    };
+    return iconMap[criteriaKey] || <Settings fontSize="small" />;
+  };
+
+  const renderLabCard = (lab: any, index: number) => {
+    return (
+      <Card key={lab.lab_id} sx={{ mb: 3, border: index < 3 ? 2 : 1, borderColor: index < 3 ? 'primary.main' : 'divider' }}>
+        <CardContent>
+          {/* ヘッダー部分 */}
+          <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+            <Box flex={1}>
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Avatar sx={{ bgcolor: index < 3 ? 'primary.main' : 'grey.400' }}>
+                  {getRankIcon(lab.rank)}
+                </Avatar>
+                <Box>
+                  <Typography variant="h6" component="h2">
+                    {lab.lab_name}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    指導教員: {lab.advisor}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+
+            <Box textAlign="right">
+              <Box display="flex" alignItems="center" gap={1} mb={1}>
+                <Typography variant="h4" color="primary.main" fontWeight="bold">
+                  {lab.overall_score.toFixed(1)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">点</Typography>
+                <Chip
+                  label={getScoreIcon(lab.overall_score)}
+                  size="small"
+                  color={getScoreColor(lab.overall_score)}
+                />
+              </Box>
+              <LinearProgress
+                variant="determinate"
+                value={lab.overall_score}
+                color={getScoreColor(lab.overall_score)}
+                sx={{ width: 100, height: 8, borderRadius: 4 }}
+              />
+            </Box>
+          </Box>
+
+          {/* 基本情報 */}
+          <Typography variant="body2" paragraph>
+            {lab.description}
+          </Typography>
+
+          {/* 研究分野 */}
+          <Box mb={2}>
+            <Typography variant="subtitle2" gutterBottom>
+              🔬 研究分野
+            </Typography>
+            <Box display="flex" gap={1} flexWrap="wrap">
+              {lab.research_areas?.map((area: string, idx: number) => (
+                <Chip
+                  key={idx}
+                  label={area}
+                  size="small"
+                  variant="outlined"
+                  color="secondary"
+                />
+              ))}
+            </Box>
+          </Box>
+
+          {/* 詳細スコア */}
+          <Accordion>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant="subtitle2">
+                📊 詳細評価スコア（13項目）
+              </Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <Grid container spacing={2}>
+                {Object.entries(lab.detailed_scores || {}).map(([criteria, scoreValue]) => {
+                  const label = criteriaLabels[criteria] || criteria;
+                  // 型安全な数値変換
+                  const score = typeof scoreValue === 'number' ? scoreValue : Number(scoreValue) || 0;
+
+                  return (
+                    <Grid item xs={12} sm={6} md={4} key={criteria}>
+                      <Box display="flex" alignItems="center" gap={1} mb={1}>
+                        {getCriteriaIcon(criteria)}
+                        <Typography variant="body2" fontSize="0.8rem">
+                          {label}
+                        </Typography>
+                      </Box>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <LinearProgress
+                          variant="determinate"
+                          value={score}
+                          sx={{ flex: 1, height: 6 }}
+                          color={getScoreColor(score)}
+                        />
+                        <Typography variant="body2" fontWeight="bold" minWidth="40px">
+                          {score.toFixed(1)}
+                        </Typography>
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </AccordionDetails>
+          </Accordion>
+
+          {/* 分野適合性と追加情報 */}
+          <Box mt={2}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    🎯 分野適合性
+                  </Typography>
+                  <Box display="flex" alignItems="center" gap={1}>
+                    <LinearProgress
+                      variant="determinate"
+                      value={lab.field_compatibility}
+                      sx={{ flex: 1 }}
+                      color={getScoreColor(lab.field_compatibility)}
+                    />
+                    <Typography variant="body2" fontWeight="bold">
+                      {lab.field_compatibility.toFixed(1)}%
+                    </Typography>
+                  </Box>
+                </Box>
+              </Grid>
+
+              {lab.publications && (
+                <Grid item xs={12} md={6}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    📄 論文実績
+                  </Typography>
+                  <Typography variant="body2">
+                    年間約 {lab.publications} 本
+                  </Typography>
+                </Grid>
+              )}
+            </Grid>
+          </Box>
+
+          {/* 強みと注意点 */}
+          <Box mt={2}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom color="success.main">
+                  ✅ 強み・メリット
+                </Typography>
+                <List dense>
+                  {lab.strengths?.map((strength: string, idx: number) => (
+                    <ListItem key={idx} sx={{ py: 0.5 }}>
+                      <ListItemIcon sx={{ minWidth: 20 }}>
+                        <Typography variant="body2">•</Typography>
+                      </ListItemIcon>
+                      <ListItemText primary={strength} />
+                    </ListItem>
+                  ))}
+                </List>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Typography variant="subtitle2" gutterBottom color="warning.main">
+                  ⚠️ 検討事項
+                </Typography>
+                <List dense>
+                  {lab.considerations?.map((consideration: string, idx: number) => (
+                    <ListItem key={idx} sx={{ py: 0.5 }}>
+                      <ListItemIcon sx={{ minWidth: 20 }}>
+                        <Typography variant="body2">•</Typography>
+                      </ListItemIcon>
+                      <ListItemText primary={consideration} />
+                    </ListItem>
+                  ))}
+                </List>
+              </Grid>
+            </Grid>
+          </Box>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const renderSummary = () => {
+    return (
+      <Grid container spacing={3}>
+        {/* 基本統計 */}
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <Assessment color="primary" sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" color="primary">
+                {summary.total_labs_evaluated}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                評価対象研究室
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <TrendingUp color="success" sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" color="success.main">
+                {summary.avg_score.toFixed(1)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                平均適合スコア
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={4}>
+          <Card>
+            <CardContent sx={{ textAlign: 'center' }}>
+              <EmojiEvents color="warning" sx={{ fontSize: 40, mb: 1 }} />
+              <Typography variant="h4" color="warning.main">
+                {summary.top_score.toFixed(1)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                最高スコア
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* 評価基準分析 */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                📊 評価基準の重要度分析
+              </Typography>
+              <Grid container spacing={2}>
+                {Object.entries(summary.criteria_analysis || {}).map(([criteria, analysis]) => {
+                  const label = criteriaLabels[criteria] || criteria;
+                  const weight = typeof analysis === 'object' && analysis !== null && 'weight' in analysis
+                    ? Number((analysis as any).weight) : 0;
+
+                  return (
+                    <Grid item xs={12} sm={6} md={4} key={criteria}>
+                      <Box>
+                        <Box display="flex" alignItems="center" gap={1} mb={1}>
+                          {getCriteriaIcon(criteria)}
+                          <Typography variant="body2">
+                            {label}
+                          </Typography>
+                        </Box>
+                        <Box display="flex" alignItems="center" gap={1}>
+                          <Typography variant="caption" color="text.secondary">
+                            重要度:
+                          </Typography>
+                          <LinearProgress
+                            variant="determinate"
+                            value={weight * 100}
+                            sx={{ flex: 1, height: 4 }}
+                          />
+                          <Typography variant="caption">
+                            {(weight * 100).toFixed(0)}%
+                          </Typography>
+                        </Box>
+                      </Box>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* 分野分析 */}
+        {hasFieldAnalysis && (
+          <Grid item xs={12}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  🔬 研究分野の興味分析
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                  選択された分野数: {summary.field_analysis.selected_fields_count}
+                </Typography>
+
+                <Box mb={2}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    主要な興味分野:
+                  </Typography>
+                  <Box display="flex" gap={1} flexWrap="wrap">
+                    {summary.field_analysis.primary_interests?.map((field, idx) => (
+                      <Chip
+                        key={idx}
+                        label={field}
+                        color="primary"
+                        variant="outlined"
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        )}
+
+        {/* 推奨事項 */}
+        <Grid item xs={12}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" gutterBottom>
+                💡 推奨事項
+              </Typography>
+              <List>
+                {summary.recommendations?.map((recommendation, idx) => (
+                  <ListItem key={idx}>
+                    <ListItemIcon>
+                      <StarRate color="primary" />
+                    </ListItemIcon>
+                    <ListItemText primary={recommendation} />
+                  </ListItem>
+                ))}
+              </List>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    );
   };
 
   return (
-    <Box sx={{ mt: 3 }}>
-      {/* 拡張サマリーカード */}
-      <Paper elevation={3} sx={{ mb: 4, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
-        <Box sx={{ p: 3 }}>
-          <Box sx={{ textAlign: 'center', mb: 3 }}>
-            <EmojiEvents sx={{ fontSize: 48, mb: 1 }} />
-            <Typography variant="h5" gutterBottom>
-              📊 評価サマリー
-            </Typography>
-          </Box>
-
-          <Grid container spacing={3}>
-            <Grid item xs={12} sm={3}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" fontWeight="bold">
-                  {summary.total_labs}
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                  評価対象研究室
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" fontWeight="bold">
-                  {summary.avg_score.toFixed(1)}
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                  平均適合度
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" fontWeight="bold">
-                  {results.length > 0 ? results[0].compatibility.overall_score.toFixed(1) : '0'}
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                  最高適合度
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <Box sx={{ textAlign: 'center' }}>
-                <Typography variant="h3" fontWeight="bold">
-                  {hasFieldAnalysis ? (summary.field_analysis!.selected_fields_count || 0) : '0'}
-                </Typography>
-                <Typography variant="body2" sx={{ opacity: 0.9 }}>
-                  選択分野数
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
-        </Box>
-      </Paper>
-
-      {/* タブナビゲーション */}
+    <Box>
       <Paper sx={{ mb: 3 }}>
-        <Tabs value={tabValue} onChange={handleTabChange} aria-label="結果表示タブ">
-          <Tab label="研究室ランキング" />
-          <Tab label="評価分析" />
-          <Tab label="分野別比較" />
+        <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tab icon={<School />} label="研究室ランキング" />
+          <Tab icon={<Assessment />} label="分析サマリー" />
         </Tabs>
       </Paper>
 
-      {/* タブ1: 研究室ランキング */}
       <TabPanel value={tabValue} index={0}>
-        <Grid container spacing={3}>
-          {results.map((result, index) => (
-            <Grid item xs={12} key={result.lab.id}>
-              <Card
-                elevation={result.ranking_position <= 3 ? 8 : 2}
-                sx={{
-                  position: 'relative',
-                  border: result.ranking_position <= 3 ? '2px solid gold' : 'none',
-                  background: result.ranking_position === 1 ?
-                    'linear-gradient(135deg, #fff9c4 0%, #fffacd 100%)' :
-                    'background.paper',
-                }}
-              >
-                <CardContent>
-                  {/* ヘッダー部分 */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                      <Avatar sx={{
-                        bgcolor: getScoreColor(result.compatibility.overall_score) === 'success' ? 'success.main' :
-                          getScoreColor(result.compatibility.overall_score) === 'warning' ? 'warning.main' : 'error.main'
-                      }}>
-                        <School />
-                      </Avatar>
-                      <Box>
-                        <Typography variant="h6" fontWeight="bold">
-                          {getRankIcon(index + 1)} {result.lab.name}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {result.lab.professor} 教授 | {result.lab.research_area}
-                        </Typography>
-                      </Box>
-                    </Box>
+        <Typography variant="h5" gutterBottom>
+          🏆 研究室適合ランキング
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          あなたの評価基準（13項目）と研究分野の興味に基づいて算出された適合度ランキングです
+        </Typography>
 
-                    {/* スコア表示 */}
-                    <Box sx={{ textAlign: 'right' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Typography variant="h4" fontWeight="bold"
-                          color={getScoreColor(result.compatibility.overall_score) + '.main'}>
-                          {result.compatibility.overall_score.toFixed(1)}
-                        </Typography>
-                        <Typography variant="h6">
-                          {getScoreIcon(result.compatibility.overall_score)}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="text.secondary">
-                        適合度スコア
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  {/* プログレスバー */}
-                  <LinearProgress
-                    variant="determinate"
-                    value={result.compatibility.overall_score}
-                    color={getScoreColor(result.compatibility.overall_score)}
-                    sx={{ height: 8, borderRadius: 4, mb: 3 }}
-                  />
-
-                  {/* 研究室詳細 */}
-                  <Accordion>
-                    <AccordionSummary expandIcon={<ExpandMore />}>
-                      <Typography variant="h6">📊 詳細分析</Typography>
-                    </AccordionSummary>
-                    <AccordionDetails>
-                      <Grid container spacing={2}>
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="h6" gutterBottom>
-                            📊 適合度スコア
-                          </Typography>
-                          <List dense>
-                            {Object.entries(result.compatibility.criterion_scores).slice(0, 8).map(([criterion, score]) => (
-                              <ListItem key={criterion}>
-                                <ListItemIcon>
-                                  <Typography>
-                                    {criteriaEmojis[criterion as keyof typeof criteriaEmojis] || '📊'}
-                                  </Typography>
-                                </ListItemIcon>
-                                <ListItemText
-                                  primary={criteriaLabels[criterion as keyof typeof criteriaLabels] || criterion}
-                                  secondary={
-                                    <Box sx={{ mt: 1 }}>
-                                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                                        <Typography variant="body2">
-                                          類似度: {(score.similarity * 100).toFixed(0)}%
-                                        </Typography>
-                                        <Typography variant="body2">
-                                          重み: {score.weight.toFixed(2)}
-                                        </Typography>
-                                      </Box>
-                                      <LinearProgress
-                                        variant="determinate"
-                                        value={score.similarity * 100}
-                                        color={score.similarity >= 0.7 ? 'success' : score.similarity >= 0.5 ? 'warning' : 'error'}
-                                        sx={{ height: 4 }}
-                                      />
-                                    </Box>
-                                  }
-                                />
-                              </ListItem>
-                            ))}
-                          </List>
-                        </Grid>
-
-                        <Grid item xs={12} md={6}>
-                          <Typography variant="h6" gutterBottom>
-                            🏫 研究室情報
-                          </Typography>
-                          <List dense>
-                            <ListItem>
-                              <ListItemIcon><Person /></ListItemIcon>
-                              <ListItemText
-                                primary="教授"
-                                secondary={result.lab.professor}
-                              />
-                            </ListItem>
-                            <ListItem>
-                              <ListItemIcon><Science /></ListItemIcon>
-                              <ListItemText
-                                primary="研究分野"
-                                secondary={result.lab.research_area}
-                              />
-                            </ListItem>
-                            <ListItem>
-                              <ListItemIcon><Category /></ListItemIcon>
-                              <ListItemText
-                                primary="専門領域"
-                                secondary={result.lab.specialization}
-                              />
-                            </ListItem>
-                          </List>
-                        </Grid>
-                      </Grid>
-                    </AccordionDetails>
-                  </Accordion>
-                </CardContent>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
+        {results.map((lab, index) => renderLabCard(lab, index))}
       </TabPanel>
 
-      {/* タブ2: 評価分析 */}
       <TabPanel value={tabValue} index={1}>
-        <Box>
-          <Typography variant="h5" gutterBottom>
-            評価分析
-          </Typography>
-          <Typography>
-            詳細な評価分析内容をここに追加
-          </Typography>
-        </Box>
-      </TabPanel>
+        <Typography variant="h5" gutterBottom>
+          📈 詳細分析レポート
+        </Typography>
+        <Typography variant="body2" color="text.secondary" paragraph>
+          評価結果の統計情報と分析データです
+        </Typography>
 
-      {/* タブ3: 分野別比較 */}
-      <TabPanel value={tabValue} index={2}>
-        <Box>
-          <Typography variant="h5" gutterBottom>
-            分野別比較
-          </Typography>
-          <Typography>
-            分野別比較内容をここに追加
-          </Typography>
-        </Box>
+        {renderSummary()}
       </TabPanel>
     </Box>
   );

@@ -1,4 +1,4 @@
-// src/App.tsx - 完全修正版
+// src/App.tsx - SystemStats型定義完全修正版
 import React, { useState, useEffect } from 'react';
 import {
   Container,
@@ -46,7 +46,19 @@ import EvaluationForm from './components/EvaluationForm';
 import ResultsList from './components/ResultsList';
 import { apiService, EvaluationResponse } from './services/api';
 
-// 型定義
+// システム統計情報の型定義
+interface SystemStats {
+  total_evaluations: number;
+  avg_score: number;
+  popular_criteria: string[];
+  lab_rankings: Array<{
+    lab_name: string;
+    avg_score: number;
+    evaluation_count: number;
+  }>;
+}
+
+// ヘルスステータスの型定義
 interface HealthStatus {
   status: string;
   message: string;
@@ -61,17 +73,7 @@ interface HealthStatus {
   lab_count?: number;
 }
 
-interface SystemStats {
-  total_evaluations: number;
-  avg_score: number;
-  popular_criteria: string[];
-  lab_rankings: Array<{
-    lab_name: string;
-    avg_score: number;
-    evaluation_count: number;
-  }>;
-}
-
+// アプリケーション状態の型定義
 interface AppState {
   results: EvaluationResponse | null;
   healthStatus: HealthStatus | null;
@@ -82,6 +84,7 @@ interface AppState {
   evaluationHistory: EvaluationResponse[];
 }
 
+// スナックバー状態の型定義
 interface SnackbarState {
   open: boolean;
   message: string;
@@ -131,22 +134,29 @@ const App: React.FC = () => {
     severity: 'info',
   });
 
-  const [historyMenuAnchor, setHistoryMenuAnchor] = useState<null | HTMLElement>(null);
-  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  // アンカー状態管理
+  const [anchorEls, setAnchorEls] = useState<{
+    history?: HTMLElement | null;
+    export?: HTMLElement | null;
+  }>({});
 
-  // 初期化処理
+  const [dialogOpen, setDialogOpen] = useState(false);
+
   useEffect(() => {
-    initializeApp();
-    loadHistory();
+    initializeSystem();
   }, []);
 
-  const initializeApp = async () => {
+  const initializeSystem = async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
 
     try {
-      // ヘルス状態取得
-      const health = await apiService.getHealthStatus();
-      setState(prev => ({ ...prev, healthStatus: health }));
+      // ヘルスチェック
+      try {
+        const health = await apiService.getHealthStatus();
+        setState(prev => ({ ...prev, healthStatus: health }));
+      } catch (healthError) {
+        console.warn('ヘルスチェックに失敗しました:', healthError);
+      }
 
       // システム統計取得
       try {
@@ -156,294 +166,364 @@ const App: React.FC = () => {
         console.warn('システム統計の取得に失敗しました:', statsError);
       }
 
+      // 履歴をローカルストレージから復元
+      try {
+        const savedHistory = localStorage.getItem('evaluation_history');
+        if (savedHistory) {
+          const history = JSON.parse(savedHistory);
+          setState(prev => ({ ...prev, evaluationHistory: history }));
+        }
+      } catch (historyError) {
+        console.warn('履歴の復元に失敗しました:', historyError);
+      }
+
+      setState(prev => ({ ...prev, loading: false }));
+      showSnackbar('システムの初期化が完了しました', 'success');
     } catch (error) {
-      console.error('初期化エラー:', error);
       setState(prev => ({
         ...prev,
-        error: 'サーバーに接続できません。バックエンドが起動しているか確認してください。'
+        loading: false,
+        error: error instanceof Error ? error.message : 'システムの初期化に失敗しました'
       }));
-    } finally {
-      setState(prev => ({ ...prev, loading: false }));
+      showSnackbar('システムの初期化に失敗しました', 'error');
     }
-  };
-
-  const loadHistory = () => {
-    try {
-      const savedHistory = localStorage.getItem('evaluationHistory');
-      if (savedHistory) {
-        const history = JSON.parse(savedHistory) as EvaluationResponse[];
-        setState(prev => ({ ...prev, evaluationHistory: history.slice(0, 10) })); // 最新10件のみ
-      }
-    } catch (error) {
-      console.warn('履歴の読み込みに失敗しました:', error);
-    }
-  };
-
-  const saveToHistory = (result: EvaluationResponse) => {
-    try {
-      const newHistory = [result, ...state.evaluationHistory].slice(0, 10);
-      setState(prev => ({ ...prev, evaluationHistory: newHistory }));
-      localStorage.setItem('evaluationHistory', JSON.stringify(newHistory));
-    } catch (error) {
-      console.warn('履歴の保存に失敗しました:', error);
-    }
-  };
-
-  const showSnackbar = (message: string, severity: SnackbarState['severity'] = 'info') => {
-    setSnackbar({ open: true, message, severity });
   };
 
   const handleResults = (results: EvaluationResponse) => {
-    setState(prev => ({ ...prev, results }));
-    saveToHistory(results);
-    showSnackbar('評価が完了しました！', 'success');
+    setState(prev => ({
+      ...prev,
+      results,
+      evaluationHistory: [results, ...prev.evaluationHistory.slice(0, 9)] // 最新10件を保持
+    }));
+
+    // 履歴をローカルストレージに保存
+    try {
+      const newHistory = [results, ...state.evaluationHistory.slice(0, 9)];
+      localStorage.setItem('evaluation_history', JSON.stringify(newHistory));
+    } catch (error) {
+      console.warn('履歴の保存に失敗しました:', error);
+    }
+
+    showSnackbar('研究室の評価が完了しました！', 'success');
   };
 
-  const handleRefresh = () => {
-    setState(prev => ({ ...prev, results: null }));
-    initializeApp();
-    showSnackbar('アプリケーションを更新しました', 'info');
+  const showSnackbar = (message: string, severity: SnackbarState['severity']) => {
+    setSnackbar({ open: true, message, severity });
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar(prev => ({ ...prev, open: false }));
+  };
+
+  const handleMenuOpen = (type: keyof typeof anchorEls, event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEls(prev => ({ ...prev, [type]: event.currentTarget }));
+  };
+
+  const handleMenuClose = (type: keyof typeof anchorEls) => {
+    setAnchorEls(prev => ({ ...prev, [type]: null }));
   };
 
   const handleHistorySelect = (result: EvaluationResponse) => {
     setState(prev => ({ ...prev, results: result }));
-    setHistoryMenuAnchor(null);
+    handleMenuClose('history');
     showSnackbar('履歴から結果を復元しました', 'info');
   };
 
-  const shareResults = async () => {
+  const handleShare = async () => {
     if (!state.results) return;
 
     try {
-      const bestLab = state.results.results.length > 0 ? state.results.results[0].lab.name : '未評価';
-      const bestScore = state.results.results.length > 0 ? state.results.results[0].compatibility.overall_score : 0;
+      const bestLab = state.results.results.length > 0 ? state.results.results[0].lab_name : '未評価';
+      const bestScore = state.results.results.length > 0 ? state.results.results[0].overall_score : 0;
 
       if (navigator.share) {
         await navigator.share({
-          title: '研究室マッチング結果',
-          text: `最適研究室: ${bestLab} (適合度: ${bestScore.toFixed(1)}%)`,
+          title: '研究室選択支援システム結果',
+          text: `最適な研究室: ${bestLab} (適合度: ${bestScore.toFixed(1)}点)`,
           url: window.location.href,
         });
-        showSnackbar('結果を共有しました', 'success');
       } else {
         // フォールバック: クリップボードにコピー
-        const shareText = `研究室マッチング結果\n最適研究室: ${bestLab}\n適合度: ${bestScore.toFixed(1)}%`;
+        const shareText = `研究室選択結果\n最適な研究室: ${bestLab}\n適合度: ${bestScore.toFixed(1)}点\n${window.location.href}`;
         await navigator.clipboard.writeText(shareText);
-        showSnackbar('結果をクリップボードにコピーしました', 'info');
+        showSnackbar('結果をクリップボードにコピーしました', 'success');
       }
     } catch (error) {
       showSnackbar('共有に失敗しました', 'error');
     }
   };
 
-  const exportResults = () => {
+  const handleExport = (format: 'json' | 'csv') => {
     if (!state.results) return;
 
     try {
-      const dataStr = JSON.stringify(state.results, null, 2);
-      const dataBlob = new Blob([dataStr], { type: 'application/json' });
-      const url = URL.createObjectURL(dataBlob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `research_lab_evaluation_${new Date().toISOString().split('T')[0]}.json`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      let content: string;
+      let fileName: string;
+      let mimeType: string;
+
+      if (format === 'json') {
+        content = JSON.stringify(state.results, null, 2);
+        fileName = `研究室評価結果_${new Date().toISOString().split('T')[0]}.json`;
+        mimeType = 'application/json';
+      } else {
+        // CSV形式
+        const headers = ['順位', '研究室名', '指導教員', '総合スコア', '分野適合性'];
+        const rows = state.results.results.map((lab, index) => [
+          index + 1,
+          lab.lab_name,
+          lab.advisor,
+          lab.overall_score.toFixed(1),
+          lab.field_compatibility.toFixed(1)
+        ]);
+
+        content = [headers, ...rows].map(row => row.join(',')).join('\n');
+        fileName = `研究室評価結果_${new Date().toISOString().split('T')[0]}.csv`;
+        mimeType = 'text/csv';
+      }
+
+      const blob = new Blob([content], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
       URL.revokeObjectURL(url);
-      showSnackbar('結果をエクスポートしました', 'success');
+
+      showSnackbar(`${format.toUpperCase()}ファイルをダウンロードしました`, 'success');
     } catch (error) {
       showSnackbar('エクスポートに失敗しました', 'error');
     }
+
+    handleMenuClose('export');
   };
 
-  const clearHistory = () => {
-    setState(prev => ({ ...prev, evaluationHistory: [] }));
-    localStorage.removeItem('evaluationHistory');
-    showSnackbar('履歴をクリアしました', 'info');
-    setSettingsDialogOpen(false);
-  };
+  const renderHeader = () => (
+    <AppBar position="static" elevation={0}>
+      <Toolbar>
+        <Science sx={{ mr: 2 }} />
+        <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+          研究室選択支援システム
+        </Typography>
 
-  const getServerStatusColor = () => {
-    if (!state.healthStatus) return 'error';
-    return state.healthStatus.status === 'healthy' ? 'success' : 'warning';
-  };
+        {/* ステータス表示 */}
+        <Box display="flex" alignItems="center" gap={1} mr={2}>
+          {state.healthStatus && (
+            <Chip
+              label={state.healthStatus.status === 'healthy' ? '正常稼働' : '要確認'}
+              color={state.healthStatus.status === 'healthy' ? 'success' : 'warning'}
+              size="small"
+            />
+          )}
+          {state.systemStats && (
+            <Chip
+              label={`評価数: ${state.systemStats.total_evaluations}`}
+              color="secondary"
+              size="small"
+            />
+          )}
+        </Box>
 
-  const getServerStatusText = () => {
-    if (!state.healthStatus) return 'サーバー未接続';
-    return state.healthStatus.status === 'healthy' ? 'サーバー正常' : 'サーバー警告';
-  };
+        {/* 操作ボタン */}
+        <IconButton color="inherit" onClick={() => setDialogOpen(true)}>
+          <Info />
+        </IconButton>
+
+        <IconButton
+          color="inherit"
+          onClick={initializeSystem}
+          disabled={state.loading}
+        >
+          <Refresh />
+        </IconButton>
+
+        {/* 履歴メニュー */}
+        <IconButton
+          color="inherit"
+          onClick={(e) => handleMenuOpen('history', e)}
+          disabled={state.evaluationHistory.length === 0}
+        >
+          <History />
+        </IconButton>
+        <Menu
+          anchorEl={anchorEls.history}
+          open={Boolean(anchorEls.history)}
+          onClose={() => handleMenuClose('history')}
+        >
+          {state.evaluationHistory.length === 0 ? (
+            <MenuItem disabled>
+              <Typography variant="body2">履歴がありません</Typography>
+            </MenuItem>
+          ) : (
+            state.evaluationHistory.map((result, index) => {
+              const bestLab = result.results.length > 0 ? result.results[0].lab_name : '未評価';
+              const bestScore = result.results.length > 0 ? result.results[0].overall_score : 0;
+
+              return (
+                <MenuItem key={index} onClick={() => handleHistorySelect(result)}>
+                  <Box>
+                    <Typography variant="body2" fontWeight="bold">
+                      {bestLab}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      スコア: {bestScore.toFixed(1)}点
+                    </Typography>
+                  </Box>
+                </MenuItem>
+              );
+            })
+          )}
+        </Menu>
+
+        {/* エクスポートメニュー */}
+        {state.results && (
+          <>
+            <IconButton
+              color="inherit"
+              onClick={(e) => handleMenuOpen('export', e)}
+            >
+              <GetApp />
+            </IconButton>
+            <Menu
+              anchorEl={anchorEls.export}
+              open={Boolean(anchorEls.export)}
+              onClose={() => handleMenuClose('export')}
+            >
+              <MenuItem onClick={() => handleExport('json')}>
+                <CloudDownload sx={{ mr: 1 }} />
+                JSON形式でエクスポート
+              </MenuItem>
+              <MenuItem onClick={() => handleExport('csv')}>
+                <Assessment sx={{ mr: 1 }} />
+                CSV形式でエクスポート
+              </MenuItem>
+            </Menu>
+
+            <IconButton color="inherit" onClick={handleShare}>
+              <Share />
+            </IconButton>
+          </>
+        )}
+      </Toolbar>
+    </AppBar>
+  );
+
+  const renderInfoDialog = () => (
+    <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="md" fullWidth>
+      <DialogTitle>
+        <Box display="flex" alignItems="center" gap={1}>
+          <Science color="primary" />
+          システム情報
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        <Grid container spacing={3}>
+          {/* システム概要 */}
+          <Grid item xs={12}>
+            <Typography variant="h6" gutterBottom>
+              🧠 システム概要
+            </Typography>
+            <Typography variant="body2" paragraph>
+              このシステムは、遺伝的アルゴリズムを用いたファジィ決定木により、
+              あなたの価値観と研究興味に最適な研究室を見つけます。
+            </Typography>
+          </Grid>
+
+          {/* 技術スタック */}
+          <Grid item xs={12} md={6}>
+            <Typography variant="h6" gutterBottom>
+              ⚙️ 技術スタック
+            </Typography>
+            <Box display="flex" flexDirection="column" gap={1}>
+              <Chip icon={<Psychology />} label="ファジィ推論エンジン" variant="outlined" />
+              <Chip icon={<TrendingUp />} label="遺伝的アルゴリズム" variant="outlined" />
+              <Chip icon={<Science />} label="決定木アルゴリズム" variant="outlined" />
+            </Box>
+          </Grid>
+
+          {/* システム状態 */}
+          <Grid item xs={12} md={6}>
+            <Typography variant="h6" gutterBottom>
+              📊 システム状態
+            </Typography>
+            {state.healthStatus && (
+              <Box mb={2}>
+                <Typography variant="body2">
+                  ステータス: {state.healthStatus.status}
+                </Typography>
+                <Typography variant="body2">
+                  データベース: {state.healthStatus.database?.lab_count || 0}研究室
+                </Typography>
+                {state.systemStats && (
+                  <Typography variant="body2">
+                    総評価数: {state.systemStats.total_evaluations}
+                  </Typography>
+                )}
+              </Box>
+            )}
+          </Grid>
+
+          {/* 評価基準 */}
+          <Grid item xs={12}>
+            <Typography variant="h6" gutterBottom>
+              📋 評価基準（13項目）
+            </Typography>
+            <Grid container spacing={1}>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="subtitle2" color="primary">基本項目（5項目）</Typography>
+                <Typography variant="body2">研究強度、指導スタイル、チームワーク、ワークロード、理論・実践バランス</Typography>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="subtitle2" color="secondary">拡張項目（5項目）</Typography>
+                <Typography variant="body2">研究分野適合性、スキル開発、研究室雰囲気、柔軟性、論文発表機会</Typography>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="subtitle2" color="warning.main">特殊項目（3項目）</Typography>
+                <Typography variant="body2">学際性、コミュニケーション、革新性・リスク許容度</Typography>
+              </Grid>
+            </Grid>
+          </Grid>
+        </Grid>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setDialogOpen(false)}>
+          閉じる
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ flexGrow: 1, minHeight: '100vh', bgcolor: 'background.default' }}>
-        {/* アプリバー */}
-        <AppBar position="static" elevation={0}>
-          <Toolbar>
-            <Science sx={{ mr: 2 }} />
-            <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              ファジィ決定木研究室選択支援システム
-            </Typography>
+      <Box sx={{ flexGrow: 1 }}>
+        {renderHeader()}
 
-            {/* ヘルス状態表示 */}
-            <Chip
-              label={getServerStatusText()}
-              color={getServerStatusColor()}
-              size="small"
-              sx={{ mr: 2 }}
-            />
+        <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+          {state.loading && (
+            <Paper sx={{ p: 3, mb: 3, textAlign: 'center' }}>
+              <LinearProgress sx={{ mb: 2 }} />
+              <Typography>システムを初期化中...</Typography>
+            </Paper>
+          )}
 
-            {/* アクションボタン */}
-            <Tooltip title="履歴">
-              <IconButton
-                color="inherit"
-                onClick={(e) => setHistoryMenuAnchor(e.currentTarget)}
-                disabled={state.evaluationHistory.length === 0}
-              >
-                <History />
-              </IconButton>
-            </Tooltip>
-
-            <Tooltip title="設定">
-              <IconButton color="inherit" onClick={() => setSettingsDialogOpen(true)}>
-                <Settings />
-              </IconButton>
-            </Tooltip>
-
-            <Tooltip title="更新">
-              <IconButton color="inherit" onClick={handleRefresh}>
-                <Refresh />
-              </IconButton>
-            </Tooltip>
-
-            <Tooltip title="情報">
-              <IconButton
-                color="inherit"
-                onClick={() => setState(prev => ({ ...prev, showInfo: !prev.showInfo }))}
-              >
-                <Info />
-              </IconButton>
-            </Tooltip>
-          </Toolbar>
-        </AppBar>
-
-        <Container maxWidth="xl" sx={{ mt: 3, mb: 3 }}>
-          {/* エラー表示 */}
           {state.error && (
-            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setState(prev => ({ ...prev, error: null }))}>
+            <Alert severity="error" sx={{ mb: 3 }}>
               {state.error}
             </Alert>
           )}
 
-          {/* ローディング表示 */}
-          {state.loading && (
-            <Box sx={{ mb: 3 }}>
-              <LinearProgress />
-            </Box>
-          )}
-
-          {/* システム情報表示 */}
-          {state.showInfo && (
-            <Paper elevation={2} sx={{ p: 3, mb: 3, bgcolor: 'primary.main', color: 'white' }}>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom>
-                    システム状態
-                  </Typography>
-                  {state.healthStatus && (
-                    <Box>
-                      <Typography variant="body2">
-                        ステータス: {state.healthStatus.status}
-                      </Typography>
-                      <Typography variant="body2">
-                        バージョン: {state.healthStatus.version || 'Unknown'}
-                      </Typography>
-                      {state.healthStatus.database && (
-                        <Typography variant="body2">
-                          データベース: {state.healthStatus.database.lab_count} 研究室
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <Typography variant="h6" gutterBottom>
-                    システム統計
-                  </Typography>
-                  {state.systemStats ? (
-                    <Box>
-                      <Typography variant="body2">
-                        総評価数: {state.systemStats.total_evaluations}
-                      </Typography>
-                      <Typography variant="body2">
-                        平均スコア: {state.systemStats.avg_score.toFixed(1)}
-                      </Typography>
-                      <Typography variant="body2">
-                        履歴: {state.evaluationHistory.length} 件
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <Typography variant="body2">統計データを取得中...</Typography>
-                  )}
-                </Grid>
-              </Grid>
-            </Paper>
-          )}
-
-          {/* メインコンテンツ */}
-          <Grid container spacing={3}>
-            <Grid item xs={12}>
-              {!state.results ? (
-                <>
-                  {/* ヘッダーセクション */}
-                  <Paper elevation={3} sx={{ p: 4, mb: 4, textAlign: 'center', bgcolor: 'primary.main', color: 'white' }}>
-                    <Psychology sx={{ fontSize: 60, mb: 2 }} />
-                    <Typography variant="h3" gutterBottom>
-                      研究室適合度評価システム
-                    </Typography>
-                    <Typography variant="h6" sx={{ opacity: 0.9 }}>
-                      遺伝的アルゴリズムとファジィ決定木を用いたインテリジェントマッチング
-                    </Typography>
-                  </Paper>
-
-                  {/* 評価フォーム */}
-                  <EvaluationForm onResults={handleResults} />
-                </>
-              ) : (
-                <>
-                  {/* 結果表示 */}
-                  <ResultsList data={state.results} />
-
-                  {/* アクションボタン */}
-                  <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mt: 4 }}>
-                    <Button
-                      variant="outlined"
-                      onClick={() => setState(prev => ({ ...prev, results: null }))}
-                      startIcon={<Refresh />}
-                    >
-                      新しい評価
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      onClick={shareResults}
-                      startIcon={<Share />}
-                    >
-                      結果を共有
-                    </Button>
-
-                    <Button
-                      variant="outlined"
-                      onClick={exportResults}
-                      startIcon={<GetApp />}
-                    >
-                      エクスポート
-                    </Button>
-                  </Box>
-                </>
-              )}
+          <Grid container spacing={4}>
+            <Grid item xs={12} lg={state.results ? 6 : 12}>
+              <EvaluationForm onResults={handleResults} />
             </Grid>
+
+            {state.results && (
+              <Grid item xs={12} lg={6}>
+                <ResultsList data={state.results} />
+              </Grid>
+            )}
           </Grid>
         </Container>
 
@@ -454,84 +534,26 @@ const App: React.FC = () => {
             sx={{ position: 'fixed', bottom: 16, right: 16 }}
             onClick={() => setState(prev => ({ ...prev, results: null }))}
           >
-            <Assessment />
+            <Tooltip title="新しい評価を開始">
+              <Refresh />
+            </Tooltip>
           </Fab>
         )}
-
-        {/* 履歴メニュー */}
-        <Menu
-          anchorEl={historyMenuAnchor}
-          open={Boolean(historyMenuAnchor)}
-          onClose={() => setHistoryMenuAnchor(null)}
-          PaperProps={{ sx: { maxHeight: 400, width: 300 } }}
-        >
-          {state.evaluationHistory.length === 0 ? (
-            <MenuItem disabled>履歴がありません</MenuItem>
-          ) : (
-            state.evaluationHistory.map((result, index) => {
-              const bestLab = result.results.length > 0 ? result.results[0].lab.name : '未評価';
-              const bestScore = result.results.length > 0 ? result.results[0].compatibility.overall_score : 0;
-
-              return (
-                <MenuItem key={index} onClick={() => handleHistorySelect(result)}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
-                      <Typography variant="body2">
-                        {bestLab}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        適合度: {bestScore.toFixed(1)}%
-                      </Typography>
-                    </Box>
-                  </Box>
-                </MenuItem>
-              );
-            })
-          )}
-        </Menu>
-
-        {/* 設定ダイアログ */}
-        <Dialog open={settingsDialogOpen} onClose={() => setSettingsDialogOpen(false)}>
-          <DialogTitle>設定</DialogTitle>
-          <DialogContent>
-            <Box sx={{ pt: 2 }}>
-              <Typography variant="h6" gutterBottom>
-                データ管理
-              </Typography>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                評価履歴: {state.evaluationHistory.length} 件
-              </Typography>
-              <Button
-                variant="outlined"
-                color="error"
-                onClick={clearHistory}
-                disabled={state.evaluationHistory.length === 0}
-                startIcon={<Close />}
-              >
-                履歴をクリア
-              </Button>
-            </Box>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setSettingsDialogOpen(false)}>閉じる</Button>
-          </DialogActions>
-        </Dialog>
 
         {/* スナックバー */}
         <Snackbar
           open={snackbar.open}
-          autoHideDuration={4000}
-          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          autoHideDuration={6000}
+          onClose={handleSnackbarClose}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
         >
-          <Alert
-            onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-            severity={snackbar.severity}
-            variant="filled"
-          >
+          <Alert onClose={handleSnackbarClose} severity={snackbar.severity}>
             {snackbar.message}
           </Alert>
         </Snackbar>
+
+        {/* 情報ダイアログ */}
+        {renderInfoDialog()}
       </Box>
     </ThemeProvider>
   );

@@ -1,4 +1,4 @@
-// src/components/EvaluationForm.tsx - 修正版
+// src/components/EvaluationForm.tsx - バックエンド13項目仕様に合わせた修正版
 import React, { useState } from 'react';
 import {
   Box,
@@ -29,7 +29,11 @@ import {
   Article,
   AttachMoney,
   AccountTree,
-  AccessTime
+  AccessTime,
+  Settings,
+  EmojiEvents,
+  ConnectWithoutContact,
+  Lightbulb
 } from '@mui/icons-material';
 import {
   apiService,
@@ -39,6 +43,7 @@ import {
   StudentProfile,
   RESEARCH_FIELDS,
   FIELD_CATEGORIES,
+  CRITERIA_INFO,
   fieldUtils
 } from '../services/api';
 
@@ -47,7 +52,7 @@ interface EvaluationFormProps {
 }
 
 const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults }) => {
-  // 20項目評価基準の初期値
+  // 13項目評価基準の初期値（バックエンド仕様）
   const [preferences, setPreferences] = useState<EvaluationPreferences>({
     // 基本項目（5項目）
     research_intensity: 7.0,
@@ -59,26 +64,14 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults }) => {
     // 拡張項目（5項目）
     research_field_match: 8.0,
     skill_development: 7.0,
-    learning_pace: 6.0,
-    difficulty_preference: 7.0,
     lab_atmosphere: 7.0,
-
-    // コミュニケーション関連（4項目）
-    communication_style: 6.0,
-    meeting_frequency: 6.0,
     flexibility: 7.0,
-    evening_weekend_work: 5.0,
-
-    // 研究アプローチ関連（3項目）
-    innovation_risk: 6.0,
-    methodology_preference: 6.0,
-    interdisciplinary: 6.0,
-
-    // 重要項目（3項目）
     publication_opportunity: 8.0,
-    financial_support: 7.0,
-    lab_hierarchy: 6.0,
-    core_time_flexibility: 7.0,
+
+    // 特殊項目（3項目）
+    interdisciplinary: 6.0,
+    communication_style: 6.0,
+    innovation_risk: 6.0,
   });
 
   // 研究分野の興味度
@@ -104,527 +97,282 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults }) => {
   const criteriaCategories = {
     basic: {
       title: '基本的な研究環境',
-      icon: <Science color="primary" />,
-      criteria: {
-        research_intensity: {
-          label: '研究強度',
-          description: '研究活動の集中度と深さ',
-          leftLabel: '軽い研究',
-          rightLabel: '集中研究',
-          emoji: '🔬'
-        },
-        advisor_style: {
-          label: '指導スタイル',
-          description: '教授からの指導の受け方',
-          leftLabel: '厳格指導',
-          rightLabel: '自由指導',
-          emoji: '👨‍🏫'
-        },
-        team_work: {
-          label: 'チームワーク',
-          description: '他者との協働の程度',
-          leftLabel: '個人研究',
-          rightLabel: 'チーム研究',
-          emoji: '🤝'
-        },
-        workload: {
-          label: 'ワークロード',
-          description: '研究活動の忙しさ',
-          leftLabel: '軽い負荷',
-          rightLabel: '重い負荷',
-          emoji: '⚡'
-        },
-        theory_practice: {
-          label: '理論・実践バランス',
-          description: '理論と実践のバランス',
-          leftLabel: '理論重視',
-          rightLabel: '実践重視',
-          emoji: '⚖️'
-        }
-      }
+      icon: <School />,
+      description: '研究活動の基本的な条件・環境に関する設定',
+      items: ['research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice']
     },
     extended: {
-      title: '学習・成長環境',
-      icon: <TrendingUp color="primary" />,
-      criteria: {
-        research_field_match: {
-          label: '分野適合性',
-          description: '興味と研究分野の一致度',
-          leftLabel: '広い分野',
-          rightLabel: '専門特化',
-          emoji: '🎯'
-        },
-        skill_development: {
-          label: 'スキル開発',
-          description: '専門性と汎用性のバランス',
-          leftLabel: '専門特化',
-          rightLabel: '幅広いスキル',
-          emoji: '📈'
-        },
-        learning_pace: {
-          label: '学習ペース',
-          description: '学習の進行速度',
-          leftLabel: 'ゆっくり',
-          rightLabel: '速いペース',
-          emoji: '🏃'
-        },
-        difficulty_preference: {
-          label: '難易度選好',
-          description: '挑戦レベルの好み',
-          leftLabel: '安全志向',
-          rightLabel: '挑戦志向',
-          emoji: '🎢'
-        },
-        lab_atmosphere: {
-          label: '研究室雰囲気',
-          description: '研究室の全体的な雰囲気',
-          leftLabel: '静寂集中',
-          rightLabel: '活発議論',
-          emoji: '🌟'
-        }
-      }
+      title: '研究の詳細条件',
+      icon: <TrendingUp />,
+      description: '研究の専門性や成果に関する詳細な条件',
+      items: ['research_field_match', 'skill_development', 'lab_atmosphere', 'flexibility', 'publication_opportunity']
     },
-    communication: {
-      title: 'コミュニケーション・時間',
-      icon: <Groups color="primary" />,
-      criteria: {
-        communication_style: {
-          label: 'コミュニケーション',
-          description: '研究室での交流スタイル',
-          leftLabel: '少人数密接',
-          rightLabel: 'オープン交流',
-          emoji: '💬'
-        },
-        meeting_frequency: {
-          label: 'ミーティング頻度',
-          description: '定期的な会議の頻度',
-          leftLabel: '少ない',
-          rightLabel: '頻繁',
-          emoji: '📅'
-        },
-        flexibility: {
-          label: '柔軟性',
-          description: '研究時間の自由度',
-          leftLabel: '固定スケジュール',
-          rightLabel: '柔軟スケジュール',
-          emoji: '🤸'
-        },
-        evening_weekend_work: {
-          label: '夜間・休日作業',
-          description: '時間外作業の許容度',
-          leftLabel: '平日のみ',
-          rightLabel: '24時間対応',
-          emoji: '🌙'
-        }
-      }
-    },
-    approach: {
-      title: '研究アプローチ',
-      icon: <Explore color="primary" />,
-      criteria: {
-        innovation_risk: {
-          label: '革新性・リスク許容度',
-          description: '新しい手法への挑戦度',
-          leftLabel: '安全手法',
-          rightLabel: '革新手法',
-          emoji: '🚀'
-        },
-        methodology_preference: {
-          label: '手法選好',
-          description: '研究手法の好み',
-          leftLabel: '確立手法',
-          rightLabel: '新手法',
-          emoji: '🔧'
-        },
-        interdisciplinary: {
-          label: '学際性',
-          description: '他分野との連携の程度',
-          leftLabel: '単一分野',
-          rightLabel: '学際連携',
-          emoji: '🌐'
-        }
-      }
-    },
-    priority: {
-      title: '重要項目（学生調査結果）',
-      icon: <AttachMoney color="secondary" />,
-      criteria: {
-        publication_opportunity: {
-          label: '論文発表機会',
-          description: '研究成果の論文化機会',
-          leftLabel: '少ない機会',
-          rightLabel: '豊富な機会',
-          emoji: '📝'
-        },
-        financial_support: {
-          label: '経済支援',
-          description: '研究資金や奨学金サポート',
-          leftLabel: '最小限',
-          rightLabel: '充実',
-          emoji: '💰'
-        },
-        lab_hierarchy: {
-          label: '研究室階層',
-          description: '研究室内の上下関係',
-          leftLabel: '厳格階層',
-          rightLabel: 'フラット',
-          emoji: '👥'
-        },
-        core_time_flexibility: {
-          label: 'コアタイム柔軟性',
-          description: '必須出席時間の柔軟さ',
-          leftLabel: '固定時間',
-          rightLabel: '自由出席',
-          emoji: '⏰'
-        }
-      }
+    special: {
+      title: '特殊な研究アプローチ',
+      icon: <Lightbulb />,
+      description: '革新性や学際性など特殊な研究アプローチに関する設定',
+      items: ['interdisciplinary', 'communication_style', 'innovation_risk']
     }
   };
 
-  const handlePreferenceChange = (key: keyof EvaluationPreferences, value: number) => {
-    setPreferences(prev => ({ ...prev, [key]: value }));
+  const getCriteriaIcon = (criteriaKey: string) => {
+    const iconMap: { [key: string]: React.ReactElement } = {
+      research_intensity: <Science />,
+      advisor_style: <School />,
+      team_work: <Groups />,
+      workload: <Schedule />,
+      theory_practice: <Psychology />,
+      research_field_match: <Explore />,
+      skill_development: <TrendingUp />,
+      lab_atmosphere: <Groups />,
+      flexibility: <AccessTime />,
+      publication_opportunity: <Article />,
+      interdisciplinary: <AccountTree />,
+      communication_style: <ConnectWithoutContact />,
+      innovation_risk: <Lightbulb />
+    };
+    return iconMap[criteriaKey] || <Settings />;
   };
 
-  const handleFieldInterestChange = (fieldName: string, value: number) => {
-    setFieldInterests(prev => ({ ...prev, [fieldName]: value }));
+  const handlePreferenceChange = (criteria: keyof EvaluationPreferences, value: number) => {
+    setPreferences(prev => ({
+      ...prev,
+      [criteria]: value
+    }));
   };
 
-  const handleEvaluate = async () => {
+  const handleFieldInterestChange = (field: keyof ResearchFieldInterests, value: number) => {
+    setFieldInterests(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const handleSubmit = async () => {
     setLoading(true);
     setError(null);
 
     try {
       const studentProfile: StudentProfile = {
-        evaluation_criteria: preferences,
-        field_interests: fieldInterests
+        preferences,
+        field_interests: fieldInterests,
+        metadata: {
+          timestamp: Date.now(),
+          session_id: `session_${Math.random().toString(36).substr(2, 9)}`
+        }
       };
 
-      const response = await apiService.evaluateCompatibility(studentProfile);
+      const response = await apiService.evaluateLabs(studentProfile);
       onResults(response);
-    } catch (err: any) {
-      setError(err.response?.data?.error || '評価に失敗しました。サーバーが起動しているか確認してください。');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleOptimizeWithGA = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const studentProfile: StudentProfile = {
-        evaluation_criteria: preferences,
-        field_interests: fieldInterests
-      };
-
-      const response = await apiService.optimizeWithGeneticAlgorithm(studentProfile);
-      onResults(response);
-    } catch (err: any) {
-      setError(err.response?.data?.error || '遺伝的アルゴリズム最適化に失敗しました。');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadDemoProfile = async () => {
-    try {
-      const profile = await apiService.getDemoProfile();
-      setPreferences(profile.evaluation_criteria);
-      setFieldInterests(profile.field_interests);
     } catch (err) {
-      setError('デモプロフィールの読み込みに失敗しました。');
+      setError(err instanceof Error ? err.message : '評価処理でエラーが発生しました');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const resetToDefaults = () => {
-    setPreferences({
-      research_intensity: 7.0,
-      advisor_style: 6.0,
-      team_work: 7.0,
-      workload: 6.0,
-      theory_practice: 7.0,
-      research_field_match: 8.0,
-      skill_development: 7.0,
-      learning_pace: 6.0,
-      difficulty_preference: 7.0,
-      lab_atmosphere: 7.0,
-      communication_style: 6.0,
-      meeting_frequency: 6.0,
-      flexibility: 7.0,
-      evening_weekend_work: 5.0,
-      innovation_risk: 6.0,
-      methodology_preference: 6.0,
-      interdisciplinary: 6.0,
-      publication_opportunity: 8.0,
-      financial_support: 7.0,
-      lab_hierarchy: 6.0,
-      core_time_flexibility: 7.0,
-    });
+  const renderCriteriaSlider = (criteriaKey: keyof EvaluationPreferences) => {
+    const info = CRITERIA_INFO[criteriaKey];
+    const value = preferences[criteriaKey];
 
-    setFieldInterests({
-      "人工知能・機械学習": 7.0,
-      "画像・映像処理": 5.0,
-      "コンピュータネットワーク・セキュリティ": 4.0,
-      "データベース・情報システム": 5.0,
-      "組込み・IoT": 4.0,
-      "Webデザイン・UI/UX": 6.0,
-      "デザイン・視覚表現": 5.0,
-      "映像・アニメーション": 4.0,
-      "コンピュータ音楽・サウンドアート": 3.0,
-      "ゲーム開発・eスポーツ": 6.0,
-      "VR/AR・メディアアート": 5.0
-    });
+    return (
+      <Grid item xs={12} md={6} key={criteriaKey}>
+        <Card sx={{ p: 2, height: '100%' }}>
+          <Box display="flex" alignItems="center" gap={1} mb={1}>
+            {getCriteriaIcon(criteriaKey)}
+            <Typography variant="h6" component="h3">
+              {info.label}
+            </Typography>
+          </Box>
+
+          <Typography variant="body2" color="text.secondary" mb={2}>
+            {info.description}
+          </Typography>
+
+          <Box sx={{ px: 1 }}>
+            <Slider
+              value={value}
+              onChange={(_, newValue) => handlePreferenceChange(criteriaKey, newValue as number)}
+              min={1}
+              max={10}
+              step={0.5}
+              marks={[
+                { value: 1, label: '1' },
+                { value: 5, label: '5' },
+                { value: 10, label: '10' }
+              ]}
+              valueLabelDisplay="on"
+              sx={{ mb: 1 }}
+            />
+          </Box>
+
+          <Typography variant="caption" color="text.secondary">
+            {info.range}
+          </Typography>
+
+          <Box mt={1}>
+            <Chip
+              label={`現在値: ${value}`}
+              size="small"
+              color={value >= 7 ? 'primary' : value >= 4 ? 'default' : 'secondary'}
+            />
+          </Box>
+        </Card>
+      </Grid>
+    );
   };
 
-  const getScoreColor = (score: number): 'success' | 'warning' | 'error' => {
-    if (score >= 8) return 'success';
-    if (score >= 6) return 'warning';
-    return 'error';
+  const renderCriteriaCategory = (categoryKey: keyof typeof criteriaCategories) => {
+    const category = criteriaCategories[categoryKey];
+
+    return (
+      <Accordion key={categoryKey} defaultExpanded>
+        <AccordionSummary expandIcon={<ExpandMore />}>
+          <Box display="flex" alignItems="center" gap={1}>
+            {category.icon}
+            <Box>
+              <Typography variant="h6">{category.title}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {category.description}
+              </Typography>
+            </Box>
+          </Box>
+        </AccordionSummary>
+        <AccordionDetails>
+          <Grid container spacing={3}>
+            {category.items.map(criteriaKey =>
+              renderCriteriaSlider(criteriaKey as keyof EvaluationPreferences)
+            )}
+          </Grid>
+        </AccordionDetails>
+      </Accordion>
+    );
   };
 
-  return (
-    <Card elevation={3} sx={{ mb: 4 }}>
-      <CardContent>
-        <Box sx={{ textAlign: 'center', mb: 4 }}>
-          <Science color="primary" sx={{ fontSize: 48, mb: 2 }} />
-          <Typography variant="h4" component="h2" gutterBottom color="primary">
-            拡張版研究室適合度評価
-          </Typography>
-          <Typography variant="body1" color="text.secondary">
-            21項目の詳細な評価基準であなたの希望を分析します（1-10スケール）
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            実際の学生調査結果に基づく重要項目を含む包括的評価
-          </Typography>
+  const renderFieldInterests = () => {
+    return (
+      <Card sx={{ p: 3 }}>
+        <Box display="flex" alignItems="center" gap={1} mb={2}>
+          <Explore />
+          <Typography variant="h5">研究分野への興味度</Typography>
         </Box>
 
-        {error && (
-          <Alert severity="error" sx={{ mb: 3 }}>
-            {error}
-          </Alert>
-        )}
+        <Typography variant="body2" color="text.secondary" mb={3}>
+          各研究分野への興味の強さを設定してください（1: 興味なし 〜 10: 非常に興味あり）
+        </Typography>
 
-        {/* コントロールボタン */}
-        <Box sx={{ display: 'flex', gap: 2, mb: 3, justifyContent: 'center' }}>
-          <Button variant="outlined" onClick={loadDemoProfile} size="small">
-            デモデータ読込
-          </Button>
-          <Button variant="outlined" onClick={resetToDefaults} size="small">
-            初期値に戻す
-          </Button>
-        </Box>
+        {Object.entries(FIELD_CATEGORIES).map(([categoryName, fields]) => (
+          <Box key={categoryName} mb={4}>
+            <Typography variant="h6" gutterBottom color="primary">
+              {categoryName}分野
+            </Typography>
 
-        {/* カテゴリ別評価項目 */}
-        {Object.entries(criteriaCategories).map(([categoryKey, category]) => (
-          <Accordion key={categoryKey} defaultExpanded={categoryKey === 'priority'}>
-            <AccordionSummary
-              expandIcon={<ExpandMore />}
-              aria-controls={`${categoryKey}-content`}
-              id={`${categoryKey}-header`}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                {category.icon}
-                <Typography variant="h6">{category.title}</Typography>
-                <Chip
-                  label={`${Object.keys(category.criteria).length}項目`}
-                  size="small"
-                  color={categoryKey === 'priority' ? 'secondary' : 'primary'}
-                  variant="outlined"
-                />
-              </Box>
-            </AccordionSummary>
-            <AccordionDetails>
-              <Grid container spacing={3}>
-                {Object.entries(category.criteria).map(([key, criterion]) => (
-                  <Grid item xs={12} md={6} key={key}>
-                    <Paper elevation={1} sx={{ p: 2, height: '100%' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                        <Typography sx={{ fontSize: '1.5rem' }}>
-                          {criterion.emoji}
-                        </Typography>
-                        <Box>
-                          <Typography variant="h6" gutterBottom>
-                            {criterion.label}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            {criterion.description}
-                          </Typography>
-                        </Box>
-                      </Box>
+            <Grid container spacing={2}>
+              {fields.map((field) => (
+                <Grid item xs={12} md={6} key={field}>
+                  <Box sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      {field}
+                    </Typography>
 
+                    <Box sx={{ px: 1 }}>
                       <Slider
-                        value={preferences[key as keyof EvaluationPreferences]}
-                        onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferences, value as number)}
+                        value={fieldInterests[field as keyof ResearchFieldInterests]}
+                        onChange={(_, newValue) =>
+                          handleFieldInterestChange(field as keyof ResearchFieldInterests, newValue as number)
+                        }
                         min={1}
                         max={10}
                         step={0.5}
-                        marks
+                        marks={[
+                          { value: 1, label: '1' },
+                          { value: 5, label: '5' },
+                          { value: 10, label: '10' }
+                        ]}
                         valueLabelDisplay="on"
-                        color={getScoreColor(preferences[key as keyof EvaluationPreferences])}
-                        sx={{ mb: 2 }}
                       />
+                    </Box>
 
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="caption" color="text.secondary">
-                          {criterion.leftLabel}
-                        </Typography>
-                        <Typography variant="caption" color="text.secondary">
-                          {criterion.rightLabel}
-                        </Typography>
-                      </Box>
-                    </Paper>
-                  </Grid>
-                ))}
-              </Grid>
-            </AccordionDetails>
-          </Accordion>
-        ))}
-
-        {/* 研究分野興味度 */}
-        <Accordion defaultExpanded>
-          <AccordionSummary expandIcon={<ExpandMore />}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Science color="primary" />
-              <Typography variant="h6">研究分野興味度</Typography>
-              <Chip
-                label={`${Object.keys(fieldInterests).length}分野`}
-                size="small"
-                color="primary"
-                variant="outlined"
-              />
-            </Box>
-          </AccordionSummary>
-          <AccordionDetails>
-            <Grid container spacing={2}>
-              {FIELD_CATEGORIES.map(category => {
-                const fields = fieldUtils.getFieldsByCategory(category);
-                return (
-                  <Grid item xs={12} key={category}>
-                    <Typography variant="h6" gutterBottom color="primary">
-                      {category}
-                    </Typography>
-                    <Grid container spacing={2}>
-                      {fields.map(field => (
-                        <Grid item xs={12} md={6} key={field.id}>
-                          <Paper elevation={1} sx={{ p: 2 }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                              <Typography sx={{ fontSize: '1.2rem' }}>
-                                {field.icon}
-                              </Typography>
-                              <Typography variant="subtitle1">
-                                {field.name}
-                              </Typography>
-                            </Box>
-                            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                              {field.description}
-                            </Typography>
-                            <Slider
-                              value={fieldInterests[field.name] || 5}
-                              onChange={(_, value) => handleFieldInterestChange(field.name, value as number)}
-                              min={1}
-                              max={10}
-                              step={0.5}
-                              marks
-                              valueLabelDisplay="on"
-                              color={getScoreColor(fieldInterests[field.name] || 5)}
-                            />
-                          </Paper>
-                        </Grid>
-                      ))}
-                    </Grid>
-                  </Grid>
-                );
-              })}
+                    <Chip
+                      label={`興味度: ${fieldInterests[field as keyof ResearchFieldInterests]}`}
+                      size="small"
+                      color={fieldInterests[field as keyof ResearchFieldInterests] >= 7 ? 'primary' : 'default'}
+                    />
+                  </Box>
+                </Grid>
+              ))}
             </Grid>
-          </AccordionDetails>
-        </Accordion>
+          </Box>
+        ))}
+      </Card>
+    );
+  };
 
-        {/* 実行ボタン */}
-        <Divider sx={{ my: 4 }} />
-        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
-          <Button
-            variant="contained"
-            onClick={handleEvaluate}
-            disabled={loading}
-            size="large"
-            startIcon={loading ? <CircularProgress size={20} /> : <Psychology />}
-            sx={{ minWidth: 200 }}
-          >
-            {loading ? '評価中...' : '適合度評価を実行'}
-          </Button>
-
-          <Button
-            variant="outlined"
-            onClick={handleOptimizeWithGA}
-            disabled={loading}
-            size="large"
-            startIcon={loading ? <CircularProgress size={20} /> : <Psychology />}
-            sx={{ minWidth: 200 }}
-          >
-            {loading ? '最適化中...' : '遺伝的アルゴリズム最適化'}
-          </Button>
+  return (
+    <Box>
+      <Card sx={{ p: 3, mb: 3 }}>
+        <Box display="flex" alignItems="center" gap={2} mb={2}>
+          <Science color="primary" />
+          <Typography variant="h4" component="h1">
+            研究室選択支援システム
+          </Typography>
         </Box>
 
-        {/* 評価サマリー */}
-        <Paper elevation={2} sx={{ mt: 3, p: 2, bgcolor: 'grey.50' }}>
-          <Typography variant="h6" gutterBottom>
-            現在の設定サマリー
-          </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle2" gutterBottom>
-                高優先度項目 (8.0以上)
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {Object.entries(preferences)
-                  .filter(([key, value]) => value >= 8.0)
-                  .map(([key, value]) => {
-                    const criterion = Object.values(criteriaCategories)
-                      .flatMap(cat => Object.entries(cat.criteria))
-                      .find(([k]) => k === key);
-                    return (
-                      <Chip
-                        key={key}
-                        label={`${criterion ? criterion[1].emoji : ''} ${criterion ? criterion[1].label : key}: ${value}`}
-                        color="success"
-                        size="small"
-                      />
-                    );
-                  })}
-              </Box>
-            </Grid>
+        <Typography variant="body1" color="text.secondary" mb={2}>
+          あなたの研究に対する価値観と興味を入力して、最適な研究室を見つけましょう。
+          13の評価基準と11の研究分野から総合的に判定します。
+        </Typography>
 
-            <Grid item xs={12} md={6}>
-              <Typography variant="subtitle2" gutterBottom>
-                関心分野 (7.0以上)
-              </Typography>
-              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {Object.entries(fieldInterests)
-                  .filter(([field, interest]) => (interest as number) >= 7.0)
-                  .sort(([, a], [, b]) => (b as number) - (a as number))
-                  .map(([field, interest]) => {
-                    const fieldInfo = RESEARCH_FIELDS.find(f => f.name === field);
-                    return (
-                      <Chip
-                        key={field}
-                        label={`${fieldInfo?.icon || ''} ${field}: ${interest}`}
-                        color={getScoreColor(interest as number)}
-                        size="small"
-                      />
-                    );
-                  })}
-              </Box>
-            </Grid>
-          </Grid>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-            設定完了項目: {Object.keys(preferences).length + Object.keys(fieldInterests).length}項目 |
-            平均評価値: {(Object.values(preferences).reduce((a, b) => a + b, 0) / Object.keys(preferences).length).toFixed(1)} |
-            関心分野数: {Object.values(fieldInterests).filter(v => (v as number) >= 6).length}分野
+        <Box display="flex" gap={1} flexWrap="wrap">
+          <Chip icon={<School />} label="13項目評価" color="primary" />
+          <Chip icon={<Explore />} label="11研究分野" color="secondary" />
+          <Chip icon={<Psychology />} label="ファジィ推論" />
+          <Chip icon={<TrendingUp />} label="遺伝的アルゴリズム" />
+        </Box>
+      </Card>
+
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      <Box mb={3}>
+        <Typography variant="h5" gutterBottom>
+          📊 評価基準の設定（13項目）
+        </Typography>
+        <Typography variant="body2" color="text.secondary" mb={2}>
+          研究室選択で重視する項目について、あなたの価値観を設定してください
+        </Typography>
+
+        {Object.keys(criteriaCategories).map(categoryKey =>
+          renderCriteriaCategory(categoryKey as keyof typeof criteriaCategories)
+        )}
+      </Box>
+
+      <Box mb={3}>
+        {renderFieldInterests()}
+      </Box>
+
+      <Paper sx={{ p: 3, textAlign: 'center' }}>
+        <Button
+          variant="contained"
+          size="large"
+          onClick={handleSubmit}
+          disabled={loading}
+          startIcon={loading ? <CircularProgress size={20} /> : <Science />}
+          sx={{ minWidth: 200 }}
+        >
+          {loading ? '評価中...' : '研究室を評価する'}
+        </Button>
+
+        {loading && (
+          <Typography variant="body2" color="text.secondary" mt={2}>
+            ファジィ決定木と遺伝的アルゴリズムを使用して最適な研究室を分析中...
           </Typography>
-        </Paper>
-      </CardContent>
-    </Card>
+        )}
+      </Paper>
+    </Box>
   );
 };
 

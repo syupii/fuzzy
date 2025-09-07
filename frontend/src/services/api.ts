@@ -1,443 +1,322 @@
 // src/services/api.ts - 完全修正版
 import axios from 'axios';
 
-// 基本的な型定義
+const API_BASE_URL = process.env.NODE_ENV === 'production'
+  ? '/api'
+  : 'http://localhost:8000/api';
+
+const api = axios.create({
+  baseURL: API_BASE_URL,
+  timeout: 30000,
+  headers: {
+    'Content-Type': 'application/json',
+  },
+});
+
+// 13項目評価基準（バックエンド仕様に合わせる）
 export interface EvaluationPreferences {
-  // 基本項目
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
+  // 基本項目（5項目）
+  research_intensity: number;    // 研究強度 (1-10)
+  advisor_style: number;        // 指導スタイル (1-10)
+  team_work: number;           // チームワーク (1-10)
+  workload: number;            // ワークロード (1-10)
+  theory_practice: number;     // 理論・実践バランス (1-10)
 
-  // 拡張項目
-  research_field_match: number;
-  skill_development: number;
-  learning_pace: number;
-  difficulty_preference: number;
-  communication_style: number;
-  meeting_frequency: number;
-  lab_atmosphere: number;
-  innovation_risk: number;
-  methodology_preference: number;
-  interdisciplinary: number;
-  flexibility: number;
-  evening_weekend_work: number;
-  publication_opportunity: number;
-  financial_support: number;
-  lab_hierarchy: number;
-  core_time_flexibility: number;
+  // 拡張項目（5項目）
+  research_field_match: number;    // 研究分野適合性 (1-10)
+  skill_development: number;       // スキル開発 (1-10)
+  lab_atmosphere: number;          // 研究室雰囲気 (1-10)
+  flexibility: number;             // 柔軟性 (1-10)
+  publication_opportunity: number; // 論文発表機会 (1-10)
+
+  // 特殊項目（3項目）
+  interdisciplinary: number;       // 学際性 (1-10)
+  communication_style: number;     // コミュニケーション (1-10)
+  innovation_risk: number;         // 革新性・リスク許容度 (1-10)
 }
 
-export interface Laboratory {
-  id: string;
-  name: string;
-  professor: string;
-  research_area: string;
-  specialization: string;
-  description?: string;
+// 研究分野の興味度
+export interface ResearchFieldInterests {
+  "人工知能・機械学習": number;
+  "画像・映像処理": number;
+  "コンピュータネットワーク・セキュリティ": number;
+  "データベース・情報システム": number;
+  "組込み・IoT": number;
+  "Webデザイン・UI/UX": number;
+  "デザイン・視覚表現": number;
+  "映像・アニメーション": number;
+  "コンピュータ音楽・サウンドアート": number;
+  "ゲーム開発・eスポーツ": number;
+  "VR/AR・メディアアート": number;
 }
 
-export interface CompatibilityScore {
-  overall_score: number;
-  criterion_scores: {
-    [key: string]: {
-      similarity: number;
-      weight: number;
-      score: number;
-    };
+export interface StudentProfile {
+  preferences: EvaluationPreferences;
+  field_interests: ResearchFieldInterests;
+  metadata?: {
+    timestamp?: number;
+    session_id?: string;
   };
 }
 
 export interface LabResult {
-  lab: Laboratory;
-  compatibility: CompatibilityScore;
-  ranking_position: number;
-  recommendations?: string[];
-}
-
-export interface FieldAnalysis {
-  selected_fields_count: number;
-  field_distribution: {
-    [key: string]: number;
+  lab_id: string;
+  lab_name: string;
+  advisor: string;
+  description: string;
+  overall_score: number;
+  rank: number;
+  detailed_scores: {
+    [criteriaName: string]: number;
   };
+  field_compatibility: number;
+  strengths: string[];
+  considerations: string[];
+  research_areas: string[];
+  facilities?: string;
+  publications?: number;
+  funding?: string;
 }
 
 export interface EvaluationSummary {
-  total_labs: number;
+  total_labs_evaluated: number;
   avg_score: number;
-  best_match_lab?: string;
-  avg_compatibility_score?: number;
-  field_analysis?: FieldAnalysis;
+  top_score: number;
+  criteria_analysis: {
+    [criteriaName: string]: {
+      weight: number;
+      avg_value: number;
+      impact_score: number;
+    };
+  };
+  field_analysis: {
+    selected_fields_count: number;
+    primary_interests: string[];
+    field_distribution: {
+      [fieldName: string]: number;
+    };
+  };
+  recommendations: string[];
 }
 
 export interface EvaluationResponse {
+  evaluation_id: string;
   results: LabResult[];
   summary: EvaluationSummary;
+  student_profile: StudentProfile;
+  processing_time: number;
+  algorithm_info: {
+    method: string;
+    data_source: string;
+    fuzzy_available: boolean;
+    genetic_available: boolean;
+    decision_tree_available: boolean;
+  };
 }
 
-// 研究分野関連の型定義
-export interface ResearchField {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  icon: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  keywords: string[];
-}
+// 研究分野定義
+export const RESEARCH_FIELDS = [
+  "人工知能・機械学習",
+  "画像・映像処理",
+  "コンピュータネットワーク・セキュリティ",
+  "データベース・情報システム",
+  "組込み・IoT",
+  "Webデザイン・UI/UX",
+  "デザイン・視覚表現",
+  "映像・アニメーション",
+  "コンピュータ音楽・サウンドアート",
+  "ゲーム開発・eスポーツ",
+  "VR/AR・メディアアート"
+] as const;
 
-export interface FieldInterest {
-  fieldId: string;
-  isSelected: boolean;
-  interestLevel: number;
-}
+export const FIELD_CATEGORIES = {
+  "テクノロジー・システム": [
+    "人工知能・機械学習",
+    "画像・映像処理",
+    "コンピュータネットワーク・セキュリティ",
+    "データベース・情報システム",
+    "組込み・IoT"
+  ],
+  "クリエイティブ": [
+    "Webデザイン・UI/UX",
+    "デザイン・視覚表現",
+    "映像・アニメーション",
+    "コンピュータ音楽・サウンドアート"
+  ],
+  "エンターテイメント": [
+    "ゲーム開発・eスポーツ",
+    "VR/AR・メディアアート"
+  ]
+};
 
-// 研究分野の興味度マップ
-export interface ResearchFieldInterests {
-  [fieldName: string]: number;
-}
+// 評価基準の詳細情報
+export const CRITERIA_INFO = {
+  // 基本項目（5項目）
+  research_intensity: {
+    label: "研究強度",
+    description: "研究にどれだけ集中的に取り組みたいか",
+    range: "1（軽い研究）〜 10（集中研究）",
+    category: "basic"
+  },
+  advisor_style: {
+    label: "指導スタイル",
+    description: "教授からの指導の受け方の好み",
+    range: "1（厳格指導）〜 10（自由指導）",
+    category: "basic"
+  },
+  team_work: {
+    label: "チームワーク",
+    description: "研究での他者との協働の程度",
+    range: "1（個人研究）〜 10（チーム研究）",
+    category: "basic"
+  },
+  workload: {
+    label: "ワークロード",
+    description: "研究活動の忙しさに対する許容度",
+    range: "1（軽い負荷）〜 10（重い負荷）",
+    category: "basic"
+  },
+  theory_practice: {
+    label: "理論・実践バランス",
+    description: "理論研究と実践的研究のバランス",
+    range: "1（理論重視）〜 10（実践重視）",
+    category: "basic"
+  },
 
-// 学生プロフィール
-export interface StudentProfile {
-  evaluation_criteria: EvaluationPreferences;
-  field_interests: ResearchFieldInterests;
-}
+  // 拡張項目（5項目）
+  research_field_match: {
+    label: "研究分野適合性",
+    description: "自分の興味と研究室の分野の一致度",
+    range: "1（広い分野）〜 10（専門特化）",
+    category: "extended"
+  },
+  skill_development: {
+    label: "スキル開発",
+    description: "専門性と汎用性のバランス",
+    range: "1（専門特化）〜 10（幅広いスキル）",
+    category: "extended"
+  },
+  lab_atmosphere: {
+    label: "研究室雰囲気",
+    description: "研究室の全体的な雰囲気",
+    range: "1（静寂集中）〜 10（活発議論）",
+    category: "extended"
+  },
+  flexibility: {
+    label: "柔軟性",
+    description: "研究時間の自由度",
+    range: "1（固定スケジュール）〜 10（柔軟スケジュール）",
+    category: "extended"
+  },
+  publication_opportunity: {
+    label: "論文発表機会",
+    description: "研究成果の論文化機会",
+    range: "1（少ない機会）〜 10（豊富な機会）",
+    category: "extended"
+  },
 
-// 技術スタック関連の型定義
-export interface ProgrammingLanguage {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  icon: string;
-  popularity: number;
-}
-
-export interface TechFramework {
-  id: string;
-  name: string;
-  category: string;
-  description: string;
-  difficulty: 'beginner' | 'intermediate' | 'advanced';
-  relatedLanguages: string[];
-  icon: string;
-}
-
-export interface TechStackPreference {
-  languageId: string;
-  experienceLevel: number;
-  interest: number;
-}
-
-// 研究分野データ
-export const RESEARCH_FIELDS: ResearchField[] = [
-  // 人工知能・機械学習分野
-  {
-    id: 'ai_ml',
-    name: '人工知能・機械学習',
-    category: 'テクノロジー・システム',
-    description: 'AI、機械学習、データ解析、レコメンドシステム',
-    icon: '🤖',
-    difficulty: 'intermediate',
-    keywords: ['AI', '機械学習', 'データ解析', 'レコメンド', 'マルチエージェント']
+  // 特殊項目（3項目）
+  interdisciplinary: {
+    label: "学際性",
+    description: "他分野との連携の程度",
+    range: "1（単一分野）〜 10（学際連携）",
+    category: "special"
   },
-  {
-    id: 'image_video',
-    name: '画像・映像処理',
-    category: 'テクノロジー・システム',
-    description: '画像処理、コンピュータビジョン、3DCG、VR/AR',
-    icon: '📸',
-    difficulty: 'intermediate',
-    keywords: ['画像処理', 'コンピュータビジョン', '3DCG', 'VR', 'AR', '医用画像']
+  communication_style: {
+    label: "コミュニケーション",
+    description: "研究室での交流スタイル",
+    range: "1（少人数密接）〜 10（オープン交流）",
+    category: "special"
   },
-  {
-    id: 'network_security',
-    name: 'コンピュータネットワーク・セキュリティ',
-    category: 'テクノロジー・システム',
-    description: 'ネットワーク技術、情報セキュリティ、通信システム',
-    icon: '🔒',
-    difficulty: 'advanced',
-    keywords: ['ネットワーク', 'セキュリティ', '通信システム', 'ITマネジメント']
-  },
-  {
-    id: 'database_systems',
-    name: 'データベース・情報システム',
-    category: 'テクノロジー・システム',
-    description: 'データベース技術、経営情報システム、意思決定支援',
-    icon: '🗄️',
-    difficulty: 'intermediate',
-    keywords: ['データベース', '経営情報システム', '意思決定支援', 'OR']
-  },
-  {
-    id: 'embedded_iot',
-    name: '組込み・IoT',
-    category: 'テクノロジー・システム',
-    description: '組込みシステム、IoT、ユビキタスコンピューティング',
-    icon: '🔧',
-    difficulty: 'advanced',
-    keywords: ['組込み', 'IoT', 'ユビキタス', 'HCI']
-  },
-  {
-    id: 'web_ui_ux',
-    name: 'Webデザイン・UI/UX',
-    category: 'クリエイティブ',
-    description: 'Webデザイン、UI/UXデザイン、ユーザビリティ',
-    icon: '🎨',
-    difficulty: 'beginner',
-    keywords: ['Webデザイン', 'UI/UX', 'グラフィックデザイン', 'ブランディング']
-  },
-  {
-    id: 'design_visual',
-    name: 'デザイン・視覚表現',
-    category: 'クリエイティブ',
-    description: '視覚デザイン、イラストレーション、感性工学',
-    icon: '🎨',
-    difficulty: 'beginner',
-    keywords: ['視覚デザイン', 'イラストレーション', '感性工学', 'アート']
-  },
-  {
-    id: 'video_animation',
-    name: '映像・アニメーション',
-    category: 'クリエイティブ',
-    description: '映像制作、アニメーション表現、メディア表現',
-    icon: '🎬',
-    difficulty: 'intermediate',
-    keywords: ['映像制作', 'アニメーション', 'メディア表現', '視覚芸術']
-  },
-  {
-    id: 'computer_music',
-    name: 'コンピュータ音楽・サウンドアート',
-    category: 'クリエイティブ',
-    description: 'コンピュータ音楽、サウンドアート、音声情報処理',
-    icon: '🎵',
-    difficulty: 'intermediate',
-    keywords: ['コンピュータ音楽', 'サウンドアート', '音声情報処理']
-  },
-  {
-    id: 'game_esports',
-    name: 'ゲーム開発・eスポーツ',
-    category: 'エンターテイメント',
-    description: 'ゲームプログラミング、eスポーツ、メタバース',
-    icon: '🎮',
-    difficulty: 'intermediate',
-    keywords: ['ゲーム開発', 'eスポーツ', 'メタバース', 'プログラミング']
-  },
-  {
-    id: 'vr_ar_media',
-    name: 'VR/AR・メディアアート',
-    category: 'エンターテイメント',
-    description: 'VR/AR技術、メディアアート、環境認知',
-    icon: '🥽',
-    difficulty: 'advanced',
-    keywords: ['VR', 'AR', 'メディアアート', '環境行動学']
+  innovation_risk: {
+    label: "革新性・リスク許容度",
+    description: "新しい手法への挑戦度",
+    range: "1（安全手法）〜 10（革新手法）",
+    category: "special"
   }
-];
-
-// プログラミング言語データ
-export const PROGRAMMING_LANGUAGES: ProgrammingLanguage[] = [
-  {
-    id: 'python',
-    name: 'Python',
-    category: 'スクリプト言語',
-    description: 'データ分析、AI、Web開発に広く使用',
-    difficulty: 'beginner',
-    icon: '🐍',
-    popularity: 95
-  },
-  {
-    id: 'javascript',
-    name: 'JavaScript',
-    category: 'Web言語',
-    description: 'Web開発、フロントエンド・バックエンド',
-    difficulty: 'beginner',
-    icon: '⚡',
-    popularity: 92
-  },
-  {
-    id: 'java',
-    name: 'Java',
-    category: 'オブジェクト指向',
-    description: 'エンタープライズ開発、Android開発',
-    difficulty: 'intermediate',
-    icon: '☕',
-    popularity: 85
-  },
-  {
-    id: 'cpp',
-    name: 'C++',
-    category: 'システム言語',
-    description: 'システム開発、ゲーム開発、高性能計算',
-    difficulty: 'advanced',
-    icon: '⚙️',
-    popularity: 78
-  },
-  {
-    id: 'csharp',
-    name: 'C#',
-    category: 'オブジェクト指向',
-    description: '.NET開発、ゲーム開発（Unity）',
-    difficulty: 'intermediate',
-    icon: '🔷',
-    popularity: 75
-  }
-];
-
-// 技術フレームワークデータ
-export const TECH_FRAMEWORKS: TechFramework[] = [
-  {
-    id: 'react',
-    name: 'React',
-    category: 'フロントエンド',
-    description: 'モダンなUI開発ライブラリ',
-    difficulty: 'intermediate',
-    relatedLanguages: ['javascript'],
-    icon: '⚛️'
-  },
-  {
-    id: 'django',
-    name: 'Django',
-    category: 'バックエンド',
-    description: 'Pythonの高レベルWebフレームワーク',
-    difficulty: 'intermediate',
-    relatedLanguages: ['python'],
-    icon: '🎸'
-  },
-  {
-    id: 'tensorflow',
-    name: 'TensorFlow',
-    category: '機械学習',
-    description: '機械学習・ディープラーニングフレームワーク',
-    difficulty: 'advanced',
-    relatedLanguages: ['python'],
-    icon: '🧠'
-  }
-];
-
-// フィールドカテゴリ
-export const FIELD_CATEGORIES = [
-  'テクノロジー・システム',
-  'クリエイティブ',
-  'エンターテイメント'
-];
+};
 
 // ユーティリティ関数
 export const fieldUtils = {
-  getFieldsByCategory: (category: string) => {
-    return RESEARCH_FIELDS.filter(field => field.category === category);
+  getCategoryForField: (field: string): string => {
+    for (const [category, fields] of Object.entries(FIELD_CATEGORIES)) {
+      if (fields.includes(field)) {
+        return category;
+      }
+    }
+    return "その他";
   },
 
-  getFieldById: (id: string) => {
-    return RESEARCH_FIELDS.find(field => field.id === id);
+  getFieldsByCategory: (category: string): string[] => {
+    return FIELD_CATEGORIES[category as keyof typeof FIELD_CATEGORIES] || [];
+  },
+
+  getAllFields: (): string[] => {
+    return [...RESEARCH_FIELDS];
   }
 };
 
-// カテゴリ別フィールド取得関数（互換性のためにエクスポート）
-export const getFieldsByCategory = (category: string) => {
-  return FIELD_CATEGORIES.includes(category) ? [category] : [];
-};
-
-// API サービスクラス
-class ApiService {
-  private baseURL: string;
-
-  constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  }
-
-  async evaluateLabs(preferences: EvaluationPreferences): Promise<EvaluationResponse> {
-    try {
-      const response = await axios.post(`${this.baseURL}/api/v1/evaluation/evaluate`, {
-        preferences
-      });
-      return response.data;
-    } catch (error) {
-      console.error('評価API呼び出しエラー:', error);
-      throw new Error('研究室評価の処理中にエラーが発生しました');
-    }
-  }
-
-  // 新しい互換性メソッド
-  async evaluateCompatibility(profile: StudentProfile): Promise<EvaluationResponse> {
-    return this.evaluateLabs(profile.evaluation_criteria);
-  }
-
-  async optimizeWithGeneticAlgorithm(profile: StudentProfile): Promise<EvaluationResponse> {
-    try {
-      const response = await axios.post(`${this.baseURL}/api/v1/optimization/genetic`, profile);
-      return response.data;
-    } catch (error) {
-      console.error('遺伝的アルゴリズム最適化エラー:', error);
-      throw new Error('遺伝的アルゴリズム最適化の処理中にエラーが発生しました');
-    }
-  }
-
-  async getDemoProfile(): Promise<StudentProfile> {
-    // デモプロフィールを返す
-    return {
-      evaluation_criteria: {
-        research_intensity: 7.0,
-        advisor_style: 6.0,
-        team_work: 7.0,
-        workload: 6.0,
-        theory_practice: 7.0,
-        research_field_match: 8.0,
-        skill_development: 7.0,
-        learning_pace: 6.0,
-        difficulty_preference: 7.0,
-        communication_style: 6.0,
-        meeting_frequency: 6.0,
-        lab_atmosphere: 7.0,
-        innovation_risk: 6.0,
-        methodology_preference: 6.0,
-        interdisciplinary: 6.0,
-        flexibility: 7.0,
-        evening_weekend_work: 5.0,
-        publication_opportunity: 8.0,
-        financial_support: 7.0,
-        lab_hierarchy: 6.0,
-        core_time_flexibility: 7.0,
-      },
-      field_interests: {
-        "人工知能・機械学習": 8.0,
-        "画像・映像処理": 6.0,
-        "Webデザイン・UI/UX": 7.0,
-        "ゲーム開発・eスポーツ": 5.0,
-        "VR/AR・メディアアート": 6.0,
-      }
-    };
-  }
-
-  async getLabData(): Promise<Laboratory[]> {
-    try {
-      const response = await axios.get(`${this.baseURL}/api/v1/labs`);
-      return response.data;
-    } catch (error) {
-      console.error('研究室データ取得エラー:', error);
-      throw new Error('研究室データの取得中にエラーが発生しました');
-    }
-  }
-
-  async getHealthStatus() {
-    try {
-      const response = await axios.get(`${this.baseURL}/health`);
-      return response.data;
-    } catch (error) {
-      console.error('ヘルス状態取得エラー:', error);
-      throw new Error('サーバーの状態確認中にエラーが発生しました');
-    }
-  }
-
-  async getSystemStats() {
-    try {
-      const response = await axios.get(`${this.baseURL}/api/v1/system/stats`);
-      return response.data;
-    } catch (error) {
-      console.error('システム統計取得エラー:', error);
-      throw new Error('システム統計の取得中にエラーが発生しました');
-    }
-  }
+// システム統計情報の型定義（ローカル）
+interface SystemStatsResponse {
+  total_evaluations: number;
+  avg_score: number;
+  popular_criteria: string[];
+  lab_rankings: Array<{
+    lab_name: string;
+    avg_score: number;
+    evaluation_count: number;
+  }>;
 }
 
-export const apiService = new ApiService();
+// API サービス
+export const apiService = {
+  async evaluateLabs(studentProfile: StudentProfile): Promise<EvaluationResponse> {
+    try {
+      const response = await api.post('/evaluate', studentProfile);
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.detail || 'API通信エラーが発生しました');
+      }
+      throw new Error('予期しないエラーが発生しました');
+    }
+  },
+
+  async getHealthStatus(): Promise<any> {
+    try {
+      const response = await api.get('/health');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.detail || 'ヘルスチェックに失敗しました');
+      }
+      throw new Error('システム状態の確認に失敗しました');
+    }
+  },
+
+  async getConfig(): Promise<any> {
+    try {
+      const response = await api.get('/config');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.detail || '設定情報の取得に失敗しました');
+      }
+      throw new Error('設定情報の取得に失敗しました');
+    }
+  },
+
+  async getSystemStats(): Promise<SystemStatsResponse> {
+    try {
+      const response = await api.get('/stats');
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        throw new Error(error.response?.data?.detail || 'システム統計の取得に失敗しました');
+      }
+      throw new Error('システム統計の取得に失敗しました');
+    }
+  }
+};
+
+export default apiService;
