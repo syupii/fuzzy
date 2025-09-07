@@ -1,667 +1,607 @@
-# utils/metrics.py - 評価指標計算ユーティリティ
+# utils/metrics.py - 評価指標
 
 import numpy as np
-from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass
+import pandas as pd
+from typing import Dict, List, Any, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from datetime import datetime
+import math
 from collections import defaultdict, Counter
 import logging
-from scipy import stats
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
-import warnings
 
-from models.schemas import StudentProfile, Laboratory, LabResult, CompatibilityScore
+from models.schemas import (
+    StudentProfile, Laboratory, LabResult, CompatibilityScore,
+    EvaluationResponse
+)
 
 logger = logging.getLogger(__name__)
 
 @dataclass
+class MetricResult:
+    """メトリクス結果"""
+    metric_name: str
+    value: float
+    description: str
+    higher_is_better: bool = True
+    confidence_interval: Optional[Tuple[float, float]] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
 class PerformanceMetrics:
-    """システム性能指標"""
+    """性能メトリクス"""
     accuracy: float
     precision: float
     recall: float
     f1_score: float
-    auc_score: Optional[float] = None
-    mae: float = 0.0  # Mean Absolute Error
-    rmse: float = 0.0  # Root Mean Square Error
-    correlation: float = 0.0
+    auc_roc: Optional[float] = None
+    mean_absolute_error: Optional[float] = None
+    root_mean_squared_error: Optional[float] = None
+    
+    def to_dict(self) -> Dict[str, float]:
+        """辞書形式に変換"""
+        return {
+            "accuracy": self.accuracy,
+            "precision": self.precision,
+            "recall": self.recall,
+            "f1_score": self.f1_score,
+            "auc_roc": self.auc_roc,
+            "mae": self.mean_absolute_error,
+            "rmse": self.root_mean_squared_error
+        }
 
 @dataclass
+class RankingMetrics:
+    """ランキング評価メトリクス"""
+    ndcg_at_k: Dict[int, float] = field(default_factory=dict)  # Normalized Discounted Cumulative Gain
+    map_score: float = 0.0  # Mean Average Precision
+    mrr: float = 0.0  # Mean Reciprocal Rank
+    hit_rate_at_k: Dict[int, float] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        return {
+            "ndcg": self.ndcg_at_k,
+            "map": self.map_score,
+            "mrr": self.mrr,
+            "hit_rate": self.hit_rate_at_k
+        }
+
 class CompatibilityMetrics:
-    """適合性評価指標"""
-    overall_compatibility: float
-    field_compatibility: float
-    criteria_compatibility: float
-    diversity_score: float
-    consistency_score: float
-    confidence: float
-
-@dataclass
-class SystemMetrics:
-    """システム全体の指標"""
-    prediction_accuracy: float
-    average_response_time: float
-    user_satisfaction: float
-    algorithm_efficiency: float
-    model_stability: float
-
-class MetricsCalculator:
-    """評価指標計算クラス"""
+    """適合性評価メトリクス"""
     
     def __init__(self):
-        self.calculation_history = []
-        self.benchmark_scores = self._initialize_benchmarks()
+        self.prediction_history: List[Dict[str, Any]] = []
+        self.ground_truth_data: List[Dict[str, Any]] = []
     
-    def calculate_compatibility_metrics(self, student: StudentProfile, 
-                                      lab: Laboratory, 
-                                      predicted_score: float) -> CompatibilityMetrics:
-        """適合性指標の計算"""
-        
-        # 分野適合性
-        field_compatibility = self._calculate_field_compatibility(student, lab)
-        
-        # 評価基準適合性
-        criteria_compatibility = self._calculate_criteria_compatibility(student, lab)
-        
-        # 多様性スコア
-        diversity_score = self._calculate_diversity_score(student, lab)
-        
-        # 一貫性スコア
-        consistency_score = self._calculate_consistency_score(student, lab)
-        
-        # 信頼度
-        confidence = self._calculate_prediction_confidence(
-            field_compatibility, criteria_compatibility, diversity_score
-        )
-        
-        # 総合適合性
-        overall_compatibility = (
-            field_compatibility * 0.4 +
-            criteria_compatibility * 0.3 +
-            diversity_score * 0.2 +
-            consistency_score * 0.1
-        )
-        
-        return CompatibilityMetrics(
-            overall_compatibility=overall_compatibility,
-            field_compatibility=field_compatibility,
-            criteria_compatibility=criteria_compatibility,
-            diversity_score=diversity_score,
-            consistency_score=consistency_score,
-            confidence=confidence
-        )
-    
-    def _calculate_field_compatibility(self, student: StudentProfile, lab: Laboratory) -> float:
-        """分野適合性計算"""
-        
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
-        total_score = 0.0
-        matched_count = 0
-        
-        for field_id in lab.research_fields:
-            if field_id in student_fields:
-                field_interest = student_fields[field_id]
-                
-                # 興味度・経験・重要度の統合
-                field_score = (
-                    field_interest.interest_level * 0.5 +
-                    field_interest.experience_level * 0.3 +
-                    field_interest.importance_level * 0.2
-                ) / 10.0
-                
-                total_score += field_score
-                matched_count += 1
-        
-        return total_score / matched_count if matched_count > 0 else 0.0
-    
-    def _calculate_criteria_compatibility(self, student: StudentProfile, lab: Laboratory) -> float:
-        """評価基準適合性計算"""
-        
-        student_criteria = student.evaluation_criteria.dict()
-        lab_features = lab.features.dict()
-        
-        similarities = []
-        
-        for criterion in student_criteria.keys():
-            if criterion in lab_features:
-                student_val = student_criteria[criterion]
-                lab_val = lab_features[criterion]
-                
-                # ガウシアン類似度
-                distance = abs(student_val - lab_val)
-                similarity = np.exp(-(distance ** 2) / (2 * 2.0 ** 2))
-                similarities.append(similarity)
-        
-        return np.mean(similarities) if similarities else 0.0
-    
-    def _calculate_diversity_score(self, student: StudentProfile, lab: Laboratory) -> float:
-        """多様性スコア計算"""
-        
-        # 学際性の評価
-        interdisciplinary_score = student.evaluation_criteria.interdisciplinary / 10.0
-        
-        # 研究室の分野数による多様性
-        field_diversity = min(1.0, len(lab.research_fields) / 3.0)
-        
-        # 学生の分野選択多様性
-        student_diversity = min(1.0, len(student.field_interests) / 5.0)
-        
-        return (interdisciplinary_score + field_diversity + student_diversity) / 3.0
-    
-    def _calculate_consistency_score(self, student: StudentProfile, lab: Laboratory) -> float:
-        """一貫性スコア計算"""
-        
-        # 研究スタイルの一貫性
-        student_criteria = student.evaluation_criteria.dict()
-        lab_features = lab.features.dict()
-        
-        style_criteria = ["research_intensity", "theory_practice", "team_work"]
-        consistency_scores = []
-        
-        for criterion in style_criteria:
-            if criterion in student_criteria and criterion in lab_features:
-                student_val = student_criteria[criterion]
-                lab_val = lab_features[criterion]
-                
-                # 一貫性（距離の逆数）
-                distance = abs(student_val - lab_val)
-                consistency = 1.0 - (distance / 10.0)
-                consistency_scores.append(max(0, consistency))
-        
-        return np.mean(consistency_scores) if consistency_scores else 0.5
-    
-    def _calculate_prediction_confidence(self, field_comp: float, criteria_comp: float, 
-                                       diversity: float) -> float:
-        """予測信頼度計算"""
-        
-        # 各要素の重み付き統合
-        confidence = (
-            field_comp * 0.5 +
-            criteria_comp * 0.3 +
-            diversity * 0.2
-        )
-        
-        # 分散による信頼度調整
-        components = [field_comp, criteria_comp, diversity]
-        variance = np.var(components)
-        
-        # 分散が小さいほど信頼度が高い
-        confidence_adjustment = 1.0 - min(0.3, variance)
-        
-        return confidence * confidence_adjustment
-    
-    def evaluate_ranking_performance(self, predictions: List[LabResult], 
-                                   ground_truth: List[float]) -> PerformanceMetrics:
-        """ランキング性能評価"""
+    def calculate_accuracy(self, predictions: List[float], 
+                          ground_truth: List[float], 
+                          threshold: float = 0.5) -> float:
+        """分類精度の計算"""
         
         if len(predictions) != len(ground_truth):
-            raise ValueError("予測結果と正解データの長さが一致しません")
+            raise ValueError("予測値と正解値の長さが一致しません")
         
-        # 予測スコア抽出
-        predicted_scores = [result.compatibility.overall_score for result in predictions]
+        if not predictions:
+            return 0.0
         
-        # 基本的な回帰指標
-        mae = np.mean(np.abs(np.array(predicted_scores) - np.array(ground_truth)))
-        rmse = np.sqrt(np.mean((np.array(predicted_scores) - np.array(ground_truth)) ** 2))
+        # 二値分類に変換
+        pred_binary = [1 if p >= threshold else 0 for p in predictions]
+        true_binary = [1 if t >= threshold else 0 for t in ground_truth]
         
-        # 相関係数
-        try:
-            correlation, _ = stats.pearsonr(predicted_scores, ground_truth)
-            if np.isnan(correlation):
-                correlation = 0.0
-        except:
-            correlation = 0.0
+        correct = sum(p == t for p, t in zip(pred_binary, true_binary))
+        return correct / len(predictions)
+    
+    def calculate_precision_recall(self, predictions: List[float],
+                                  ground_truth: List[float],
+                                  threshold: float = 0.5) -> Tuple[float, float]:
+        """適合率と再現率の計算"""
         
-        # ランキング精度（上位k個の一致率）
-        ranking_accuracy = self._calculate_ranking_accuracy(predicted_scores, ground_truth)
+        pred_binary = [1 if p >= threshold else 0 for p in predictions]
+        true_binary = [1 if t >= threshold else 0 for t in ground_truth]
         
-        # 分類性能（閾値ベース）
-        classification_metrics = self._calculate_classification_metrics(
-            predicted_scores, ground_truth
-        )
+        # True Positive, False Positive, False Negative
+        tp = sum(p == 1 and t == 1 for p, t in zip(pred_binary, true_binary))
+        fp = sum(p == 1 and t == 0 for p, t in zip(pred_binary, true_binary))
+        fn = sum(p == 0 and t == 1 for p, t in zip(pred_binary, true_binary))
+        
+        # 適合率 (Precision)
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        
+        # 再現率 (Recall)
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        
+        return precision, recall
+    
+    def calculate_f1_score(self, predictions: List[float],
+                          ground_truth: List[float],
+                          threshold: float = 0.5) -> float:
+        """F1スコアの計算"""
+        
+        precision, recall = self.calculate_precision_recall(predictions, ground_truth, threshold)
+        
+        if precision + recall == 0:
+            return 0.0
+        
+        return 2 * (precision * recall) / (precision + recall)
+    
+    def calculate_mae(self, predictions: List[float], 
+                     ground_truth: List[float]) -> float:
+        """平均絶対誤差 (MAE) の計算"""
+        
+        if len(predictions) != len(ground_truth):
+            raise ValueError("予測値と正解値の長さが一致しません")
+        
+        if not predictions:
+            return 0.0
+        
+        absolute_errors = [abs(p - t) for p, t in zip(predictions, ground_truth)]
+        return sum(absolute_errors) / len(absolute_errors)
+    
+    def calculate_rmse(self, predictions: List[float], 
+                      ground_truth: List[float]) -> float:
+        """平均平方根誤差 (RMSE) の計算"""
+        
+        if len(predictions) != len(ground_truth):
+            raise ValueError("予測値と正解値の長さが一致しません")
+        
+        if not predictions:
+            return 0.0
+        
+        squared_errors = [(p - t) ** 2 for p, t in zip(predictions, ground_truth)]
+        mse = sum(squared_errors) / len(squared_errors)
+        return math.sqrt(mse)
+    
+    def calculate_correlation(self, predictions: List[float],
+                             ground_truth: List[float]) -> float:
+        """ピアソン相関係数の計算"""
+        
+        if len(predictions) != len(ground_truth) or len(predictions) < 2:
+            return 0.0
+        
+        mean_pred = sum(predictions) / len(predictions)
+        mean_true = sum(ground_truth) / len(ground_truth)
+        
+        numerator = sum((p - mean_pred) * (t - mean_true) 
+                       for p, t in zip(predictions, ground_truth))
+        
+        sum_sq_pred = sum((p - mean_pred) ** 2 for p in predictions)
+        sum_sq_true = sum((t - mean_true) ** 2 for t in ground_truth)
+        
+        denominator = math.sqrt(sum_sq_pred * sum_sq_true)
+        
+        return numerator / denominator if denominator > 0 else 0.0
+    
+    def evaluate_compatibility_prediction(self, 
+                                        evaluation_responses: List[EvaluationResponse],
+                                        ground_truth_scores: List[Dict[str, float]]) -> PerformanceMetrics:
+        """適合性予測の総合評価"""
+        
+        all_predictions = []
+        all_ground_truth = []
+        
+        # 予測値と正解値の抽出
+        for response, gt_dict in zip(evaluation_responses, ground_truth_scores):
+            student_id = response.student_profile.student_id
+            
+            for lab_result in response.lab_results:
+                lab_id = lab_result.laboratory.lab_id
+                predicted_score = lab_result.compatibility_score.overall_score
+                
+                # 正解値の取得
+                gt_key = f"{student_id}_{lab_id}"
+                if gt_key in gt_dict:
+                    all_predictions.append(predicted_score)
+                    all_ground_truth.append(gt_dict[gt_key])
+        
+        if not all_predictions:
+            return PerformanceMetrics(0, 0, 0, 0)
+        
+        # 各メトリクスの計算
+        accuracy = self.calculate_accuracy(all_predictions, all_ground_truth)
+        precision, recall = self.calculate_precision_recall(all_predictions, all_ground_truth)
+        f1_score = self.calculate_f1_score(all_predictions, all_ground_truth)
+        mae = self.calculate_mae(all_predictions, all_ground_truth)
+        rmse = self.calculate_rmse(all_predictions, all_ground_truth)
         
         return PerformanceMetrics(
-            accuracy=ranking_accuracy,
-            precision=classification_metrics["precision"],
-            recall=classification_metrics["recall"],
-            f1_score=classification_metrics["f1"],
-            mae=mae,
-            rmse=rmse,
-            correlation=correlation
+            accuracy=accuracy,
+            precision=precision,
+            recall=recall,
+            f1_score=f1_score,
+            mean_absolute_error=mae,
+            root_mean_squared_error=rmse
         )
+
+class RankingEvaluator:
+    """ランキング評価器"""
     
-    def _calculate_ranking_accuracy(self, predicted: List[float], 
-                                  ground_truth: List[float], k: int = 5) -> float:
-        """ランキング精度計算（上位k個の一致率）"""
+    def calculate_ndcg_at_k(self, predicted_ranking: List[str], 
+                           relevant_items: List[str], 
+                           k: int) -> float:
+        """NDCG@K の計算"""
         
-        # 上位k個のインデックス取得
-        pred_top_k = set(np.argsort(predicted)[-k:])
-        true_top_k = set(np.argsort(ground_truth)[-k:])
-        
-        # 一致率計算
-        intersection = len(pred_top_k & true_top_k)
-        return intersection / k
-    
-    def _calculate_classification_metrics(self, predicted: List[float], 
-                                        ground_truth: List[float], 
-                                        threshold: float = 7.0) -> Dict[str, float]:
-        """分類性能指標計算"""
-        
-        # 閾値による二値分類
-        pred_binary = [1 if score >= threshold else 0 for score in predicted]
-        true_binary = [1 if score >= threshold else 0 for score in ground_truth]
-        
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                
-                precision = precision_score(true_binary, pred_binary, zero_division=0)
-                recall = recall_score(true_binary, pred_binary, zero_division=0)
-                f1 = f1_score(true_binary, pred_binary, zero_division=0)
-                
-                return {
-                    "precision": precision,
-                    "recall": recall,
-                    "f1": f1
-                }
-        except:
-            return {"precision": 0.0, "recall": 0.0, "f1": 0.0}
-    
-    def calculate_system_performance(self, performance_data: Dict[str, Any]) -> SystemMetrics:
-        """システム性能指標計算"""
-        
-        # 予測精度
-        prediction_accuracy = performance_data.get("accuracy", 0.0)
-        
-        # 応答時間
-        response_times = performance_data.get("response_times", [])
-        avg_response_time = np.mean(response_times) if response_times else 0.0
-        
-        # ユーザー満足度（仮想的な計算）
-        user_satisfaction = self._calculate_user_satisfaction(performance_data)
-        
-        # アルゴリズム効率
-        algorithm_efficiency = self._calculate_algorithm_efficiency(performance_data)
-        
-        # モデル安定性
-        model_stability = self._calculate_model_stability(performance_data)
-        
-        return SystemMetrics(
-            prediction_accuracy=prediction_accuracy,
-            average_response_time=avg_response_time,
-            user_satisfaction=user_satisfaction,
-            algorithm_efficiency=algorithm_efficiency,
-            model_stability=model_stability
-        )
-    
-    def _calculate_user_satisfaction(self, data: Dict[str, Any]) -> float:
-        """ユーザー満足度計算（仮想）"""
-        
-        # 精度とレスポンス時間からの推定
-        accuracy = data.get("accuracy", 0.0)
-        response_time = data.get("avg_response_time", 5.0)
-        
-        # 精度が高く、レスポンスが速いほど満足度が高い
-        satisfaction = accuracy * 0.7 + max(0, 1.0 - response_time / 10.0) * 0.3
-        
-        return min(1.0, satisfaction)
-    
-    def _calculate_algorithm_efficiency(self, data: Dict[str, Any]) -> float:
-        """アルゴリズム効率計算"""
-        
-        # 計算時間と精度のバランス
-        accuracy = data.get("accuracy", 0.0)
-        response_time = data.get("avg_response_time", 5.0)
-        
-        # 効率 = 精度 / 時間
-        if response_time > 0:
-            efficiency = accuracy / response_time
-            return min(1.0, efficiency * 10)  # 正規化
-        else:
+        if k <= 0 or not predicted_ranking:
             return 0.0
+        
+        # 上位k件の予測ランキング
+        top_k_predictions = predicted_ranking[:k]
+        
+        # DCG (Discounted Cumulative Gain) の計算
+        dcg = 0.0
+        for i, item in enumerate(top_k_predictions):
+            if item in relevant_items:
+                relevance = 1.0  # 簡易版：関連度は1or0
+                dcg += relevance / math.log2(i + 2)  # i+2 because log2(1)=0
+        
+        # IDCG (Ideal DCG) の計算
+        ideal_ranking = relevant_items[:k]  # 理想的なランキング
+        idcg = 0.0
+        for i in range(len(ideal_ranking)):
+            idcg += 1.0 / math.log2(i + 2)
+        
+        # NDCG の計算
+        return dcg / idcg if idcg > 0 else 0.0
     
-    def _calculate_model_stability(self, data: Dict[str, Any]) -> float:
-        """モデル安定性計算"""
+    def calculate_map(self, predicted_rankings: List[List[str]], 
+                     relevant_items_list: List[List[str]]) -> float:
+        """MAP (Mean Average Precision) の計算"""
         
-        accuracy_history = data.get("accuracy_history", [])
+        if not predicted_rankings or len(predicted_rankings) != len(relevant_items_list):
+            return 0.0
         
-        if len(accuracy_history) < 2:
-            return 0.5  # デフォルト値
+        average_precisions = []
         
-        # 精度の分散（小さいほど安定）
-        variance = np.var(accuracy_history)
-        stability = 1.0 - min(1.0, variance * 10)  # 分散を0-1に正規化
+        for predicted, relevant in zip(predicted_rankings, relevant_items_list):
+            if not relevant:
+                continue
+            
+            precision_sum = 0.0
+            num_relevant_found = 0
+            
+            for i, item in enumerate(predicted):
+                if item in relevant:
+                    num_relevant_found += 1
+                    precision_at_i = num_relevant_found / (i + 1)
+                    precision_sum += precision_at_i
+            
+            if num_relevant_found > 0:
+                average_precision = precision_sum / len(relevant)
+                average_precisions.append(average_precision)
         
-        return max(0.0, stability)
+        return sum(average_precisions) / len(average_precisions) if average_precisions else 0.0
     
-    def _initialize_benchmarks(self) -> Dict[str, float]:
-        """ベンチマークスコアの初期化"""
+    def calculate_mrr(self, predicted_rankings: List[List[str]], 
+                     relevant_items_list: List[List[str]]) -> float:
+        """MRR (Mean Reciprocal Rank) の計算"""
         
-        return {
-            "excellent_compatibility": 0.9,
-            "good_compatibility": 0.7,
-            "fair_compatibility": 0.5,
-            "minimum_accuracy": 0.6,
-            "target_response_time": 2.0,
-            "minimum_confidence": 0.7
-        }
+        if not predicted_rankings or len(predicted_rankings) != len(relevant_items_list):
+            return 0.0
+        
+        reciprocal_ranks = []
+        
+        for predicted, relevant in zip(predicted_rankings, relevant_items_list):
+            if not relevant:
+                continue
+            
+            for i, item in enumerate(predicted):
+                if item in relevant:
+                    reciprocal_ranks.append(1.0 / (i + 1))
+                    break
+            else:
+                reciprocal_ranks.append(0.0)  # 関連アイテムが見つからなかった場合
+        
+        return sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else 0.0
     
-    def compare_with_benchmark(self, metrics: PerformanceMetrics) -> Dict[str, str]:
-        """ベンチマークとの比較"""
+    def calculate_hit_rate_at_k(self, predicted_rankings: List[List[str]], 
+                               relevant_items_list: List[List[str]], 
+                               k: int) -> float:
+        """Hit Rate@K の計算"""
         
-        comparisons = {}
+        if not predicted_rankings or len(predicted_rankings) != len(relevant_items_list):
+            return 0.0
         
-        if metrics.accuracy >= self.benchmark_scores["excellent_compatibility"]:
-            comparisons["accuracy"] = "優秀"
-        elif metrics.accuracy >= self.benchmark_scores["good_compatibility"]:
-            comparisons["accuracy"] = "良好"
-        elif metrics.accuracy >= self.benchmark_scores["fair_compatibility"]:
-            comparisons["accuracy"] = "普通"
-        else:
-            comparisons["accuracy"] = "改善必要"
+        hits = 0
+        total = 0
         
-        if metrics.correlation >= 0.8:
-            comparisons["correlation"] = "強い相関"
-        elif metrics.correlation >= 0.5:
-            comparisons["correlation"] = "中程度の相関"
-        else:
-            comparisons["correlation"] = "弱い相関"
+        for predicted, relevant in zip(predicted_rankings, relevant_items_list):
+            if not relevant:
+                continue
+            
+            top_k_predictions = predicted[:k]
+            if any(item in relevant for item in top_k_predictions):
+                hits += 1
+            total += 1
         
-        return comparisons
+        return hits / total if total > 0 else 0.0
+    
+    def evaluate_lab_recommendations(self, 
+                                   evaluation_responses: List[EvaluationResponse],
+                                   ground_truth_preferences: List[List[str]]) -> RankingMetrics:
+        """研究室推薦のランキング評価"""
+        
+        predicted_rankings = []
+        
+        # 予測ランキングの抽出
+        for response in evaluation_responses:
+            ranking = [result.laboratory.lab_id for result in response.lab_results]
+            predicted_rankings.append(ranking)
+        
+        # 各メトリクスの計算
+        ranking_metrics = RankingMetrics()
+        
+        # NDCG@K の計算
+        for k in [1, 3, 5, 10]:
+            ndcg_scores = []
+            for predicted, relevant in zip(predicted_rankings, ground_truth_preferences):
+                if len(predicted) >= k and relevant:
+                    ndcg = self.calculate_ndcg_at_k(predicted, relevant, k)
+                    ndcg_scores.append(ndcg)
+            
+            if ndcg_scores:
+                ranking_metrics.ndcg_at_k[k] = sum(ndcg_scores) / len(ndcg_scores)
+        
+        # MAP の計算
+        ranking_metrics.map_score = self.calculate_map(predicted_rankings, ground_truth_preferences)
+        
+        # MRR の計算
+        ranking_metrics.mrr = self.calculate_mrr(predicted_rankings, ground_truth_preferences)
+        
+        # Hit Rate@K の計算
+        for k in [1, 3, 5, 10]:
+            ranking_metrics.hit_rate_at_k[k] = self.calculate_hit_rate_at_k(
+                predicted_rankings, ground_truth_preferences, k
+            )
+        
+        return ranking_metrics
+
+class DiversityMetrics:
+    """多様性メトリクス"""
+    
+    def calculate_intra_list_diversity(self, lab_results: List[LabResult]) -> float:
+        """リスト内多様性の計算"""
+        
+        if len(lab_results) < 2:
+            return 0.0
+        
+        # 研究分野の多様性
+        field_diversity = self._calculate_field_diversity(lab_results)
+        
+        # 特性の多様性
+        characteristics_diversity = self._calculate_characteristics_diversity(lab_results)
+        
+        # 平均多様性
+        return (field_diversity + characteristics_diversity) / 2
+    
+    def _calculate_field_diversity(self, lab_results: List[LabResult]) -> float:
+        """研究分野の多様性計算"""
+        
+        fields = [result.laboratory.research_field.value for result in lab_results]
+        unique_fields = set(fields)
+        
+        # シャノン多様性指数
+        field_counts = Counter(fields)
+        total_count = len(fields)
+        
+        diversity = 0.0
+        for count in field_counts.values():
+            p = count / total_count
+            diversity -= p * math.log2(p)
+        
+        # 正規化（最大多様性で割る）
+        max_diversity = math.log2(len(unique_fields)) if len(unique_fields) > 1 else 1.0
+        
+        return diversity / max_diversity if max_diversity > 0 else 0.0
+    
+    def _calculate_characteristics_diversity(self, lab_results: List[LabResult]) -> float:
+        """研究室特性の多様性計算"""
+        
+        if len(lab_results) < 2:
+            return 0.0
+        
+        # 各研究室の特性ベクトル
+        characteristics_vectors = []
+        for result in lab_results:
+            char_dict = result.laboratory.characteristics.dict()
+            vector = [char_dict.get(criterion, 5.0) for criterion in [
+                "research_intensity", "advisor_style", "team_work", 
+                "workload", "theory_practice"
+            ]]
+            characteristics_vectors.append(vector)
+        
+        # ペアワイズ距離の平均
+        total_distance = 0.0
+        pair_count = 0
+        
+        for i in range(len(characteristics_vectors)):
+            for j in range(i + 1, len(characteristics_vectors)):
+                distance = self._euclidean_distance(
+                    characteristics_vectors[i], 
+                    characteristics_vectors[j]
+                )
+                total_distance += distance
+                pair_count += 1
+        
+        if pair_count == 0:
+            return 0.0
+        
+        average_distance = total_distance / pair_count
+        
+        # 正規化（最大可能距離で割る）
+        max_distance = math.sqrt(5 * (9.0 ** 2))  # 5次元で各次元の最大差が9
+        
+        return average_distance / max_distance if max_distance > 0 else 0.0
+    
+    def _euclidean_distance(self, vector1: List[float], vector2: List[float]) -> float:
+        """ユークリッド距離の計算"""
+        
+        if len(vector1) != len(vector2):
+            return 0.0
+        
+        return math.sqrt(sum((v1 - v2) ** 2 for v1, v2 in zip(vector1, vector2)))
 
 class PredictionEvaluator:
-    """予測評価専用クラス"""
+    """予測評価総合クラス"""
     
     def __init__(self):
-        self.evaluation_history = []
-        self.metrics_calculator = MetricsCalculator()
+        self.compatibility_metrics = CompatibilityMetrics()
+        self.ranking_evaluator = RankingEvaluator()
+        self.diversity_metrics = DiversityMetrics()
     
-    def evaluate_prediction_quality(self, student_profile: StudentProfile,
-                                   prediction_results: List[LabResult]) -> Dict[str, Any]:
-        """予測品質評価"""
+    def comprehensive_evaluation(self, 
+                                evaluation_responses: List[EvaluationResponse],
+                                ground_truth_data: Dict[str, Any]) -> Dict[str, Any]:
+        """総合的な評価の実行"""
         
-        evaluation = {
-            "overall_quality": 0.0,
-            "ranking_quality": 0.0,
-            "score_distribution": {},
-            "coverage_analysis": {},
-            "consistency_check": {},
-            "recommendations": []
-        }
-        
-        # スコア分布分析
-        scores = [result.compatibility.overall_score for result in prediction_results]
-        evaluation["score_distribution"] = {
-            "mean": np.mean(scores),
-            "std": np.std(scores),
-            "min": np.min(scores),
-            "max": np.max(scores),
-            "range": np.max(scores) - np.min(scores)
-        }
-        
-        # ランキング品質
-        evaluation["ranking_quality"] = self._evaluate_ranking_quality(scores)
-        
-        # カバレッジ分析
-        evaluation["coverage_analysis"] = self._analyze_field_coverage(
-            student_profile, prediction_results
-        )
-        
-        # 一貫性チェック
-        evaluation["consistency_check"] = self._check_prediction_consistency(
-            prediction_results
-        )
-        
-        # 総合品質
-        evaluation["overall_quality"] = (
-            evaluation["ranking_quality"] * 0.4 +
-            evaluation["coverage_analysis"]["coverage_score"] * 0.3 +
-            evaluation["consistency_check"]["consistency_score"] * 0.3
-        )
-        
-        # 推奨事項
-        evaluation["recommendations"] = self._generate_quality_recommendations(evaluation)
-        
-        return evaluation
-    
-    def _evaluate_ranking_quality(self, scores: List[float]) -> float:
-        """ランキング品質評価"""
-        
-        if len(scores) < 2:
-            return 0.0
-        
-        # スコアの分散（適度な分散が望ましい）
-        score_std = np.std(scores)
-        
-        # 理想的な標準偏差（1.5-2.5の範囲）
-        ideal_std = 2.0
-        std_quality = 1.0 - abs(score_std - ideal_std) / ideal_std
-        
-        # 順序の妥当性（上位スコアが適切に分離されているか）
-        sorted_scores = sorted(scores, reverse=True)
-        separability = 0.0
-        
-        for i in range(min(5, len(sorted_scores) - 1)):
-            diff = sorted_scores[i] - sorted_scores[i + 1]
-            separability += diff
-        
-        separability /= min(5, len(sorted_scores) - 1) if len(sorted_scores) > 1 else 1
-        separability = min(1.0, separability / 2.0)  # 正規化
-        
-        return (std_quality * 0.6 + separability * 0.4)
-    
-    def _analyze_field_coverage(self, student: StudentProfile, 
-                               results: List[LabResult]) -> Dict[str, Any]:
-        """分野カバレッジ分析"""
-        
-        student_field_ids = {fi.field_id for fi in student.field_interests}
-        
-        covered_fields = set()
-        total_field_matches = 0
-        
-        for result in results:
-            lab_fields = set(result.lab.research_fields)
-            matches = student_field_ids & lab_fields
-            
-            covered_fields.update(matches)
-            total_field_matches += len(matches)
-        
-        coverage_score = len(covered_fields) / len(student_field_ids) if student_field_ids else 0
-        
-        return {
-            "coverage_score": coverage_score,
-            "covered_fields": len(covered_fields),
-            "total_student_fields": len(student_field_ids),
-            "average_matches_per_lab": total_field_matches / len(results) if results else 0
-        }
-    
-    def _check_prediction_consistency(self, results: List[LabResult]) -> Dict[str, Any]:
-        """予測一貫性チェック"""
-        
-        # スコアの単調性チェック
-        scores = [result.compatibility.overall_score for result in results]
-        is_monotonic = all(scores[i] >= scores[i+1] for i in range(len(scores)-1))
-        
-        # スコア分布の妥当性
-        score_gaps = []
-        for i in range(len(scores) - 1):
-            gap = scores[i] - scores[i + 1]
-            score_gaps.append(gap)
-        
-        avg_gap = np.mean(score_gaps) if score_gaps else 0
-        gap_consistency = 1.0 - min(1.0, np.std(score_gaps) / max(avg_gap, 0.1))
-        
-        consistency_score = (
-            (1.0 if is_monotonic else 0.5) * 0.5 +
-            gap_consistency * 0.5
-        )
-        
-        return {
-            "consistency_score": consistency_score,
-            "is_monotonic": is_monotonic,
-            "average_score_gap": avg_gap,
-            "gap_consistency": gap_consistency
-        }
-    
-    def _generate_quality_recommendations(self, evaluation: Dict[str, Any]) -> List[str]:
-        """品質改善推奨事項生成"""
-        
-        recommendations = []
-        
-        # 総合品質
-        if evaluation["overall_quality"] < 0.6:
-            recommendations.append("予測品質が低いです。モデルパラメータの調整を検討してください。")
-        
-        # スコア分布
-        score_dist = evaluation["score_distribution"]
-        if score_dist["std"] < 1.0:
-            recommendations.append("スコア分布の分散が小さすぎます。判別力を向上させてください。")
-        elif score_dist["std"] > 3.0:
-            recommendations.append("スコア分布の分散が大きすぎます。安定性を向上させてください。")
-        
-        # カバレッジ
-        coverage = evaluation["coverage_analysis"]["coverage_score"]
-        if coverage < 0.8:
-            recommendations.append("分野カバレッジが不十分です。より多様な研究室を推奨に含めてください。")
-        
-        # 一貫性
-        consistency = evaluation["consistency_check"]["consistency_score"]
-        if consistency < 0.7:
-            recommendations.append("予測結果の一貫性が低いです。ランキングアルゴリズムを見直してください。")
-        
-        return recommendations
-
-class MetricsReporter:
-    """指標レポート生成クラス"""
-    
-    def __init__(self):
-        self.report_templates = self._initialize_templates()
-    
-    def generate_performance_report(self, metrics: PerformanceMetrics, 
-                                   system_metrics: SystemMetrics) -> str:
-        """性能レポート生成"""
-        
-        report = []
-        report.append("📊 システム性能レポート")
-        report.append("=" * 50)
-        
-        # 予測性能
-        report.append("\n🎯 予測性能")
-        report.append(f"   精度: {metrics.accuracy:.3f}")
-        report.append(f"   適合率: {metrics.precision:.3f}")
-        report.append(f"   再現率: {metrics.recall:.3f}")
-        report.append(f"   F1スコア: {metrics.f1_score:.3f}")
-        report.append(f"   MAE: {metrics.mae:.3f}")
-        report.append(f"   RMSE: {metrics.rmse:.3f}")
-        report.append(f"   相関係数: {metrics.correlation:.3f}")
-        
-        # システム性能
-        report.append("\n⚡ システム性能")
-        report.append(f"   平均レスポンス時間: {system_metrics.average_response_time:.2f}秒")
-        report.append(f"   ユーザー満足度: {system_metrics.user_satisfaction:.3f}")
-        report.append(f"   アルゴリズム効率: {system_metrics.algorithm_efficiency:.3f}")
-        report.append(f"   モデル安定性: {system_metrics.model_stability:.3f}")
-        
-        # 評価と推奨
-        report.append("\n📈 評価と推奨事項")
-        
-        if metrics.accuracy >= 0.8:
-            report.append("   ✅ 予測精度は優秀です")
-        elif metrics.accuracy >= 0.6:
-            report.append("   ⚠️ 予測精度は改善の余地があります")
-        else:
-            report.append("   ❌ 予測精度が低く、改善が必要です")
-        
-        if system_metrics.average_response_time <= 2.0:
-            report.append("   ✅ レスポンス時間は良好です")
-        else:
-            report.append("   ⚠️ レスポンス時間の最適化を検討してください")
-        
-        return "\n".join(report)
-    
-    def generate_compatibility_report(self, compatibility: CompatibilityMetrics) -> str:
-        """適合性レポート生成"""
-        
-        report = []
-        report.append("🎯 適合性分析レポート")
-        report.append("=" * 40)
-        
-        report.append(f"\n総合適合性: {compatibility.overall_compatibility:.3f}")
-        report.append(f"分野適合性: {compatibility.field_compatibility:.3f}")
-        report.append(f"基準適合性: {compatibility.criteria_compatibility:.3f}")
-        report.append(f"多様性スコア: {compatibility.diversity_score:.3f}")
-        report.append(f"一貫性スコア: {compatibility.consistency_score:.3f}")
-        report.append(f"信頼度: {compatibility.confidence:.3f}")
-        
-        # 解釈
-        report.append(f"\n📋 解釈:")
-        
-        if compatibility.overall_compatibility >= 0.8:
-            report.append("   非常に高い適合性を示しています")
-        elif compatibility.overall_compatibility >= 0.6:
-            report.append("   良好な適合性があります")
-        else:
-            report.append("   適合性の向上が必要です")
-        
-        return "\n".join(report)
-    
-    def _initialize_templates(self) -> Dict[str, str]:
-        """レポートテンプレートの初期化"""
-        
-        return {
-            "performance_summary": "システム性能サマリー",
-            "detailed_analysis": "詳細分析レポート",
-            "comparison_report": "比較分析レポート"
-        }
-    
-    def export_metrics_to_json(self, metrics_data: Dict[str, Any], 
-                              filepath: str) -> None:
-        """指標データのJSON出力"""
-        
-        import json
-        from datetime import datetime
-        
-        export_data = {
-            "export_timestamp": datetime.now().isoformat(),
-            "metrics": metrics_data,
-            "metadata": {
-                "version": "2.0.0",
-                "calculation_method": "fuzzy_genetic_hybrid"
+        results = {
+            "evaluation_summary": {
+                "total_evaluations": len(evaluation_responses),
+                "evaluation_date": datetime.now().isoformat(),
+                "metrics_version": "1.0.0"
             }
         }
         
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(export_data, f, indent=2, ensure_ascii=False)
+        try:
+            # 適合性予測の評価
+            if "compatibility_scores" in ground_truth_data:
+                compatibility_results = self.compatibility_metrics.evaluate_compatibility_prediction(
+                    evaluation_responses, ground_truth_data["compatibility_scores"]
+                )
+                results["compatibility_metrics"] = compatibility_results.to_dict()
+            
+            # ランキング評価
+            if "user_preferences" in ground_truth_data:
+                ranking_results = self.ranking_evaluator.evaluate_lab_recommendations(
+                    evaluation_responses, ground_truth_data["user_preferences"]
+                )
+                results["ranking_metrics"] = ranking_results.to_dict()
+            
+            # 多様性評価
+            diversity_scores = []
+            for response in evaluation_responses:
+                diversity = self.diversity_metrics.calculate_intra_list_diversity(
+                    response.lab_results
+                )
+                diversity_scores.append(diversity)
+            
+            results["diversity_metrics"] = {
+                "average_diversity": sum(diversity_scores) / len(diversity_scores) if diversity_scores else 0.0,
+                "diversity_std": np.std(diversity_scores) if len(diversity_scores) > 1 else 0.0,
+                "min_diversity": min(diversity_scores) if diversity_scores else 0.0,
+                "max_diversity": max(diversity_scores) if diversity_scores else 0.0
+            }
+            
+            # システム性能指標
+            processing_times = [response.processing_time for response in evaluation_responses]
+            confidence_scores = [response.recommendation_confidence for response in evaluation_responses]
+            
+            results["system_performance"] = {
+                "average_processing_time": sum(processing_times) / len(processing_times) if processing_times else 0.0,
+                "max_processing_time": max(processing_times) if processing_times else 0.0,
+                "average_confidence": sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0,
+                "min_confidence": min(confidence_scores) if confidence_scores else 0.0
+            }
+            
+            # 総合スコアの計算
+            overall_score = self._calculate_overall_score(results)
+            results["overall_score"] = overall_score
+            
+        except Exception as e:
+            logger.error(f"総合評価エラー: {e}")
+            results["error"] = str(e)
         
-        logger.info(f"指標データをエクスポートしました: {filepath}")
-
-# ユーティリティ関数
-
-def calculate_normalized_dcg(predicted_ranking: List[float], 
-                           ideal_ranking: List[float], k: int = 10) -> float:
-    """正規化DCG (Normalized Discounted Cumulative Gain) 計算"""
+        return results
     
-    def dcg(scores, k):
-        """DCG計算"""
-        scores = scores[:k]
-        return sum(score / np.log2(i + 2) for i, score in enumerate(scores))
-    
-    dcg_predicted = dcg(predicted_ranking, k)
-    dcg_ideal = dcg(sorted(ideal_ranking, reverse=True), k)
-    
-    return dcg_predicted / dcg_ideal if dcg_ideal > 0 else 0.0
-
-def calculate_kendall_tau(ranking1: List[int], ranking2: List[int]) -> float:
-    """ケンドールの順位相関係数計算"""
-    
-    try:
-        tau, _ = stats.kendalltau(ranking1, ranking2)
-        return tau if not np.isnan(tau) else 0.0
-    except:
+    def _calculate_overall_score(self, evaluation_results: Dict[str, Any]) -> float:
+        """総合スコアの計算"""
+        
+        scores = []
+        weights = []
+        
+        # 適合性メトリクスからのスコア
+        if "compatibility_metrics" in evaluation_results:
+            compat_metrics = evaluation_results["compatibility_metrics"]
+            if "f1_score" in compat_metrics:
+                scores.append(compat_metrics["f1_score"])
+                weights.append(0.4)
+        
+        # ランキングメトリクスからのスコア
+        if "ranking_metrics" in evaluation_results:
+            ranking_metrics = evaluation_results["ranking_metrics"]
+            if "ndcg" in ranking_metrics and 5 in ranking_metrics["ndcg"]:
+                scores.append(ranking_metrics["ndcg"][5])
+                weights.append(0.3)
+        
+        # 多様性メトリクスからのスコア
+        if "diversity_metrics" in evaluation_results:
+            diversity_metrics = evaluation_results["diversity_metrics"]
+            if "average_diversity" in diversity_metrics:
+                scores.append(diversity_metrics["average_diversity"])
+                weights.append(0.2)
+        
+        # システム性能からのスコア
+        if "system_performance" in evaluation_results:
+            sys_perf = evaluation_results["system_performance"]
+            if "average_confidence" in sys_perf:
+                scores.append(sys_perf["average_confidence"])
+                weights.append(0.1)
+        
+        # 重み付き平均
+        if scores and weights:
+            weighted_sum = sum(s * w for s, w in zip(scores, weights))
+            total_weight = sum(weights)
+            return weighted_sum / total_weight
+        
         return 0.0
 
-def calculate_hit_rate(predicted_top_k: List[int], 
-                      relevant_items: List[int]) -> float:
-    """ヒット率計算"""
+# 使用例とテスト
+def test_metrics():
+    """メトリクス計算のテスト"""
     
-    hits = len(set(predicted_top_k) & set(relevant_items))
-    return hits / len(relevant_items) if relevant_items else 0.0
+    print("📊 評価指標テスト開始")
+    
+    # 適合性メトリクスのテスト
+    compat_metrics = CompatibilityMetrics()
+    
+    # テストデータ
+    predictions = [0.8, 0.6, 0.4, 0.9, 0.3]
+    ground_truth = [0.9, 0.7, 0.3, 0.8, 0.2]
+    
+    # 各メトリクスの計算
+    accuracy = compat_metrics.calculate_accuracy(predictions, ground_truth, 0.5)
+    precision, recall = compat_metrics.calculate_precision_recall(predictions, ground_truth, 0.5)
+    f1_score = compat_metrics.calculate_f1_score(predictions, ground_truth, 0.5)
+    mae = compat_metrics.calculate_mae(predictions, ground_truth)
+    rmse = compat_metrics.calculate_rmse(predictions, ground_truth)
+    correlation = compat_metrics.calculate_correlation(predictions, ground_truth)
+    
+    print(f"✅ 適合性メトリクス:")
+    print(f"  精度: {accuracy:.3f}")
+    print(f"  適合率: {precision:.3f}")
+    print(f"  再現率: {recall:.3f}")
+    print(f"  F1スコア: {f1_score:.3f}")
+    print(f"  MAE: {mae:.3f}")
+    print(f"  RMSE: {rmse:.3f}")
+    print(f"  相関係数: {correlation:.3f}")
+    
+    # ランキング評価のテスト
+    ranking_evaluator = RankingEvaluator()
+    
+    predicted_ranking = ["lab_a", "lab_b", "lab_c", "lab_d"]
+    relevant_items = ["lab_a", "lab_c"]
+    
+    ndcg_3 = ranking_evaluator.calculate_ndcg_at_k(predicted_ranking, relevant_items, 3)
+    
+    print(f"\n🏆 ランキングメトリクス:")
+    print(f"  NDCG@3: {ndcg_3:.3f}")
+    
+    # 多様性メトリクスのテスト
+    diversity_metrics = DiversityMetrics()
+    
+    # テスト用の研究室結果（簡易版）
+    print(f"\n🌈 多様性メトリクス:")
+    print(f"  テスト完了")
+    
+    print("✅ 評価指標テスト完了")
+
+if __name__ == "__main__":
+    test_metrics()

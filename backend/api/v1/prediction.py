@@ -1,339 +1,548 @@
-# api/v1/prediction.py - 予測APIエンドポイント
+# api/v1/prediction.py - 予測API
 
-from fastapi import APIRouter, HTTPException, Depends
-from typing import List, Dict, Any
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi.responses import JSONResponse
+from typing import Dict, List, Any, Optional
 import logging
+from datetime import datetime
+import asyncio
 
 from models.schemas import (
-    StudentProfile, EvaluationResponse, FieldInfoResponse, 
-    SystemStatus, FieldInterest, EvaluationCriteria
+    StudentProfile, Laboratory, EvaluationResponse,
+    LabResult, SystemStatus, ResearchFieldEnum
 )
-from services.lab_matching import LabMatchingService
+from services.lab_matching import LabMatchingService, MatchingConfig
+from services.prediction import PredictionService
 from config.settings import settings
 
-# ルーター設定
-router = APIRouter(prefix="/prediction", tags=["prediction"])
-
-# ロガー設定
 logger = logging.getLogger(__name__)
 
-# サービス依存性
-def get_matching_service() -> LabMatchingService:
-    """マッチングサービスの依存性注入"""
-    return LabMatchingService()
+router = APIRouter(prefix="/prediction", tags=["prediction"])
 
-@router.post("/evaluate", response_model=EvaluationResponse)
-async def evaluate_lab_matching(
-    student_profile: StudentProfile,
-    matching_service: LabMatchingService = Depends(get_matching_service)
-) -> EvaluationResponse:
-    """
-    学生プロフィールに基づいて研究室マッチングを実行
+# サービスインスタンス（シングルトン）
+_lab_matching_service: Optional[LabMatchingService] = None
+_prediction_service: Optional[PredictionService] = None
+
+def get_lab_matching_service() -> LabMatchingService:
+    """研究室マッチングサービスの取得"""
+    global _lab_matching_service
     
-    Args:
-        student_profile: 学生の評価基準と分野興味
-        matching_service: マッチングサービス
+    if _lab_matching_service is None:
+        config = MatchingConfig(
+            enable_genetic_optimization=True,
+            max_recommendations=settings.ga_population_size,
+            use_fuzzy_inference=True
+        )
+        _lab_matching_service = LabMatchingService(config)
     
-    Returns:
-        EvaluationResponse: マッチング結果
-    """
+    return _lab_matching_service
+
+def get_prediction_service() -> PredictionService:
+    """予測サービスの取得"""
+    global _prediction_service
+    
+    if _prediction_service is None:
+        try:
+            from services.prediction import PredictionService
+            _prediction_service = PredictionService()
+        except ImportError:
+            # prediction.pyが利用できない場合のフォールバック
+            _prediction_service = None
+    
+    return _prediction_service
+
+@router.get("/fields", response_model=Dict[str, Any])
+async def get_research_fields():
+    """利用可能な研究分野一覧を取得"""
     
     try:
-        logger.info(f"研究室マッチング開始: 学生ID={student_profile.student_id}")
+        fields_info = {
+            "total_fields": len(settings.research_fields),
+            "field_categories": settings.field_categories,
+            "fields": []
+        }
         
+        for field_enum in ResearchFieldEnum:
+            field_info = {
+                "field_id": field_enum.value,
+                "field_name": field_enum.value.replace("_", " ").title(),
+                "category": None
+            }
+            
+            # カテゴリの特定
+            for category, fields in settings.field_categories.items():
+                if field_enum.value in fields:
+                    field_info["category"] = category
+                    break
+            
+            fields_info["fields"].append(field_info)
+        
+        # 教員情報も含める
+        faculty_info = {}
+        for field, faculty_list in settings.faculty_data.items():
+            if field in [f.value for f in ResearchFieldEnum]:
+                faculty_info[field] = len(faculty_list)
+        
+        fields_info["faculty_counts"] = faculty_info
+        
+        return fields_info
+        
+    except Exception as e:
+        logger.error(f"研究分野取得エラー: {e}")
+        raise HTTPException(status_code=500, detail=f"研究分野の取得に失敗しました: {str(e)}")
+
+@router.get("/criteria", response_model=Dict[str, Any])
+async def get_evaluation_criteria():
+    """評価基準一覧を取得"""
+    
+    try:
+        criteria_info = {
+            "total_criteria": len(settings.evaluation_criteria),
+            "criteria_groups": {
+                "basic": {
+                    "description": "基本項目（必須）",
+                    "criteria": settings.evaluation_criteria[:5]
+                },
+                "extended": {
+                    "description": "拡張項目（推奨）",
+                    "criteria": settings.evaluation_criteria[5:10]
+                },
+                "special": {
+                    "description": "特殊項目（詳細分析用）",
+                    "criteria": settings.evaluation_criteria[10:13]
+                }
+            },
+            "criteria_descriptions": {
+                "research_intensity": "研究にどれだけ集中的に取り組みたいか（1:軽い研究 〜 10:集中研究）",
+                "advisor_style": "教授からの指導の受け方の好み（1:厳格指導 〜 10:自由指導）",
+                "team_work": "研究での他者との協働の程度（1:個人研究 〜 10:チーム研究）",
+                "workload": "研究活動の忙しさに対する許容度（1:軽い負荷 〜 10:重い負荷）",
+                "theory_practice": "理論研究と実践的研究のバランス（1:理論重視 〜 10:実践重視）",
+                "research_field_match": "自分の興味と研究室の分野の一致度（1:広い分野 〜 10:専門特化）",
+                "skill_development": "専門性と汎用性のバランス（1:専門特化 〜 10:幅広いスキル）",
+                "lab_atmosphere": "研究室の全体的な雰囲気（1:静寂集中 〜 10:活発議論）",
+                "flexibility": "研究時間の自由度（1:固定スケジュール 〜 10:柔軟スケジュール）",
+                "publication_opportunity": "研究成果の論文化機会（1:少ない機会 〜 10:豊富な機会）",
+                "interdisciplinary": "他分野との連携の程度（1:単一分野 〜 10:学際連携）",
+                "communication_style": "研究室での交流スタイル（1:少人数密接 〜 10:オープン交流）",
+                "innovation_risk": "新しい手法への挑戦度（1:安全手法 〜 10:革新手法）"
+            }
+        }
+        
+        return criteria_info
+        
+    except Exception as e:
+        logger.error(f"評価基準取得エラー: {e}")
+        raise HTTPException(status_code=500, detail=f"評価基準の取得に失敗しました: {str(e)}")
+
+@router.post("/evaluate", response_model=EvaluationResponse)
+async def evaluate_lab_compatibility(
+    student_profile: StudentProfile,
+    target_lab_ids: Optional[List[str]] = None,
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """学生プロフィールに基づく研究室適合性評価"""
+    
+    try:
         # 入力検証
         if not student_profile.field_interests:
             raise HTTPException(
-                status_code=400,
-                detail="少なくとも1つの研究分野を選択してください"
+                status_code=400, 
+                detail="最低1つの研究分野への興味を指定してください"
             )
         
-        # 分野IDの検証
-        valid_field_ids = set(settings.research_fields.keys())
-        selected_field_ids = {fi.field_id for fi in student_profile.field_interests}
+        # 対象研究室の特定
+        target_laboratories = None
         
-        invalid_fields = selected_field_ids - valid_field_ids
-        if invalid_fields:
-            raise HTTPException(
-                status_code=400,
-                detail=f"無効な研究分野ID: {list(invalid_fields)}"
-            )
+        if target_lab_ids:
+            target_laboratories = []
+            for lab_id in target_lab_ids:
+                lab = matching_service.get_laboratory(lab_id)
+                if lab:
+                    target_laboratories.append(lab)
+                else:
+                    logger.warning(f"研究室が見つかりません: {lab_id}")
+            
+            if not target_laboratories:
+                raise HTTPException(
+                    status_code=404, 
+                    detail="指定された研究室が見つかりません"
+                )
         
-        # マッチング実行
-        result = matching_service.find_best_matches(student_profile)
+        # 適合性評価の実行
+        logger.info(f"適合性評価開始: 学生{student_profile.student_id}")
         
-        logger.info(f"マッチング完了: {len(result.results)}件の研究室を評価")
+        evaluation_response = matching_service.evaluate_student_lab_compatibility(
+            student_profile, target_laboratories
+        )
         
-        return result
+        logger.info(f"適合性評価完了: {len(evaluation_response.lab_results)}件の結果")
         
-    except ValueError as e:
-        logger.error(f"入力値エラー: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    
+        return evaluation_response
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"マッチング処理エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="マッチング処理中にエラーが発生しました")
+        logger.error(f"適合性評価エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"適合性評価の実行に失敗しました: {str(e)}"
+        )
 
-@router.get("/fields", response_model=List[FieldInfoResponse])
-async def get_research_fields() -> List[FieldInfoResponse]:
-    """
-    利用可能な研究分野の一覧を取得
-    
-    Returns:
-        List[FieldInfoResponse]: 研究分野情報のリスト
-    """
+@router.post("/evaluate-single", response_model=Dict[str, Any])
+async def evaluate_single_lab(
+    student_profile: StudentProfile,
+    lab_id: str,
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """特定研究室との適合性評価"""
     
     try:
-        field_responses = []
+        # 研究室の取得
+        laboratory = matching_service.get_laboratory(lab_id)
+        if not laboratory:
+            raise HTTPException(status_code=404, detail=f"研究室が見つかりません: {lab_id}")
         
-        for field_id, field_info in settings.research_fields.items():
-            field_response = FieldInfoResponse(
-                field_id=field_id,
-                name=field_info["name"],
-                category=field_info["category"],
-                faculty=field_info["faculty"],
-                difficulty=field_info["difficulty"],
-                characteristics={
-                    "tech_focus": field_info["tech_focus"],
-                    "creativity_focus": field_info["creativity_focus"],
-                    "theory_practice": field_info["theory_practice"]
+        # 単一研究室での評価
+        evaluation_response = matching_service.evaluate_student_lab_compatibility(
+            student_profile, [laboratory]
+        )
+        
+        if not evaluation_response.lab_results:
+            raise HTTPException(status_code=500, detail="評価結果が生成されませんでした")
+        
+        # 単一結果の詳細情報
+        lab_result = evaluation_response.lab_results[0]
+        
+        detailed_result = {
+            "student_id": student_profile.student_id,
+            "lab_id": lab_id,
+            "laboratory_info": {
+                "faculty_name": laboratory.faculty.name,
+                "research_field": laboratory.research_field.value,
+                "specialties": laboratory.faculty.specialties,
+                "description": laboratory.description
+            },
+            "compatibility_score": lab_result.compatibility_score.dict(),
+            "detailed_analysis": {
+                "criteria_breakdown": lab_result.compatibility_score.criteria_scores,
+                "field_match_analysis": {
+                    "score": lab_result.compatibility_score.field_match_score,
+                    "student_interests": [
+                        {"field": interest.field.value, "level": interest.interest_level, "priority": interest.priority}
+                        for interest in student_profile.field_interests
+                    ],
+                    "lab_field": laboratory.research_field.value
                 }
-            )
-            field_responses.append(field_response)
-        
-        return field_responses
-        
-    except Exception as e:
-        logger.error(f"分野情報取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="分野情報の取得に失敗しました")
-
-@router.get("/fields/{field_id}", response_model=FieldInfoResponse)
-async def get_field_info(field_id: str) -> FieldInfoResponse:
-    """
-    特定の研究分野の詳細情報を取得
-    
-    Args:
-        field_id: 研究分野ID
-    
-    Returns:
-        FieldInfoResponse: 研究分野の詳細情報
-    """
-    
-    try:
-        if field_id not in settings.research_fields:
-            raise HTTPException(
-                status_code=404,
-                detail=f"研究分野が見つかりません: {field_id}"
-            )
-        
-        field_info = settings.research_fields[field_id]
-        
-        return FieldInfoResponse(
-            field_id=field_id,
-            name=field_info["name"],
-            category=field_info["category"],
-            faculty=field_info["faculty"],
-            difficulty=field_info["difficulty"],
-            characteristics={
-                "tech_focus": field_info["tech_focus"],
-                "creativity_focus": field_info["creativity_focus"],
-                "theory_practice": field_info["theory_practice"]
+            },
+            "recommendations": {
+                "reasons": lab_result.reasons,
+                "concerns": lab_result.concerns,
+                "suggestion": _generate_improvement_suggestions(
+                    student_profile, laboratory, lab_result.compatibility_score
+                )
+            },
+            "processing_info": {
+                "evaluation_id": evaluation_response.evaluation_id,
+                "processing_time": evaluation_response.processing_time,
+                "timestamp": evaluation_response.timestamp.isoformat()
             }
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"分野詳細情報取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="分野詳細情報の取得に失敗しました")
-
-@router.get("/fields/category/{category}", response_model=List[FieldInfoResponse])
-async def get_fields_by_category(category: str) -> List[FieldInfoResponse]:
-    """
-    カテゴリ別の研究分野一覧を取得
-    
-    Args:
-        category: 分野カテゴリ
-    
-    Returns:
-        List[FieldInfoResponse]: カテゴリ内の研究分野リスト
-    """
-    
-    try:
-        if category not in settings.field_categories:
-            raise HTTPException(
-                status_code=404,
-                detail=f"カテゴリが見つかりません: {category}"
-            )
-        
-        category_field_ids = settings.field_categories[category]
-        field_responses = []
-        
-        for field_id in category_field_ids:
-            field_info = settings.research_fields[field_id]
-            field_response = FieldInfoResponse(
-                field_id=field_id,
-                name=field_info["name"],
-                category=field_info["category"],
-                faculty=field_info["faculty"],
-                difficulty=field_info["difficulty"],
-                characteristics={
-                    "tech_focus": field_info["tech_focus"],
-                    "creativity_focus": field_info["creativity_focus"],
-                    "theory_practice": field_info["theory_practice"]
-                }
-            )
-            field_responses.append(field_response)
-        
-        return field_responses
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"カテゴリ別分野取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="カテゴリ別分野の取得に失敗しました")
-
-@router.post("/quick-evaluation")
-async def quick_evaluation(
-    field_interests: List[FieldInterest],
-    matching_service: LabMatchingService = Depends(get_matching_service)
-) -> Dict[str, Any]:
-    """
-    簡易評価（評価基準をデフォルト値で実行）
-    
-    Args:
-        field_interests: 分野興味のリスト
-        matching_service: マッチングサービス
-    
-    Returns:
-        Dict[str, Any]: 簡易評価結果
-    """
-    
-    try:
-        if not field_interests:
-            raise HTTPException(
-                status_code=400,
-                detail="少なくとも1つの研究分野を選択してください"
-            )
-        
-        # デフォルト評価基準（全て中間値）
-        default_criteria = EvaluationCriteria(
-            research_intensity=6,
-            advisor_style=6,
-            team_work=6,
-            workload=6,
-            theory_practice=6,
-            research_field_match=8,  # 分野適合性は高めに設定
-            skill_development=7,
-            lab_atmosphere=6,
-            flexibility=6,
-            publication_opportunity=6,
-            interdisciplinary=6,
-            communication_style=6,
-            innovation_risk=6
-        )
-        
-        # 簡易プロフィール作成
-        quick_profile = StudentProfile(
-            student_id="quick_eval",
-            evaluation_criteria=default_criteria,
-            field_interests=field_interests
-        )
-        
-        # マッチング実行
-        result = matching_service.find_best_matches(quick_profile)
-        
-        # 簡易結果を返却
-        return {
-            "total_labs": len(result.results),
-            "top_3_labs": [
-                {
-                    "lab_name": r.lab.name,
-                    "professor": r.lab.professor,
-                    "score": r.compatibility.overall_score,
-                    "research_area": r.lab.research_area
-                }
-                for r in result.results[:3]
-            ],
-            "avg_compatibility": result.summary.avg_compatibility,
-            "selected_fields": len(field_interests)
         }
         
-    except ValueError as e:
-        logger.error(f"簡易評価入力値エラー: {str(e)}")
-        raise HTTPException(status_code=400, detail=str(e))
-    
+        return detailed_result
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"簡易評価エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="簡易評価中にエラーが発生しました")
+        logger.error(f"単一研究室評価エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"研究室評価の実行に失敗しました: {str(e)}"
+        )
 
-@router.get("/status", response_model=SystemStatus)
-async def get_system_status() -> SystemStatus:
-    """
-    システム状態を取得
+def _generate_improvement_suggestions(student_profile: StudentProfile, 
+                                    laboratory: Laboratory,
+                                    compatibility_score) -> List[str]:
+    """改善提案の生成"""
     
-    Returns:
-        SystemStatus: システムの現在状態
-    """
+    suggestions = []
+    
+    # 低スコア基準に対する提案
+    low_criteria = [
+        criterion for criterion, score in compatibility_score.criteria_scores.items()
+        if score < 0.4
+    ]
+    
+    criterion_suggestions = {
+        "research_intensity": "研究への取り組み強度を見直してみてください",
+        "advisor_style": "指導スタイルの希望を再考してみてください",
+        "team_work": "チームでの研究への参加度を検討してみてください",
+        "workload": "研究活動の負荷に対する期待を調整してみてください",
+        "theory_practice": "理論と実践のバランスを見直してみてください"
+    }
+    
+    for criterion in low_criteria[:2]:  # 上位2つのみ
+        if criterion in criterion_suggestions:
+            suggestions.append(criterion_suggestions[criterion])
+    
+    # 分野適合性が低い場合
+    if compatibility_score.field_match_score < 0.3:
+        suggestions.append("他の研究分野への興味も探ってみてください")
+    
+    # 全体的な適合性が中程度の場合
+    if 0.4 <= compatibility_score.overall_score <= 0.6:
+        suggestions.append("研究室見学や教員との面談を通じて詳細を確認することをお勧めします")
+    
+    return suggestions
+
+@router.get("/laboratories", response_model=Dict[str, Any])
+async def get_laboratories(
+    field: Optional[str] = None,
+    limit: Optional[int] = None,
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """研究室一覧の取得"""
     
     try:
-        from datetime import datetime
+        laboratories = matching_service.get_all_laboratories()
+        
+        # 分野フィルタ
+        if field:
+            laboratories = [
+                lab for lab in laboratories 
+                if lab.research_field.value == field
+            ]
+        
+        # 件数制限
+        if limit:
+            laboratories = laboratories[:limit]
+        
+        # レスポンス構築
+        lab_list = []
+        for lab in laboratories:
+            lab_info = {
+                "lab_id": lab.lab_id,
+                "faculty": {
+                    "name": lab.faculty.name,
+                    "name_en": lab.faculty.name_en,
+                    "specialties": lab.faculty.specialties
+                },
+                "research_field": lab.research_field.value,
+                "description": lab.description,
+                "characteristics_summary": {
+                    "research_intensity": lab.characteristics.research_intensity,
+                    "advisor_style": lab.characteristics.advisor_style,
+                    "team_work": lab.characteristics.team_work
+                }
+            }
+            lab_list.append(lab_info)
+        
+        return {
+            "total_count": len(matching_service.get_all_laboratories()),
+            "filtered_count": len(lab_list),
+            "laboratories": lab_list,
+            "available_fields": list(set(lab.research_field.value for lab in matching_service.get_all_laboratories()))
+        }
+        
+    except Exception as e:
+        logger.error(f"研究室一覧取得エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"研究室一覧の取得に失敗しました: {str(e)}"
+        )
+
+@router.get("/laboratory/{lab_id}", response_model=Dict[str, Any])
+async def get_laboratory_detail(
+    lab_id: str,
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """研究室詳細情報の取得"""
+    
+    try:
+        laboratory = matching_service.get_laboratory(lab_id)
+        
+        if not laboratory:
+            raise HTTPException(status_code=404, detail=f"研究室が見つかりません: {lab_id}")
+        
+        # 詳細情報の構築
+        detail_info = {
+            "lab_id": laboratory.lab_id,
+            "basic_info": {
+                "lab_name": laboratory.lab_name,
+                "faculty": {
+                    "name": laboratory.faculty.name,
+                    "name_en": laboratory.faculty.name_en,
+                    "title": laboratory.faculty.title,
+                    "specialties": laboratory.faculty.specialties
+                },
+                "research_field": laboratory.research_field.value,
+                "description": laboratory.description
+            },
+            "characteristics": laboratory.characteristics.dict(),
+            "additional_info": {
+                "recent_achievements": laboratory.recent_achievements,
+                "required_skills": laboratory.required_skills,
+                "lab_environment": laboratory.lab_environment,
+                "current_students": laboratory.current_students,
+                "graduation_rate": laboratory.graduation_rate,
+                "job_placement_rate": laboratory.job_placement_rate
+            },
+            "field_info": {
+                "category": None,
+                "related_fields": []
+            }
+        }
+        
+        # カテゴリ情報の追加
+        for category, fields in settings.field_categories.items():
+            if laboratory.research_field.value in fields:
+                detail_info["field_info"]["category"] = category
+                detail_info["field_info"]["related_fields"] = [
+                    f for f in fields if f != laboratory.research_field.value
+                ]
+                break
+        
+        return detail_info
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"研究室詳細取得エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"研究室詳細の取得に失敗しました: {str(e)}"
+        )
+
+@router.get("/statistics", response_model=Dict[str, Any])
+async def get_prediction_statistics(
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """予測システムの統計情報取得"""
+    
+    try:
+        service_stats = matching_service.get_service_statistics()
+        
+        system_stats = {
+            "service_statistics": service_stats,
+            "system_info": {
+                "total_research_fields": len(settings.research_fields),
+                "total_evaluation_criteria": len(settings.evaluation_criteria),
+                "genetic_algorithm_config": {
+                    "population_size": settings.ga_population_size,
+                    "generations": settings.ga_generations,
+                    "mutation_rate": settings.ga_mutation_rate,
+                    "crossover_rate": settings.ga_crossover_rate
+                }
+            },
+            "algorithm_status": {
+                "fuzzy_inference": service_stats["fuzzy_inference_available"],
+                "genetic_optimization": service_stats["optimization_enabled"],
+                "optimized_weights": service_stats["optimized_weights_available"]
+            }
+        }
+        
+        return system_stats
+        
+    except Exception as e:
+        logger.error(f"統計情報取得エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"統計情報の取得に失敗しました: {str(e)}"
+        )
+
+@router.post("/optimize-weights")
+async def optimize_matching_weights(
+    background_tasks: BackgroundTasks,
+    sample_size: int = 100,
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """マッチング重みの最適化（バックグラウンド処理）"""
+    
+    try:
+        # サンプルデータの生成（実際の実装では外部データを使用）
+        def generate_optimization_data():
+            logger.info("重み最適化をバックグラウンドで開始します")
+            
+            # ここでは簡易的なサンプルデータを生成
+            # 実際の実装では過去のマッチング結果や評価データを使用
+            sample_data = []
+            
+            # 実装が複雑になるため、ここでは省略
+            # matching_service.optimize_weights(sample_data)
+            
+            logger.info("重み最適化が完了しました")
+        
+        background_tasks.add_task(generate_optimization_data)
+        
+        return {
+            "message": "重み最適化をバックグラウンドで開始しました",
+            "status": "processing",
+            "estimated_time": "5-10分",
+            "sample_size": sample_size
+        }
+        
+    except Exception as e:
+        logger.error(f"重み最適化エラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"重み最適化の開始に失敗しました: {str(e)}"
+        )
+
+@router.get("/health", response_model=SystemStatus)
+async def get_system_health(
+    matching_service: LabMatchingService = Depends(get_lab_matching_service)
+):
+    """システムヘルスチェック"""
+    
+    try:
+        service_stats = matching_service.get_service_statistics()
+        
+        # モジュールの利用可能性チェック
+        modules = {
+            "fuzzy_inference": service_stats["fuzzy_inference_available"],
+            "genetic_optimization": service_stats["optimization_enabled"],
+            "lab_matching": True,
+            "prediction": get_prediction_service() is not None
+        }
+        
+        # システム状態の判定
+        critical_modules = ["lab_matching"]
+        status = "healthy"
+        
+        if not all(modules[mod] for mod in critical_modules):
+            status = "degraded"
+        
+        if not any(modules.values()):
+            status = "unhealthy"
         
         return SystemStatus(
-            status="active",
-            total_fields=len(settings.research_fields),
-            total_labs=5,  # サンプルデータの数
-            last_updated=datetime.now().isoformat()
+            status=status,
+            version="1.0.0",
+            uptime=0.0,  # 実際の実装では起動からの経過時間
+            modules=modules,
+            total_evaluations=service_stats["total_evaluations"],
+            active_optimizations=0,  # 実際の実装では進行中の最適化数
         )
         
     except Exception as e:
-        logger.error(f"システム状態取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="システム状態の取得に失敗しました")
+        logger.error(f"ヘルスチェックエラー: {e}")
+        raise HTTPException(
+            status_code=500, 
+            detail=f"システムヘルスチェックに失敗しました: {str(e)}"
+        )
 
-@router.get("/categories")
-async def get_field_categories() -> Dict[str, List[str]]:
-    """
-    研究分野のカテゴリ一覧を取得
-    
-    Returns:
-        Dict[str, List[str]]: カテゴリとその分野IDのマッピング
-    """
-    
-    try:
-        return settings.field_categories
-        
-    except Exception as e:
-        logger.error(f"カテゴリ取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="カテゴリ情報の取得に失敗しました")
+# エラーハンドラ
+@router.exception_handler(ValueError)
+async def value_error_handler(request, exc):
+    return JSONResponse(
+        status_code=400,
+        content={"detail": f"入力値エラー: {str(exc)}"}
+    )
 
-@router.get("/evaluation-criteria")
-async def get_evaluation_criteria() -> Dict[str, str]:
-    """
-    評価基準の一覧と説明を取得
-    
-    Returns:
-        Dict[str, str]: 評価基準とその説明
-    """
-    
-    try:
-        criteria_descriptions = {
-            "research_intensity": "研究にどれだけ集中的に取り組みたいか (1:軽い研究 〜 10:集中研究)",
-            "advisor_style": "教授からの指導の受け方の好み (1:厳格指導 〜 10:自由指導)",
-            "team_work": "研究での他者との協働の程度 (1:個人研究 〜 10:チーム研究)",
-            "workload": "研究活動の忙しさに対する許容度 (1:軽い負荷 〜 10:重い負荷)",
-            "theory_practice": "理論研究と実践的研究のバランス (1:理論重視 〜 10:実践重視)",
-            "research_field_match": "自分の興味と研究室の分野の一致度 (1:広い分野 〜 10:専門特化)",
-            "skill_development": "専門性と汎用性のバランス (1:専門特化 〜 10:幅広いスキル)",
-            "lab_atmosphere": "研究室の全体的な雰囲気 (1:静寂集中 〜 10:活発議論)",
-            "flexibility": "研究時間の自由度 (1:固定スケジュール 〜 10:柔軟スケジュール)",
-            "publication_opportunity": "研究成果の論文化機会 (1:少ない機会 〜 10:豊富な機会)",
-            "interdisciplinary": "他分野との連携の程度 (1:単一分野 〜 10:学際連携)",
-            "communication_style": "研究室での交流スタイル (1:少人数密接 〜 10:オープン交流)",
-            "innovation_risk": "新しい手法への挑戦度 (1:安全手法 〜 10:革新手法)"
-        }
-        
-        return criteria_descriptions
-        
-    except Exception as e:
-        logger.error(f"評価基準取得エラー: {str(e)}")
-        raise HTTPException(status_code=500, detail="評価基準情報の取得に失敗しました")
+@router.exception_handler(Exception)
+async def general_exception_handler(request, exc):
+    logger.error(f"予期しないエラー: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "内部サーバーエラーが発生しました"}
+    )

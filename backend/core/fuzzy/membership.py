@@ -1,202 +1,380 @@
-# core/fuzzy/membership.py - ファジィメンバーシップ関数
+# core/fuzzy/membership.py - メンバーシップ関数
 
 import numpy as np
-from typing import Dict, List, Tuple, Callable
-from models.schemas import FieldInterest
+import math
+from typing import Dict, List, Tuple, Callable, Any, Optional
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
 
-class MembershipFunction:
-    """ファジィメンバーシップ関数クラス"""
+class MembershipType(str, Enum):
+    """メンバーシップ関数の種類"""
+    TRIANGULAR = "triangular"
+    TRAPEZOIDAL = "trapezoidal"
+    GAUSSIAN = "gaussian"
+    SIGMOID = "sigmoid"
+    BELL = "bell"
+
+@dataclass
+class MembershipParams:
+    """メンバーシップ関数のパラメータ"""
+    a: float  # 左端または中心
+    b: Optional[float] = None  # 右端または幅
+    c: Optional[float] = None  # 第3パラメータ
+    d: Optional[float] = None  # 第4パラメータ
+
+class MembershipFunction(ABC):
+    """メンバーシップ関数の抽象基底クラス"""
     
-    def __init__(self):
-        # 基本メンバーシップ関数の定義
-        self.functions = {
-            "very_low": self._create_trapezoid(0, 0, 1, 2.5),
-            "low": self._create_trapezoid(1, 2.5, 3.5, 5),
-            "medium": self._create_trapezoid(3.5, 5, 5, 6.5),
-            "high": self._create_trapezoid(5, 6.5, 7.5, 9),
-            "very_high": self._create_trapezoid(7.5, 9, 10, 10)
-        }
-        
-        # 興味度レベル分類
-        self.interest_levels = {
-            "no_interest": (0, 2),
-            "slight_interest": (2, 4),
-            "moderate_interest": (4, 6),
-            "strong_interest": (6, 8),
-            "very_strong_interest": (8, 10)
-        }
-        
-        # 経験レベル分類
-        self.experience_levels = {
-            "novice": (0, 2),
-            "beginner": (2, 4),
-            "intermediate": (4, 6),
-            "advanced": (6, 8),
-            "expert": (8, 10)
-        }
+    def __init__(self, name: str, params: MembershipParams):
+        self.name = name
+        self.params = params
     
-    def _create_trapezoid(self, a: float, b: float, c: float, d: float) -> Callable:
-        """台形メンバーシップ関数を作成"""
-        def trapezoid(x: float) -> float:
-            if x <= a or x >= d:
-                return 0.0
-            elif a < x <= b:
-                return (x - a) / (b - a) if b != a else 1.0
-            elif b < x <= c:
-                return 1.0
-            elif c < x < d:
-                return (d - x) / (d - c) if d != c else 1.0
+    @abstractmethod
+    def membership(self, x: float) -> float:
+        """メンバーシップ度を計算"""
+        pass
+    
+    def batch_membership(self, x_values: List[float]) -> List[float]:
+        """複数値のメンバーシップ度を一括計算"""
+        return [self.membership(x) for x in x_values]
+
+class TriangularMF(MembershipFunction):
+    """三角形メンバーシップ関数"""
+    
+    def __init__(self, name: str, a: float, b: float, c: float):
+        """
+        Args:
+            a: 左端
+            b: 頂点
+            c: 右端
+        """
+        super().__init__(name, MembershipParams(a, b, c))
+        self.a, self.b, self.c = a, b, c
+    
+    def membership(self, x: float) -> float:
+        """三角形メンバーシップ度計算"""
+        if x <= self.a or x >= self.c:
             return 0.0
-        return trapezoid
+        elif self.a < x <= self.b:
+            return (x - self.a) / (self.b - self.a) if self.b != self.a else 1.0
+        else:  # self.b < x < self.c
+            return (self.c - x) / (self.c - self.b) if self.c != self.b else 1.0
+
+class TrapezoidalMF(MembershipFunction):
+    """台形メンバーシップ関数"""
     
-    def _create_triangle(self, a: float, b: float, c: float) -> Callable:
-        """三角メンバーシップ関数を作成"""
-        def triangle(x: float) -> float:
-            if x <= a or x >= c:
-                return 0.0
-            elif a < x <= b:
-                return (x - a) / (b - a) if b != a else 1.0
-            elif b < x < c:
-                return (c - x) / (c - b) if c != b else 1.0
+    def __init__(self, name: str, a: float, b: float, c: float, d: float):
+        """
+        Args:
+            a: 左端
+            b: 左上端
+            c: 右上端
+            d: 右端
+        """
+        super().__init__(name, MembershipParams(a, b, c, d))
+        self.a, self.b, self.c, self.d = a, b, c, d
+    
+    def membership(self, x: float) -> float:
+        """台形メンバーシップ度計算"""
+        if x <= self.a or x >= self.d:
             return 0.0
-        return triangle
+        elif self.a < x <= self.b:
+            return (x - self.a) / (self.b - self.a) if self.b != self.a else 1.0
+        elif self.b < x <= self.c:
+            return 1.0
+        else:  # self.c < x < self.d
+            return (self.d - x) / (self.d - self.c) if self.d != self.c else 1.0
+
+class GaussianMF(MembershipFunction):
+    """ガウシアンメンバーシップ関数"""
     
-    def evaluate(self, value: float, level: str) -> float:
-        """メンバーシップ値を計算"""
-        if level in self.functions:
-            return self.functions[level](value)
-        return 0.0
+    def __init__(self, name: str, center: float, sigma: float):
+        """
+        Args:
+            center: 中心
+            sigma: 標準偏差
+        """
+        super().__init__(name, MembershipParams(center, sigma))
+        self.center = center
+        self.sigma = sigma
     
-    def field_compatibility(self, student_interest: FieldInterest, 
-                          field_info: Dict) -> float:
-        """分野適合性をファジィ計算"""
-        
-        # 興味度の評価
-        interest_score = self._evaluate_interest(student_interest.interest_level)
-        
-        # 経験レベルと分野難易度のマッチング評価
-        experience_match = self._evaluate_experience_match(
-            student_interest.experience_level, 
-            field_info.get("difficulty", "intermediate")
-        )
-        
-        # 重要度の重み
-        importance_weight = student_interest.importance_level / 10.0
-        
-        # ファジィ統合（重み付き平均）
-        compatibility = (
-            interest_score * 0.4 +
-            experience_match * 0.3 +
-            importance_weight * 0.3
-        )
-        
-        return min(1.0, max(0.0, compatibility))
+    def membership(self, x: float) -> float:
+        """ガウシアンメンバーシップ度計算"""
+        return math.exp(-0.5 * ((x - self.center) / self.sigma) ** 2)
+
+class SigmoidMF(MembershipFunction):
+    """シグモイドメンバーシップ関数"""
     
-    def _evaluate_interest(self, interest_level: int) -> float:
-        """興味度をファジィ評価"""
-        # 高い興味を重視
-        high_membership = self.evaluate(interest_level, "high")
-        very_high_membership = self.evaluate(interest_level, "very_high")
-        
-        return max(high_membership, very_high_membership)
+    def __init__(self, name: str, a: float, c: float):
+        """
+        Args:
+            a: 傾き
+            c: 中心点
+        """
+        super().__init__(name, MembershipParams(a, c))
+        self.a = a
+        self.c = c
     
-    def _evaluate_experience_match(self, experience_level: int, 
-                                 difficulty: str) -> float:
-        """経験レベルと分野難易度のマッチング評価"""
+    def membership(self, x: float) -> float:
+        """シグモイドメンバーシップ度計算"""
+        return 1.0 / (1.0 + math.exp(-self.a * (x - self.c)))
+
+class BellMF(MembershipFunction):
+    """ベル型メンバーシップ関数"""
+    
+    def __init__(self, name: str, a: float, b: float, c: float):
+        """
+        Args:
+            a: 幅パラメータ
+            b: 形状パラメータ
+            c: 中心
+        """
+        super().__init__(name, MembershipParams(a, b, c))
+        self.a, self.b, self.c = a, b, c
+    
+    def membership(self, x: float) -> float:
+        """ベル型メンバーシップ度計算"""
+        return 1.0 / (1.0 + abs((x - self.c) / self.a) ** (2 * self.b))
+
+class FuzzySet:
+    """ファジィ集合クラス"""
+    
+    def __init__(self, name: str, membership_function: MembershipFunction, 
+                 universe: Tuple[float, float] = (0.0, 10.0)):
+        self.name = name
+        self.membership_function = membership_function
+        self.universe = universe  # 議論域
         
-        # 難易度を数値に変換
-        difficulty_map = {
-            "beginner": 3,
-            "intermediate": 6,
-            "advanced": 9
-        }
+    def membership(self, x: float) -> float:
+        """メンバーシップ度を取得"""
+        return self.membership_function.membership(x)
+    
+    def alpha_cut(self, alpha: float, num_points: int = 1000) -> List[float]:
+        """α-カットを計算"""
+        x_range = np.linspace(self.universe[0], self.universe[1], num_points)
+        return [x for x in x_range if self.membership(x) >= alpha]
+    
+    def support(self, threshold: float = 0.001) -> List[float]:
+        """サポート（台）を計算"""
+        return self.alpha_cut(threshold)
+    
+    def height(self) -> float:
+        """高さ（最大メンバーシップ度）を計算"""
+        x_range = np.linspace(self.universe[0], self.universe[1], 1000)
+        return max(self.membership(x) for x in x_range)
+    
+    def centroid(self, num_points: int = 1000) -> float:
+        """重心を計算"""
+        x_range = np.linspace(self.universe[0], self.universe[1], num_points)
+        numerator = sum(x * self.membership(x) for x in x_range)
+        denominator = sum(self.membership(x) for x in x_range)
         
-        target_experience = difficulty_map.get(difficulty, 6)
+        return numerator / denominator if denominator > 0 else 0.0
+
+class FuzzyVariable:
+    """ファジィ変数クラス"""
+    
+    def __init__(self, name: str, universe: Tuple[float, float] = (0.0, 10.0)):
+        self.name = name
+        self.universe = universe
+        self.sets: Dict[str, FuzzySet] = {}
+    
+    def add_set(self, fuzzy_set: FuzzySet):
+        """ファジィ集合を追加"""
+        self.sets[fuzzy_set.name] = fuzzy_set
+    
+    def get_membership(self, value: float) -> Dict[str, float]:
+        """全ての集合に対するメンバーシップ度を取得"""
+        return {name: fs.membership(value) for name, fs in self.sets.items()}
+    
+    def fuzzify(self, value: float) -> Dict[str, float]:
+        """ファジィ化"""
+        return self.get_membership(value)
+    
+    def defuzzify(self, membership_values: Dict[str, float], 
+                  method: str = "centroid") -> float:
+        """非ファジィ化"""
         
-        # 経験レベルとのマッチング計算
-        # 経験が足りない場合とオーバースペックの場合を考慮
-        distance = abs(experience_level - target_experience)
-        
-        if distance <= 1:
-            return 1.0  # 完全マッチ
-        elif distance <= 2:
-            return 0.8  # 良好なマッチ
-        elif distance <= 3:
-            return 0.6  # 中程度のマッチ
-        elif distance <= 4:
-            return 0.4  # やや困難
+        if method == "centroid":
+            return self._centroid_defuzzify(membership_values)
+        elif method == "max":
+            return self._max_defuzzify(membership_values)
+        elif method == "mean_of_max":
+            return self._mean_of_max_defuzzify(membership_values)
         else:
-            return 0.2  # 困難
+            raise ValueError(f"未知の非ファジィ化手法: {method}")
     
-    def criteria_similarity(self, student_value: int, lab_value: float) -> float:
-        """評価基準の類似度をファジィ計算"""
+    def _centroid_defuzzify(self, membership_values: Dict[str, float]) -> float:
+        """重心法による非ファジィ化"""
+        x_range = np.linspace(self.universe[0], self.universe[1], 1000)
         
-        # 距離ベースの類似度
-        distance = abs(student_value - lab_value)
+        # 各点での結合メンバーシップ度を計算
+        combined_membership = []
+        for x in x_range:
+            max_membership = 0.0
+            for set_name, activation in membership_values.items():
+                if set_name in self.sets:
+                    set_membership = self.sets[set_name].membership(x)
+                    combined = min(activation, set_membership)
+                    max_membership = max(max_membership, combined)
+            combined_membership.append(max_membership)
         
-        # ガウシアンメンバーシップ関数を使用
-        sigma = 2.0  # 標準偏差
-        similarity = np.exp(-(distance ** 2) / (2 * sigma ** 2))
-        
-        return similarity
-    
-    def fuzzy_and(self, *values: float) -> float:
-        """ファジィAND演算（最小値）"""
-        return min(values)
-    
-    def fuzzy_or(self, *values: float) -> float:
-        """ファジィOR演算（最大値）"""
-        return max(values)
-    
-    def fuzzy_not(self, value: float) -> float:
-        """ファジィNOT演算"""
-        return 1.0 - value
-    
-    def defuzzify_centroid(self, membership_values: Dict[float, float]) -> float:
-        """重心法によるファジィ値の明確化"""
-        
-        if not membership_values:
-            return 0.0
-        
-        numerator = sum(value * membership for value, membership in membership_values.items())
-        denominator = sum(membership_values.values())
+        # 重心計算
+        numerator = sum(x * m for x, m in zip(x_range, combined_membership))
+        denominator = sum(combined_membership)
         
         return numerator / denominator if denominator > 0 else 0.0
     
-    def linguistic_evaluation(self, value: float) -> str:
-        """数値を言語的評価に変換"""
+    def _max_defuzzify(self, membership_values: Dict[str, float]) -> float:
+        """最大値法による非ファジィ化"""
+        max_activation = max(membership_values.values())
+        max_sets = [name for name, val in membership_values.items() 
+                   if val == max_activation]
         
-        if value >= 8.5:
-            return "非常に良い"
-        elif value >= 7.0:
-            return "良い"
-        elif value >= 5.5:
-            return "普通"
-        elif value >= 3.5:
-            return "やや劣る"
+        if len(max_sets) == 1:
+            return self.sets[max_sets[0]].centroid()
         else:
-            return "劣る"
+            # 複数の最大値がある場合は平均
+            centroids = [self.sets[name].centroid() for name in max_sets]
+            return sum(centroids) / len(centroids)
     
-    def calculate_confidence(self, field_interests: List[FieldInterest]) -> float:
-        """学生の選択に対する信頼度を計算"""
+    def _mean_of_max_defuzzify(self, membership_values: Dict[str, float]) -> float:
+        """最大値平均法による非ファジィ化"""
+        return self._max_defuzzify(membership_values)
+
+class MembershipFunctionFactory:
+    """メンバーシップ関数ファクトリ"""
+    
+    @staticmethod
+    def create_standard_sets(variable_name: str, 
+                           universe: Tuple[float, float] = (1.0, 10.0)) -> FuzzyVariable:
+        """標準的な3分割ファジィ集合を作成"""
         
-        if not field_interests:
-            return 0.0
+        var = FuzzyVariable(variable_name, universe)
+        min_val, max_val = universe
+        range_val = max_val - min_val
         
-        # 興味度の分散と平均を考慮
-        interest_levels = [fi.interest_level for fi in field_interests]
-        experience_levels = [fi.experience_level for fi in field_interests]
-        
-        interest_mean = np.mean(interest_levels)
-        interest_std = np.std(interest_levels)
-        
-        experience_mean = np.mean(experience_levels)
-        
-        # 信頼度計算（高い興味と一貫性を重視）
-        confidence = (
-            (interest_mean / 10.0) * 0.5 +  # 平均興味度
-            (1.0 - min(interest_std / 5.0, 1.0)) * 0.3 +  # 一貫性
-            (experience_mean / 10.0) * 0.2  # 経験レベル
+        # Low, Medium, High の3つの集合
+        low_set = FuzzySet(
+            "low",
+            TriangularMF("low", min_val, min_val, min_val + range_val * 0.5),
+            universe
         )
         
-        return min(1.0, max(0.0, confidence))
+        medium_set = FuzzySet(
+            "medium", 
+            TriangularMF("medium", min_val + range_val * 0.25, 
+                        min_val + range_val * 0.5, min_val + range_val * 0.75),
+            universe
+        )
+        
+        high_set = FuzzySet(
+            "high",
+            TriangularMF("high", min_val + range_val * 0.5, max_val, max_val),
+            universe
+        )
+        
+        var.add_set(low_set)
+        var.add_set(medium_set)
+        var.add_set(high_set)
+        
+        return var
+    
+    @staticmethod
+    def create_five_level_sets(variable_name: str,
+                             universe: Tuple[float, float] = (1.0, 10.0)) -> FuzzyVariable:
+        """5段階ファジィ集合を作成"""
+        
+        var = FuzzyVariable(variable_name, universe)
+        min_val, max_val = universe
+        range_val = max_val - min_val
+        
+        # Very Low, Low, Medium, High, Very High の5つの集合
+        sets_config = [
+            ("very_low", 0.0, 0.0, 0.25),
+            ("low", 0.0, 0.25, 0.5), 
+            ("medium", 0.25, 0.5, 0.75),
+            ("high", 0.5, 0.75, 1.0),
+            ("very_high", 0.75, 1.0, 1.0)
+        ]
+        
+        for name, start, peak, end in sets_config:
+            fuzzy_set = FuzzySet(
+                name,
+                TriangularMF(
+                    name,
+                    min_val + range_val * start,
+                    min_val + range_val * peak, 
+                    min_val + range_val * end
+                ),
+                universe
+            )
+            var.add_set(fuzzy_set)
+        
+        return var
+    
+    @staticmethod
+    def create_compatibility_variable() -> FuzzyVariable:
+        """適合性用ファジィ変数を作成"""
+        
+        var = FuzzyVariable("compatibility", (0.0, 1.0))
+        
+        # 不適合, 低適合, 中適合, 高適合, 完全適合
+        sets_config = [
+            ("incompatible", 0.0, 0.0, 0.2),
+            ("low_match", 0.0, 0.2, 0.4),
+            ("medium_match", 0.2, 0.5, 0.8),
+            ("high_match", 0.6, 0.8, 1.0),
+            ("perfect_match", 0.8, 1.0, 1.0)
+        ]
+        
+        for name, start, peak, end in sets_config:
+            fuzzy_set = FuzzySet(
+                name,
+                TriangularMF(name, start, peak, end),
+                (0.0, 1.0)
+            )
+            var.add_set(fuzzy_set)
+        
+        return var
+
+# 使用例とテスト関数
+def test_membership_functions():
+    """メンバーシップ関数のテスト"""
+    
+    print("🧪 メンバーシップ関数テスト開始")
+    
+    # 三角形関数テスト
+    tri_mf = TriangularMF("test_tri", 2, 5, 8)
+    test_values = [1, 2, 3.5, 5, 6.5, 8, 9]
+    
+    print("\n📐 三角形メンバーシップ関数 (2, 5, 8):")
+    for val in test_values:
+        membership = tri_mf.membership(val)
+        print(f"  x={val}: μ={membership:.3f}")
+    
+    # ガウシアン関数テスト
+    gauss_mf = GaussianMF("test_gauss", 5, 1.5)
+    
+    print("\n🔔 ガウシアンメンバーシップ関数 (center=5, σ=1.5):")
+    for val in test_values:
+        membership = gauss_mf.membership(val)
+        print(f"  x={val}: μ={membership:.3f}")
+    
+    # ファジィ変数テスト
+    print("\n🔢 標準ファジィ変数テスト:")
+    research_intensity = MembershipFunctionFactory.create_standard_sets(
+        "research_intensity", (1.0, 10.0)
+    )
+    
+    test_value = 7.5
+    memberships = research_intensity.fuzzify(test_value)
+    print(f"  値 {test_value} のファジィ化結果:")
+    for set_name, membership in memberships.items():
+        print(f"    {set_name}: {membership:.3f}")
+    
+    print("✅ メンバーシップ関数テスト完了")
+
+if __name__ == "__main__":
+    test_membership_functions()

@@ -1,357 +1,457 @@
 # core/fuzzy/rules.py - ファジィルール定義
 
-from typing import Dict, List, Tuple, Callable
+from typing import Dict, List, Any, Optional, Union, Callable
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from enum import Enum
-from dataclasses import dataclass
-from models.schemas import StudentProfile, Laboratory
+import re
+import logging
 
-class RuleOperator(Enum):
-    """ルール演算子"""
+logger = logging.getLogger(__name__)
+
+class LogicalOperator(str, Enum):
+    """論理演算子"""
     AND = "AND"
     OR = "OR"
     NOT = "NOT"
 
-@dataclass
-class FuzzyCondition:
-    """ファジィ条件"""
-    variable: str           # 変数名 (例: "interest_level", "experience_level")
-    linguistic_value: str   # 言語値 (例: "high", "medium", "low")
-    weight: float = 1.0     # 条件の重み
+class ComparisonOperator(str, Enum):
+    """比較演算子"""
+    IS = "IS"
+    IS_NOT = "IS_NOT"
+    GREATER_THAN = ">"
+    LESS_THAN = "<"
+    EQUAL = "="
 
 @dataclass
+class Condition:
+    """ファジィルールの条件"""
+    variable: str
+    operator: ComparisonOperator
+    linguistic_value: str
+    weight: float = 1.0
+    negated: bool = False
+    
+    def __str__(self) -> str:
+        neg_str = "NOT " if self.negated else ""
+        return f"{neg_str}{self.variable} {self.operator.value} {self.linguistic_value}"
+
+@dataclass
+class Conclusion:
+    """ファジィルールの結論"""
+    variable: str
+    linguistic_value: str
+    certainty_factor: float = 1.0
+    
+    def __str__(self) -> str:
+        return f"{self.variable} IS {self.linguistic_value}"
+
+class RuleOperator:
+    """ルール演算子（t-norm, t-conorm等）"""
+    
+    @staticmethod
+    def min_and(a: float, b: float) -> float:
+        """最小値AND演算"""
+        return min(a, b)
+    
+    @staticmethod
+    def product_and(a: float, b: float) -> float:
+        """積AND演算"""
+        return a * b
+    
+    @staticmethod
+    def lukasiewicz_and(a: float, b: float) -> float:
+        """ルカシェヴィッチAND演算"""
+        return max(0, a + b - 1)
+    
+    @staticmethod
+    def max_or(a: float, b: float) -> float:
+        """最大値OR演算"""
+        return max(a, b)
+    
+    @staticmethod
+    def probabilistic_or(a: float, b: float) -> float:
+        """確率的OR演算"""
+        return a + b - a * b
+    
+    @staticmethod
+    def lukasiewicz_or(a: float, b: float) -> float:
+        """ルカシェヴィッチOR演算"""
+        return min(1, a + b)
+    
+    @staticmethod
+    def complement(a: float) -> float:
+        """補集合（NOT演算）"""
+        return 1.0 - a
+
 class FuzzyRule:
     """ファジィルール"""
-    rule_id: str                          # ルールID
-    antecedent: List[FuzzyCondition]      # 前件部（条件）
-    consequent: FuzzyCondition            # 後件部（結論）
-    operator: RuleOperator = RuleOperator.AND  # 前件部の結合演算子
-    confidence: float = 1.0               # ルールの信頼度
-    description: str = ""                 # ルール説明
+    
+    def __init__(self, name: str, conditions: List[Condition], 
+                 conclusion: Conclusion, weight: float = 1.0):
+        self.name = name
+        self.conditions = conditions
+        self.conclusion = conclusion
+        self.weight = weight
+        
+        # 論理演算子の設定
+        self.and_operator = RuleOperator.min_and
+        self.or_operator = RuleOperator.max_or
+        self.not_operator = RuleOperator.complement
+        
+        # 統計情報
+        self.activation_count = 0
+        self.total_activation = 0.0
+        self.average_activation = 0.0
+    
+    def evaluate(self, memberships: Dict[str, Dict[str, float]]) -> float:
+        """ルールの活性化度を評価"""
+        
+        if not self.conditions:
+            return 0.0
+        
+        # 全ての条件を評価
+        condition_values = []
+        
+        for condition in self.conditions:
+            var_name = condition.variable
+            set_name = condition.linguistic_value
+            
+            if var_name in memberships and set_name in memberships[var_name]:
+                value = memberships[var_name][set_name]
+                
+                # 重み適用
+                if condition.weight != 1.0:
+                    value = value * condition.weight
+                
+                # 否定処理
+                if condition.negated:
+                    value = self.not_operator(value)
+                
+                condition_values.append(value)
+            else:
+                # 条件が満たせない場合は0
+                condition_values.append(0.0)
+        
+        # 条件の結合（現在はAND結合のみ）
+        activation = condition_values[0]
+        for value in condition_values[1:]:
+            activation = self.and_operator(activation, value)
+        
+        # ルール重み適用
+        activation *= self.weight
+        
+        # 統計更新
+        self.activation_count += 1
+        self.total_activation += activation
+        self.average_activation = self.total_activation / self.activation_count
+        
+        return activation
+    
+    def set_operators(self, and_op: Callable[[float, float], float] = None,
+                     or_op: Callable[[float, float], float] = None,
+                     not_op: Callable[[float], float] = None):
+        """論理演算子を設定"""
+        if and_op:
+            self.and_operator = and_op
+        if or_op:
+            self.or_operator = or_op
+        if not_op:
+            self.not_operator = not_op
+    
+    def __str__(self) -> str:
+        conditions_str = " AND ".join(str(cond) for cond in self.conditions)
+        return f"IF {conditions_str} THEN {self.conclusion}"
 
-class FuzzyRuleBase:
-    """ファジィルールベース"""
+class FuzzyRuleSet:
+    """ファジィルール集合"""
     
-    def __init__(self):
+    def __init__(self, name: str):
+        self.name = name
         self.rules: List[FuzzyRule] = []
-        self._initialize_rules()
-    
-    def _initialize_rules(self):
-        """研究室マッチング用のルールを初期化"""
         
-        # 分野適合性ルール
-        self._add_field_matching_rules()
+        # 統計情報
+        self.total_inferences = 0
+        self.successful_inferences = 0
         
-        # 経験レベルルール
-        self._add_experience_level_rules()
-        
-        # 研究スタイルルール
-        self._add_research_style_rules()
-        
-        # 指導スタイルルール
-        self._add_advisor_style_rules()
-        
-        # 総合適合性ルール
-        self._add_overall_compatibility_rules()
-    
-    def _add_field_matching_rules(self):
-        """分野適合性に関するルール"""
-        
-        # ルール1: 高い興味 + 高い重要度 → 高い分野適合性
-        self.rules.append(FuzzyRule(
-            rule_id="FIELD_001",
-            antecedent=[
-                FuzzyCondition("interest_level", "high", 0.7),
-                FuzzyCondition("importance_level", "high", 0.3)
-            ],
-            consequent=FuzzyCondition("field_compatibility", "very_high"),
-            operator=RuleOperator.AND,
-            confidence=0.9,
-            description="高い興味と重要度を示す分野は高い適合性を持つ"
-        ))
-        
-        # ルール2: 中程度の興味 + 高い経験 → 良い分野適合性
-        self.rules.append(FuzzyRule(
-            rule_id="FIELD_002",
-            antecedent=[
-                FuzzyCondition("interest_level", "medium", 0.5),
-                FuzzyCondition("experience_level", "high", 0.5)
-            ],
-            consequent=FuzzyCondition("field_compatibility", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.8,
-            description="経験豊富な分野は興味が中程度でも適合性が高い"
-        ))
-        
-        # ルール3: 低い興味 → 低い分野適合性
-        self.rules.append(FuzzyRule(
-            rule_id="FIELD_003",
-            antecedent=[
-                FuzzyCondition("interest_level", "low", 1.0)
-            ],
-            consequent=FuzzyCondition("field_compatibility", "low"),
-            confidence=0.9,
-            description="興味の低い分野は適合性も低い"
-        ))
-    
-    def _add_experience_level_rules(self):
-        """経験レベルに関するルール"""
-        
-        # ルール4: 高い経験 + 高い難易度 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="EXP_001",
-            antecedent=[
-                FuzzyCondition("experience_level", "high", 0.6),
-                FuzzyCondition("field_difficulty", "advanced", 0.4)
-            ],
-            consequent=FuzzyCondition("experience_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.85,
-            description="高い経験を持つ学生は高難易度分野に適合"
-        ))
-        
-        # ルール5: 低い経験 + 低い難易度 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="EXP_002",
-            antecedent=[
-                FuzzyCondition("experience_level", "low", 0.6),
-                FuzzyCondition("field_difficulty", "beginner", 0.4)
-            ],
-            consequent=FuzzyCondition("experience_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.85,
-            description="初心者は基礎的な分野に適合"
-        ))
-        
-        # ルール6: 経験と難易度のミスマッチ → 低いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="EXP_003",
-            antecedent=[
-                FuzzyCondition("experience_level", "low", 0.5),
-                FuzzyCondition("field_difficulty", "advanced", 0.5)
-            ],
-            consequent=FuzzyCondition("experience_match", "low"),
-            operator=RuleOperator.AND,
-            confidence=0.8,
-            description="経験不足で高難易度分野は困難"
-        ))
-    
-    def _add_research_style_rules(self):
-        """研究スタイルに関するルール"""
-        
-        # ルール7: 高い研究強度 + 高い研究強度研究室 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="STYLE_001",
-            antecedent=[
-                FuzzyCondition("student_research_intensity", "high", 0.6),
-                FuzzyCondition("lab_research_intensity", "high", 0.4)
-            ],
-            consequent=FuzzyCondition("research_style_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.9,
-            description="研究に集中したい学生は集中的な研究室に適合"
-        ))
-        
-        # ルール8: チーム志向 + チーム重視研究室 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="STYLE_002",
-            antecedent=[
-                FuzzyCondition("student_team_work", "high", 0.7),
-                FuzzyCondition("lab_team_work", "high", 0.3)
-            ],
-            consequent=FuzzyCondition("collaboration_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.85,
-            description="チーム志向の学生は協働的な研究室に適合"
-        ))
-        
-        # ルール9: 理論志向 + 理論重視研究室 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="STYLE_003",
-            antecedent=[
-                FuzzyCondition("student_theory_practice", "low", 0.6),  # 1が理論重視
-                FuzzyCondition("lab_theory_practice", "low", 0.4)
-            ],
-            consequent=FuzzyCondition("approach_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.8,
-            description="理論志向の学生は理論重視の研究室に適合"
-        ))
-    
-    def _add_advisor_style_rules(self):
-        """指導スタイルに関するルール"""
-        
-        # ルール10: 自由な指導を求める + 自由な指導スタイル → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="ADVISOR_001",
-            antecedent=[
-                FuzzyCondition("student_advisor_style", "high", 0.7),  # 10が自由指導
-                FuzzyCondition("lab_advisor_style", "high", 0.3)
-            ],
-            consequent=FuzzyCondition("advisor_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.9,
-            description="自由な指導を求める学生は自由な研究室に適合"
-        ))
-        
-        # ルール11: 厳格な指導を求める + 厳格な指導スタイル → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="ADVISOR_002",
-            antecedent=[
-                FuzzyCondition("student_advisor_style", "low", 0.7),   # 1が厳格指導
-                FuzzyCondition("lab_advisor_style", "low", 0.3)
-            ],
-            consequent=FuzzyCondition("advisor_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.9,
-            description="厳格な指導を求める学生は厳格な研究室に適合"
-        ))
-    
-    def _add_overall_compatibility_rules(self):
-        """総合適合性ルール"""
-        
-        # ルール12: 高い分野適合性 + 良い経験マッチ → 非常に高い総合適合性
-        self.rules.append(FuzzyRule(
-            rule_id="OVERALL_001",
-            antecedent=[
-                FuzzyCondition("field_compatibility", "high", 0.6),
-                FuzzyCondition("experience_match", "high", 0.4)
-            ],
-            consequent=FuzzyCondition("overall_compatibility", "very_high"),
-            operator=RuleOperator.AND,
-            confidence=0.95,
-            description="分野と経験の両方でマッチする場合は総合適合性が非常に高い"
-        ))
-        
-        # ルール13: 良い研究スタイルマッチ + 良い指導スタイルマッチ → 高い総合適合性
-        self.rules.append(FuzzyRule(
-            rule_id="OVERALL_002",
-            antecedent=[
-                FuzzyCondition("research_style_match", "high", 0.5),
-                FuzzyCondition("advisor_match", "high", 0.5)
-            ],
-            consequent=FuzzyCondition("overall_compatibility", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.9,
-            description="研究・指導スタイルがマッチする場合は総合適合性が高い"
-        ))
-        
-        # ルール14: 複数の低マッチング → 低い総合適合性
-        self.rules.append(FuzzyRule(
-            rule_id="OVERALL_003",
-            antecedent=[
-                FuzzyCondition("field_compatibility", "low", 0.4),
-                FuzzyCondition("experience_match", "low", 0.3),
-                FuzzyCondition("research_style_match", "low", 0.3)
-            ],
-            consequent=FuzzyCondition("overall_compatibility", "low"),
-            operator=RuleOperator.AND,
-            confidence=0.85,
-            description="複数の要素でマッチしない場合は総合適合性が低い"
-        ))
-        
-        # ルール15: 高い革新性志向 + 高い革新性研究室 → 良いマッチング
-        self.rules.append(FuzzyRule(
-            rule_id="INNOVATION_001",
-            antecedent=[
-                FuzzyCondition("student_innovation_risk", "high", 0.6),
-                FuzzyCondition("lab_innovation_risk", "high", 0.4)
-            ],
-            consequent=FuzzyCondition("innovation_match", "high"),
-            operator=RuleOperator.AND,
-            confidence=0.8,
-            description="革新的な学生は革新的な研究室に適合"
-        ))
-    
-    def add_custom_rule(self, rule: FuzzyRule):
-        """カスタムルールを追加"""
+    def add_rule(self, rule: FuzzyRule):
+        """ルールを追加"""
         self.rules.append(rule)
     
-    def remove_rule(self, rule_id: str):
+    def remove_rule(self, rule_name: str) -> bool:
         """ルールを削除"""
-        self.rules = [rule for rule in self.rules if rule.rule_id != rule_id]
+        for i, rule in enumerate(self.rules):
+            if rule.name == rule_name:
+                del self.rules[i]
+                return True
+        return False
     
-    def get_rule(self, rule_id: str) -> FuzzyRule:
-        """特定のルールを取得"""
+    def get_rule(self, rule_name: str) -> Optional[FuzzyRule]:
+        """ルールを取得"""
         for rule in self.rules:
-            if rule.rule_id == rule_id:
+            if rule.name == rule_name:
                 return rule
         return None
     
-    def get_rules_by_consequent(self, consequent_variable: str) -> List[FuzzyRule]:
-        """後件部の変数でルールをフィルタ"""
-        return [rule for rule in self.rules if rule.consequent.variable == consequent_variable]
-    
-    def get_applicable_rules(self, context: Dict[str, float]) -> List[FuzzyRule]:
-        """現在のコンテキストに適用可能なルールを取得"""
-        applicable_rules = []
+    def evaluate_all(self, memberships: Dict[str, Dict[str, float]]) -> Dict[str, float]:
+        """全ルールを評価"""
+        
+        rule_activations = {}
         
         for rule in self.rules:
-            # 前件部の変数がすべてコンテキストに存在するかチェック
-            has_all_variables = all(
-                condition.variable in context 
-                for condition in rule.antecedent
-            )
+            try:
+                activation = rule.evaluate(memberships)
+                rule_activations[rule.name] = activation
+            except Exception as e:
+                logger.warning(f"ルール評価エラー {rule.name}: {e}")
+                rule_activations[rule.name] = 0.0
+        
+        self.total_inferences += 1
+        if any(act > 0 for act in rule_activations.values()):
+            self.successful_inferences += 1
             
-            if has_all_variables:
-                applicable_rules.append(rule)
-        
-        return applicable_rules
+        return rule_activations
     
-    def validate_rules(self) -> List[str]:
-        """ルールの妥当性をチェック"""
-        issues = []
+    def get_statistics(self) -> Dict[str, Any]:
+        """統計情報を取得"""
         
-        rule_ids = [rule.rule_id for rule in self.rules]
-        if len(rule_ids) != len(set(rule_ids)):
-            issues.append("重複するルールIDが存在します")
+        success_rate = (self.successful_inferences / self.total_inferences 
+                       if self.total_inferences > 0 else 0.0)
         
+        rule_stats = []
         for rule in self.rules:
-            if rule.confidence < 0 or rule.confidence > 1:
-                issues.append(f"ルール {rule.rule_id} の信頼度が無効です: {rule.confidence}")
-            
-            for condition in rule.antecedent:
-                if condition.weight < 0 or condition.weight > 1:
-                    issues.append(f"ルール {rule.rule_id} の条件重みが無効です: {condition.weight}")
+            rule_stats.append({
+                "name": rule.name,
+                "activation_count": rule.activation_count,
+                "average_activation": rule.average_activation,
+                "weight": rule.weight
+            })
         
-        return issues
-    
-    def get_rule_statistics(self) -> Dict[str, int]:
-        """ルール統計を取得"""
-        stats = {
+        return {
+            "rule_set_name": self.name,
             "total_rules": len(self.rules),
-            "field_rules": len([r for r in self.rules if "FIELD" in r.rule_id]),
-            "experience_rules": len([r for r in self.rules if "EXP" in r.rule_id]),
-            "style_rules": len([r for r in self.rules if "STYLE" in r.rule_id]),
-            "advisor_rules": len([r for r in self.rules if "ADVISOR" in r.rule_id]),
-            "overall_rules": len([r for r in self.rules if "OVERALL" in r.rule_id]),
-            "and_rules": len([r for r in self.rules if r.operator == RuleOperator.AND]),
-            "or_rules": len([r for r in self.rules if r.operator == RuleOperator.OR])
+            "total_inferences": self.total_inferences,
+            "successful_inferences": self.successful_inferences,
+            "success_rate": success_rate,
+            "rule_statistics": rule_stats
         }
-        return stats
     
-    def print_rules_summary(self):
-        """ルール一覧を表示"""
-        print("🔧 ファジィルールベース一覧")
-        print("=" * 50)
+    def __len__(self) -> int:
+        return len(self.rules)
+
+class RuleParser:
+    """ファジィルール文字列パーサー"""
+    
+    # 正規表現パターン
+    RULE_PATTERN = re.compile(
+        r'IF\s+(.+?)\s+THEN\s+(.+)',
+        re.IGNORECASE
+    )
+    
+    CONDITION_PATTERN = re.compile(
+        r'(\w+)\s+(IS|IS_NOT|>|<|=)\s+(\w+)',
+        re.IGNORECASE
+    )
+    
+    @classmethod
+    def parse_rule(cls, rule_string: str, rule_name: str = None) -> Optional[FuzzyRule]:
+        """ルール文字列をパースしてFuzzyRuleを作成"""
         
-        categories = {
-            "FIELD": "分野適合性ルール",
-            "EXP": "経験レベルルール", 
-            "STYLE": "研究スタイルルール",
-            "ADVISOR": "指導スタイルルール",
-            "OVERALL": "総合適合性ルール",
-            "INNOVATION": "革新性ルール"
-        }
+        try:
+            # ルール全体のマッチング
+            rule_match = cls.RULE_PATTERN.match(rule_string.strip())
+            if not rule_match:
+                logger.error(f"ルール形式が無効: {rule_string}")
+                return None
+            
+            antecedent_str = rule_match.group(1).strip()
+            consequent_str = rule_match.group(2).strip()
+            
+            # 条件部のパース
+            conditions = cls._parse_conditions(antecedent_str)
+            if not conditions:
+                logger.error(f"条件部の解析に失敗: {antecedent_str}")
+                return None
+            
+            # 結論部のパース
+            conclusion = cls._parse_conclusion(consequent_str)
+            if not conclusion:
+                logger.error(f"結論部の解析に失敗: {consequent_str}")
+                return None
+            
+            # ルール名の生成
+            if not rule_name:
+                rule_name = f"rule_{len(conditions)}_{hash(rule_string) % 1000}"
+            
+            return FuzzyRule(rule_name, conditions, conclusion)
+            
+        except Exception as e:
+            logger.error(f"ルール解析エラー: {e}")
+            return None
+    
+    @classmethod
+    def _parse_conditions(cls, antecedent_str: str) -> List[Condition]:
+        """条件部をパース"""
         
-        for category, name in categories.items():
-            category_rules = [r for r in self.rules if category in r.rule_id]
-            if category_rules:
-                print(f"\n📋 {name} ({len(category_rules)}件)")
-                for rule in category_rules:
-                    print(f"   {rule.rule_id}: {rule.description}")
-                    print(f"   　信頼度: {rule.confidence:.2f}")
+        conditions = []
         
-        stats = self.get_rule_statistics()
-        print(f"\n📊 統計情報:")
-        print(f"   総ルール数: {stats['total_rules']}")
-        print(f"   AND演算: {stats['and_rules']}, OR演算: {stats['or_rules']}")
+        # ANDで分割（簡易版）
+        condition_parts = re.split(r'\s+AND\s+', antecedent_str, flags=re.IGNORECASE)
+        
+        for part in condition_parts:
+            part = part.strip()
+            
+            # NOT処理
+            negated = False
+            if part.upper().startswith('NOT '):
+                negated = True
+                part = part[4:].strip()
+            
+            # 条件のマッチング
+            condition_match = cls.CONDITION_PATTERN.match(part)
+            if condition_match:
+                variable = condition_match.group(1)
+                operator_str = condition_match.group(2).upper()
+                linguistic_value = condition_match.group(3)
+                
+                # 演算子の変換
+                try:
+                    operator = ComparisonOperator(operator_str)
+                except ValueError:
+                    operator = ComparisonOperator.IS
+                
+                condition = Condition(
+                    variable=variable,
+                    operator=operator,
+                    linguistic_value=linguistic_value,
+                    negated=negated
+                )
+                conditions.append(condition)
+            else:
+                logger.warning(f"条件の解析に失敗: {part}")
+        
+        return conditions
+    
+    @classmethod
+    def _parse_conclusion(cls, consequent_str: str) -> Optional[Conclusion]:
+        """結論部をパース"""
+        
+        conclusion_match = cls.CONDITION_PATTERN.match(consequent_str)
+        if conclusion_match:
+            variable = conclusion_match.group(1)
+            linguistic_value = conclusion_match.group(3)
+            
+            return Conclusion(
+                variable=variable,
+                linguistic_value=linguistic_value
+            )
+        
+        return None
+
+class LabMatchingRuleBuilder:
+    """研究室マッチング用ルール生成器"""
+    
+    @staticmethod
+    def create_basic_rules() -> FuzzyRuleSet:
+        """基本的な研究室マッチングルールを作成"""
+        
+        rule_set = FuzzyRuleSet("lab_matching_basic")
+        
+        # 基本ルール定義
+        basic_rule_strings = [
+            # 高適合ルール
+            "IF research_intensity IS high AND advisor_style IS high THEN compatibility IS high_match",
+            "IF research_field_match IS high THEN compatibility IS high_match",
+            "IF team_work IS high AND communication_style IS high THEN compatibility IS high_match",
+            
+            # 中適合ルール
+            "IF research_intensity IS medium AND advisor_style IS medium THEN compatibility IS medium_match",
+            "IF workload IS medium AND flexibility IS medium THEN compatibility IS medium_match",
+            
+            # 低適合ルール
+            "IF research_intensity IS low AND advisor_style IS high THEN compatibility IS low_match",
+            "IF workload IS high AND flexibility IS low THEN compatibility IS low_match",
+            
+            # 特殊ケース
+            "IF theory_practice IS high AND innovation_risk IS high THEN compatibility IS high_match",
+            "IF publication_opportunity IS high AND skill_development IS high THEN compatibility IS high_match",
+        ]
+        
+        # ルールを解析して追加
+        for i, rule_str in enumerate(basic_rule_strings):
+            rule = RuleParser.parse_rule(rule_str, f"basic_rule_{i+1}")
+            if rule:
+                rule_set.add_rule(rule)
+        
+        return rule_set
+    
+    @staticmethod
+    def create_advanced_rules() -> FuzzyRuleSet:
+        """高度な研究室マッチングルールを作成"""
+        
+        rule_set = FuzzyRuleSet("lab_matching_advanced")
+        
+        # 高度ルール定義
+        advanced_rule_strings = [
+            # 分野別特化ルール
+            "IF research_field_match IS high AND interdisciplinary IS low THEN compatibility IS high_match",
+            "IF research_field_match IS medium AND interdisciplinary IS high THEN compatibility IS medium_match",
+            
+            # 指導スタイル適合ルール
+            "IF advisor_style IS high AND communication_style IS high AND flexibility IS high THEN compatibility IS high_match",
+            "IF advisor_style IS low AND team_work IS low THEN compatibility IS medium_match",
+            
+            # スキル開発ルール
+            "IF skill_development IS high AND publication_opportunity IS high AND innovation_risk IS medium THEN compatibility IS high_match",
+            
+            # 研究環境ルール
+            "IF lab_atmosphere IS high AND workload IS medium AND flexibility IS high THEN compatibility IS high_match",
+        ]
+        
+        for i, rule_str in enumerate(advanced_rule_strings):
+            rule = RuleParser.parse_rule(rule_str, f"advanced_rule_{i+1}")
+            if rule:
+                rule_set.add_rule(rule)
+        
+        return rule_set
+
+# 使用例とテスト
+def test_rule_system():
+    """ルールシステムのテスト"""
+    
+    print("📋 ファジィルールシステムテスト開始")
+    
+    # 基本ルールセット作成
+    basic_rules = LabMatchingRuleBuilder.create_basic_rules()
+    print(f"✅ 基本ルール数: {len(basic_rules)}")
+    
+    # 高度ルールセット作成
+    advanced_rules = LabMatchingRuleBuilder.create_advanced_rules()
+    print(f"✅ 高度ルール数: {len(advanced_rules)}")
+    
+    # テスト用メンバーシップ値
+    test_memberships = {
+        "research_intensity": {"low": 0.1, "medium": 0.3, "high": 0.8},
+        "advisor_style": {"low": 0.2, "medium": 0.4, "high": 0.7},
+        "team_work": {"low": 0.0, "medium": 0.6, "high": 0.9},
+        "research_field_match": {"low": 0.1, "medium": 0.2, "high": 0.9}
+    }
+    
+    # ルール評価テスト
+    activations = basic_rules.evaluate_all(test_memberships)
+    
+    print(f"\n📊 ルール活性化結果:")
+    for rule_name, activation in activations.items():
+        if activation > 0.1:
+            print(f"  {rule_name}: {activation:.3f}")
+    
+    # 統計情報表示
+    stats = basic_rules.get_statistics()
+    print(f"\n📈 統計情報:")
+    print(f"  成功率: {stats['success_rate']:.3f}")
+    print(f"  実行回数: {stats['total_inferences']}")
+    
+    print("✅ ファジィルールシステムテスト完了")
+
+if __name__ == "__main__":
+    test_rule_system()

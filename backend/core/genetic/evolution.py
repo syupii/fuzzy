@@ -1,355 +1,496 @@
-# core/genetic/evolution.py - 遺伝的アルゴリズム
+# core/genetic/evolution.py - 進化アルゴリズム
 
-import random
 import numpy as np
-from typing import List, Dict, Tuple
-from dataclasses import dataclass
-from models.schemas import StudentProfile, Laboratory
+import random
+import time
+import json
+import os
+from typing import Dict, List, Any, Optional, Tuple, Callable, Type
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+import logging
+
+from core.genetic.individual import Individual, WeightVector, FuzzyTreeIndividual
+from core.genetic.population import Population, PopulationConfig, PopulationStatistics
+from core.genetic.operators import (
+    OperatorFactory, OperatorConfig, SelectionMethod, 
+    CrossoverMethod, MutationMethod
+)
+
+logger = logging.getLogger(__name__)
 
 @dataclass
-class Individual:
-    """遺伝的アルゴリズムの個体"""
-    field_weights: Dict[str, float]     # 分野重み
-    criteria_weights: Dict[str, float]  # 評価基準重み
-    fitness: float = 0.0               # 適応度
+class EvolutionConfig:
+    """進化アルゴリズム設定"""
+    # 基本設定
+    population_size: int = 50
+    max_generations: int = 100
+    elite_size: int = 5
+    
+    # 遺伝的操作設定
+    selection_method: SelectionMethod = SelectionMethod.TOURNAMENT
+    crossover_method: CrossoverMethod = CrossoverMethod.UNIFORM
+    mutation_method: MutationMethod = MutationMethod.GAUSSIAN
+    
+    crossover_rate: float = 0.8
+    mutation_rate: float = 0.1
+    mutation_strength: float = 0.1
+    
+    # 停止条件
+    target_fitness: Optional[float] = None
+    max_runtime_seconds: int = 3600  # 1時間
+    convergence_generations: int = 20
+    min_improvement: float = 1e-6
+    
+    # 多様性設定
+    diversity_threshold: float = 0.05
+    maintain_diversity: bool = True
+    
+    # 適応設定
+    adaptive_parameters: bool = True
+    adaptive_interval: int = 10
+    
+    # 保存設定
+    save_interval: int = 10
+    save_best_individual: bool = True
+    checkpoint_enabled: bool = True
+    
+    # 並列化設定
+    parallel_evaluation: bool = False
+    num_processes: int = 4
+    
+    # ログ設定
+    verbose: bool = True
+    log_interval: int = 1
 
-class GeneticAlgorithm:
-    """遺伝的アルゴリズムクラス"""
+@dataclass
+class EvolutionResult:
+    """進化結果"""
+    best_individual: Individual
+    best_fitness: float
+    final_population: Population
     
-    def __init__(self, config: Dict):
-        self.population_size = config.get("population_size", 30)
-        self.generations = config.get("generations", 50)
-        self.mutation_rate = config.get("mutation_rate", 0.1)
-        self.crossover_rate = config.get("crossover_rate", 0.8)
-        self.elite_size = config.get("elite_size", 5)
+    # 実行統計
+    total_generations: int
+    total_evaluations: int
+    execution_time: float
+    convergence_generation: int
+    
+    # 進化履歴
+    fitness_history: List[float]
+    diversity_history: List[float]
+    generation_statistics: List[PopulationStatistics]
+    
+    # 終了理由
+    termination_reason: str
+    success: bool
+
+class EvolutionEngine:
+    """進化エンジンクラス"""
+    
+    def __init__(self, config: EvolutionConfig, 
+                 individual_type: Type[Individual] = WeightVector):
         
-        self.population: List[Individual] = []
-        self.best_individual: Individual = None
+        self.config = config
+        self.individual_type = individual_type
         
-    def initialize_population(self, research_fields: Dict[str, Dict], 
-                            evaluation_criteria: List[str]) -> None:
-        """集団を初期化"""
+        # 集団管理
+        pop_config = PopulationConfig(
+            population_size=config.population_size,
+            elite_size=config.elite_size
+        )
+        self.population = Population(pop_config, individual_type)
         
-        self.population = []
+        # 遺伝的操作
+        operator_config = OperatorConfig(
+            selection_method=config.selection_method,
+            crossover_method=config.crossover_method,
+            mutation_method=config.mutation_method,
+            crossover_rate=config.crossover_rate,
+            mutation_rate=config.mutation_rate,
+            mutation_strength=config.mutation_strength
+        )
+        self.operators = OperatorFactory.create_all_operators(operator_config)
         
-        for _ in range(self.population_size):
-            # 分野重みをランダム初期化
-            field_weights = {
-                field_id: random.uniform(0.1, 1.0) 
-                for field_id in research_fields.keys()
+        # 進化状態
+        self.current_generation = 0
+        self.total_evaluations = 0
+        self.start_time: Optional[float] = None
+        self.best_fitness_history: List[float] = []
+        self.average_fitness_history: List[float] = []
+        self.diversity_history: List[float] = []
+        
+        # 停止条件管理
+        self.generations_without_improvement = 0
+        self.last_best_fitness = -float('inf')
+        self.convergence_detected = False
+        
+        # 適応パラメータ
+        self.adaptive_mutation_rate = config.mutation_rate
+        self.adaptive_crossover_rate = config.crossover_rate
+        
+        # 統計情報
+        self.evolution_statistics: List[Dict[str, Any]] = []
+        
+    def initialize_population(self, **kwargs) -> None:
+        """集団の初期化"""
+        self.population.initialize_random(**kwargs)
+        self.current_generation = 0
+        self.total_evaluations = 0
+        logger.info(f"集団初期化完了: {self.config.population_size}個体")
+    
+    def evolve(self, fitness_function: Callable[[Individual], float], **kwargs) -> EvolutionResult:
+        """進化実行"""
+        
+        self.start_time = time.time()
+        termination_reason = "max_generations_reached"
+        
+        try:
+            # 初期評価
+            if not any(ind.is_evaluated() for ind in self.population.individuals):
+                logger.info("初期集団の評価開始...")
+                self.population.evaluate_population(fitness_function)
+                self._update_evolution_statistics()
+            
+            logger.info(f"進化開始: {self.config.max_generations}世代, 集団サイズ{self.config.population_size}")
+            
+            # 進化ループ
+            for generation in range(self.config.max_generations):
+                self.current_generation = generation
+                
+                # 停止条件チェック
+                if self._check_termination_conditions():
+                    termination_reason = self._get_termination_reason()
+                    break
+                
+                # 世代進化
+                self._evolve_generation(fitness_function)
+                
+                # 統計更新
+                self._update_evolution_statistics()
+                
+                # 適応パラメータ調整
+                if self.config.adaptive_parameters and generation % self.config.adaptive_interval == 0:
+                    self._adjust_adaptive_parameters()
+                
+                # 多様性維持
+                if self.config.maintain_diversity:
+                    self.population.maintain_diversity()
+                
+                # 定期保存
+                if self.config.checkpoint_enabled and generation % self.config.save_interval == 0:
+                    self._save_checkpoint(generation)
+                
+                # ログ出力
+                if self.config.verbose and generation % self.config.log_interval == 0:
+                    self._log_generation_info(generation)
+            
+            # 結果の構築
+            result = self._build_evolution_result(termination_reason)
+            
+            logger.info(f"進化完了: {result.total_generations}世代, 最高適応度{result.best_fitness:.6f}")
+            
+            return result
+            
+        except KeyboardInterrupt:
+            logger.info("進化が中断されました")
+            return self._build_evolution_result("user_interrupted")
+        
+        except Exception as e:
+            logger.error(f"進化中にエラー発生: {e}")
+            raise
+    
+    def _evolve_generation(self, fitness_function: Callable[[Individual], float]) -> None:
+        """1世代の進化"""
+        
+        # エリート保存
+        elite_individuals = self.population.select_elite()
+        
+        # 新世代の生成
+        new_population = []
+        
+        # エリートの追加
+        new_population.extend([elite.clone() for elite in elite_individuals])
+        
+        # 残りの個体を生成
+        remaining_size = self.config.population_size - len(elite_individuals)
+        
+        while len(new_population) < self.config.population_size:
+            # 親選択
+            parents = self.operators["selection"].apply(self.population.individuals, 2)
+            
+            if len(parents) >= 2:
+                parent1, parent2 = parents[0], parents[1]
+                
+                # 交叉
+                child1, child2 = self.operators["crossover"].apply(parent1, parent2)
+                
+                # 変異
+                child1 = self.operators["mutation"].apply(child1)
+                child2 = self.operators["mutation"].apply(child2)
+                
+                # 世代とID更新
+                child1.generation = self.current_generation + 1
+                child2.generation = self.current_generation + 1
+                child1.individual_id = f"gen{self.current_generation + 1}_ind{len(new_population)}"
+                child2.individual_id = f"gen{self.current_generation + 1}_ind{len(new_population) + 1}"
+                
+                new_population.append(child1)
+                if len(new_population) < self.config.population_size:
+                    new_population.append(child2)
+        
+        # 集団の更新
+        self.population.individuals = new_population[:self.config.population_size]
+        self.population.advance_generation()
+        
+        # 新個体の評価
+        self.population.evaluate_population(fitness_function)
+    
+    def _check_termination_conditions(self) -> bool:
+        """停止条件のチェック"""
+        
+        # 実行時間チェック
+        if self.start_time and time.time() - self.start_time > self.config.max_runtime_seconds:
+            return True
+        
+        # 目標適応度チェック
+        if self.config.target_fitness is not None:
+            current_best = self.population.get_best_individual()
+            if current_best and current_best.get_fitness() >= self.config.target_fitness:
+                return True
+        
+        # 収束チェック
+        if self.generations_without_improvement >= self.config.convergence_generations:
+            self.convergence_detected = True
+            return True
+        
+        return False
+    
+    def _get_termination_reason(self) -> str:
+        """終了理由の取得"""
+        
+        if self.start_time and time.time() - self.start_time > self.config.max_runtime_seconds:
+            return "timeout"
+        
+        if self.config.target_fitness is not None:
+            current_best = self.population.get_best_individual()
+            if current_best and current_best.get_fitness() >= self.config.target_fitness:
+                return "target_fitness_reached"
+        
+        if self.convergence_detected:
+            return "convergence_detected"
+        
+        return "max_generations_reached"
+    
+    def _update_evolution_statistics(self) -> None:
+        """進化統計の更新"""
+        
+        stats = self.population.get_statistics()
+        if not stats:
+            return
+        
+        # 履歴の更新
+        self.best_fitness_history.append(stats.best_fitness)
+        self.average_fitness_history.append(stats.average_fitness)
+        self.diversity_history.append(stats.average_diversity)
+        
+        # 改善チェック
+        if stats.best_fitness > self.last_best_fitness + self.config.min_improvement:
+            self.generations_without_improvement = 0
+            self.last_best_fitness = stats.best_fitness
+        else:
+            self.generations_without_improvement += 1
+        
+        # 詳細統計
+        evolution_stat = {
+            "generation": self.current_generation,
+            "best_fitness": stats.best_fitness,
+            "average_fitness": stats.average_fitness,
+            "diversity": stats.average_diversity,
+            "evaluations": self.total_evaluations,
+            "convergence_indicator": stats.convergence_indicator,
+            "improvement_rate": stats.improvement_rate,
+            "generations_without_improvement": self.generations_without_improvement
+        }
+        
+        self.evolution_statistics.append(evolution_stat)
+    
+    def _adjust_adaptive_parameters(self) -> None:
+        """適応パラメータの調整"""
+        
+        if not self.config.adaptive_parameters:
+            return
+        
+        # 収束傾向の場合は変異率を上げる
+        if self.generations_without_improvement > 5:
+            self.adaptive_mutation_rate = min(0.3, self.adaptive_mutation_rate * 1.1)
+            
+            # 変異操作の更新
+            if "mutation" in self.operators:
+                self.operators["mutation"].config.mutation_rate = self.adaptive_mutation_rate
+        
+        # 改善がある場合は元に戻す
+        else:
+            self.adaptive_mutation_rate = self.config.mutation_rate
+            if "mutation" in self.operators:
+                self.operators["mutation"].config.mutation_rate = self.adaptive_mutation_rate
+        
+        # 多様性が低い場合は交叉率を調整
+        current_diversity = self.diversity_history[-1] if self.diversity_history else 0.0
+        if current_diversity < self.config.diversity_threshold:
+            self.adaptive_crossover_rate = max(0.5, self.adaptive_crossover_rate * 0.95)
+        else:
+            self.adaptive_crossover_rate = self.config.crossover_rate
+        
+        if "crossover" in self.operators:
+            self.operators["crossover"].config.crossover_rate = self.adaptive_crossover_rate
+    
+    def _save_checkpoint(self, generation: int) -> None:
+        """チェックポイント保存"""
+        
+        try:
+            checkpoint_dir = "./data/checkpoints"
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            
+            checkpoint_data = {
+                "generation": generation,
+                "config": self.config,
+                "population": self.population.save_population(),
+                "statistics": self.evolution_statistics,
+                "best_fitness_history": self.best_fitness_history,
+                "adaptive_parameters": {
+                    "mutation_rate": self.adaptive_mutation_rate,
+                    "crossover_rate": self.adaptive_crossover_rate
+                }
             }
             
-            # 評価基準重みをランダム初期化
-            criteria_weights = {
-                criterion: random.uniform(0.1, 1.0)
-                for criterion in evaluation_criteria
-            }
+            checkpoint_file = os.path.join(checkpoint_dir, f"checkpoint_gen{generation}.json")
             
-            # 重みを正規化
-            field_sum = sum(field_weights.values())
-            if field_sum > 0:
-                field_weights = {k: v/field_sum for k, v in field_weights.items()}
+            with open(checkpoint_file, 'w', encoding='utf-8') as f:
+                json.dump(checkpoint_data, f, indent=2, ensure_ascii=False, default=str)
             
-            criteria_sum = sum(criteria_weights.values())
-            if criteria_sum > 0:
-                criteria_weights = {k: v/criteria_sum for k, v in criteria_weights.items()}
+            logger.debug(f"チェックポイント保存: {checkpoint_file}")
             
-            individual = Individual(
-                field_weights=field_weights,
-                criteria_weights=criteria_weights
-            )
-            self.population.append(individual)
+        except Exception as e:
+            logger.warning(f"チェックポイント保存エラー: {e}")
     
-    def evaluate_fitness(self, individual: Individual, 
-                        student_profile: StudentProfile,
-                        labs: List[Laboratory]) -> float:
-        """個体の適応度を評価"""
+    def _log_generation_info(self, generation: int) -> None:
+        """世代情報のログ出力"""
         
-        total_score = 0.0
-        total_weight = 0.0
+        stats = self.population.get_statistics()
+        if not stats:
+            return
         
-        # 各研究室に対してスコアを計算
-        for lab in labs:
-            lab_score = self._calculate_lab_score(individual, student_profile, lab)
-            
-            # 学生の分野興味に基づく重み
-            lab_weight = self._calculate_lab_weight(student_profile, lab)
-            
-            total_score += lab_score * lab_weight
-            total_weight += lab_weight
+        elapsed_time = time.time() - self.start_time if self.start_time else 0
         
-        # 平均適合度
-        avg_score = total_score / total_weight if total_weight > 0 else 0.0
+        log_message = (
+            f"世代 {generation:4d}: "
+            f"最高適応度 {stats.best_fitness:.6f}, "
+            f"平均適応度 {stats.average_fitness:.6f}, "
+            f"多様性 {stats.average_diversity:.4f}, "
+            f"収束指標 {stats.convergence_indicator:.4f}, "
+            f"停滞世代 {self.generations_without_improvement}, "
+            f"経過時間 {elapsed_time:.1f}s"
+        )
         
-        # 多様性ボーナス
-        diversity_bonus = self._calculate_diversity_bonus(individual)
+        if self.config.verbose:
+            print(log_message)
         
-        # 一貫性ボーナス
-        consistency_bonus = self._calculate_consistency_bonus(individual, student_profile)
-        
-        # 最終適応度
-        fitness = avg_score + diversity_bonus * 0.1 + consistency_bonus * 0.1
-        
-        return min(1.0, max(0.0, fitness))
+        logger.info(log_message)
     
-    def _calculate_lab_score(self, individual: Individual, 
-                           student: StudentProfile, lab: Laboratory) -> float:
-        """研究室スコアを計算"""
+    def _build_evolution_result(self, termination_reason: str) -> EvolutionResult:
+        """進化結果の構築"""
         
-        # 分野適合性
-        field_score = 0.0
-        field_count = 0
+        best_individual = self.population.get_best_individual()
+        best_fitness = best_individual.get_fitness() if best_individual else 0.0
         
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
+        execution_time = time.time() - self.start_time if self.start_time else 0.0
         
-        for field_id in lab.research_fields:
-            if field_id in student_fields:
-                student_interest = student_fields[field_id]
-                field_weight = individual.field_weights.get(field_id, 0)
-                
-                # 分野スコア計算
-                interest_normalized = student_interest.interest_level / 10.0
-                experience_normalized = student_interest.experience_level / 10.0
-                importance_normalized = student_interest.importance_level / 10.0
-                
-                field_compatibility = (
-                    interest_normalized * 0.5 +
-                    experience_normalized * 0.3 +
-                    importance_normalized * 0.2
-                )
-                
-                field_score += field_compatibility * field_weight
-                field_count += 1
+        # 収束世代の検出
+        convergence_generation = self.current_generation
+        if len(self.best_fitness_history) > 1:
+            for i in range(len(self.best_fitness_history) - 1, 0, -1):
+                if (self.best_fitness_history[i] - self.best_fitness_history[i-1]) > self.config.min_improvement:
+                    convergence_generation = i
+                    break
         
-        if field_count > 0:
-            field_score /= field_count
-        
-        # 評価基準適合性
-        criteria_score = 0.0
-        criteria_count = 0
-        
-        student_criteria = student.evaluation_criteria.dict()
-        lab_features = lab.features.dict()
-        
-        for criterion, weight in individual.criteria_weights.items():
-            if criterion in student_criteria and criterion in lab_features:
-                student_val = student_criteria[criterion]
-                lab_val = lab_features[criterion]
-                
-                # 類似度計算（ガウシアン）
-                distance = abs(student_val - lab_val)
-                similarity = np.exp(-(distance ** 2) / (2 * 2.0 ** 2))
-                
-                criteria_score += similarity * weight
-                criteria_count += 1
-        
-        if criteria_count > 0:
-            criteria_score /= criteria_count
-        
-        # 総合スコア
-        total_score = field_score * 0.6 + criteria_score * 0.4
-        return total_score
+        return EvolutionResult(
+            best_individual=best_individual,
+            best_fitness=best_fitness,
+            final_population=self.population,
+            total_generations=self.current_generation + 1,
+            total_evaluations=self.population.total_evaluations,
+            execution_time=execution_time,
+            convergence_generation=convergence_generation,
+            fitness_history=self.best_fitness_history.copy(),
+            diversity_history=self.diversity_history.copy(),
+            generation_statistics=self.population.generation_history.copy(),
+            termination_reason=termination_reason,
+            success=termination_reason in ["target_fitness_reached", "convergence_detected"]
+        )
     
-    def _calculate_lab_weight(self, student: StudentProfile, lab: Laboratory) -> float:
-        """研究室の重み計算"""
+    def load_checkpoint(self, checkpoint_file: str) -> None:
+        """チェックポイントの読み込み"""
         
-        weight = 0.0
-        
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
-        
-        for field_id in lab.research_fields:
-            if field_id in student_fields:
-                importance = student_fields[field_id].importance_level / 10.0
-                weight += importance
-        
-        return max(0.1, weight)  # 最小重み0.1
-    
-    def _calculate_diversity_bonus(self, individual: Individual) -> float:
-        """多様性ボーナス計算"""
-        
-        # 分野重みの分散（エントロピー）
-        field_weights = list(individual.field_weights.values())
-        if not field_weights:
-            return 0.0
-        
-        # 正規化
-        total = sum(field_weights)
-        if total == 0:
-            return 0.0
-        
-        normalized = [w/total for w in field_weights]
-        
-        # エントロピー計算
-        entropy = -sum(p * np.log(p + 1e-10) for p in normalized if p > 0)
-        max_entropy = np.log(len(field_weights))
-        
-        return entropy / max_entropy if max_entropy > 0 else 0.0
-    
-    def _calculate_consistency_bonus(self, individual: Individual, 
-                                   student: StudentProfile) -> float:
-        """一貫性ボーナス計算"""
-        
-        # 学生の分野興味と個体の重みの一貫性
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
-        
-        consistency = 0.0
-        count = 0
-        
-        for field_id, weight in individual.field_weights.items():
-            if field_id in student_fields:
-                student_importance = student_fields[field_id].importance_level / 10.0
-                
-                # 重みと重要度の相関
-                correlation = 1.0 - abs(weight - student_importance)
-                consistency += correlation
-                count += 1
-        
-        return consistency / count if count > 0 else 0.0
-    
-    def selection(self) -> List[Individual]:
-        """選択操作（トーナメント選択）"""
-        
-        selected = []
-        tournament_size = 3
-        
-        for _ in range(self.population_size):
-            tournament = random.sample(self.population, min(tournament_size, len(self.population)))
-            winner = max(tournament, key=lambda x: x.fitness)
-            selected.append(winner)
-        
-        return selected
-    
-    def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
-        """交叉操作"""
-        
-        if random.random() > self.crossover_rate:
-            return parent1, parent2
-        
-        # 分野重み交叉（一様交叉）
-        child1_field_weights = {}
-        child2_field_weights = {}
-        
-        for field_id in parent1.field_weights.keys():
-            if random.random() < 0.5:
-                child1_field_weights[field_id] = parent1.field_weights[field_id]
-                child2_field_weights[field_id] = parent2.field_weights[field_id]
-            else:
-                child1_field_weights[field_id] = parent2.field_weights[field_id]
-                child2_field_weights[field_id] = parent1.field_weights[field_id]
-        
-        # 評価基準重み交叉
-        child1_criteria_weights = {}
-        child2_criteria_weights = {}
-        
-        for criterion in parent1.criteria_weights.keys():
-            if random.random() < 0.5:
-                child1_criteria_weights[criterion] = parent1.criteria_weights[criterion]
-                child2_criteria_weights[criterion] = parent2.criteria_weights[criterion]
-            else:
-                child1_criteria_weights[criterion] = parent2.criteria_weights[criterion]
-                child2_criteria_weights[criterion] = parent1.criteria_weights[criterion]
-        
-        # 重み正規化
-        self._normalize_weights(child1_field_weights, child1_criteria_weights)
-        self._normalize_weights(child2_field_weights, child2_criteria_weights)
-        
-        child1 = Individual(child1_field_weights, child1_criteria_weights)
-        child2 = Individual(child2_field_weights, child2_criteria_weights)
-        
-        return child1, child2
-    
-    def mutation(self, individual: Individual) -> Individual:
-        """変異操作"""
-        
-        if random.random() > self.mutation_rate:
-            return individual
-        
-        # 分野重み変異
-        for field_id in individual.field_weights.keys():
-            if random.random() < 0.2:  # 20%の確率で変異
-                noise = random.uniform(-0.1, 0.1)
-                individual.field_weights[field_id] += noise
-                individual.field_weights[field_id] = max(0.01, min(1.0, individual.field_weights[field_id]))
-        
-        # 評価基準重み変異
-        for criterion in individual.criteria_weights.keys():
-            if random.random() < 0.2:
-                noise = random.uniform(-0.1, 0.1)
-                individual.criteria_weights[criterion] += noise
-                individual.criteria_weights[criterion] = max(0.01, min(1.0, individual.criteria_weights[criterion]))
-        
-        # 重み正規化
-        self._normalize_weights(individual.field_weights, individual.criteria_weights)
-        
-        return individual
-    
-    def _normalize_weights(self, field_weights: Dict[str, float], 
-                          criteria_weights: Dict[str, float]) -> None:
-        """重みを正規化"""
-        
-        # 分野重み正規化
-        field_sum = sum(field_weights.values())
-        if field_sum > 0:
-            for key in field_weights:
-                field_weights[key] /= field_sum
-        
-        # 評価基準重み正規化
-        criteria_sum = sum(criteria_weights.values())
-        if criteria_sum > 0:
-            for key in criteria_weights:
-                criteria_weights[key] /= criteria_sum
-    
-    def evolve(self, student_profile: StudentProfile, labs: List[Laboratory],
-              research_fields: Dict[str, Dict], evaluation_criteria: List[str]) -> Individual:
-        """進化アルゴリズムを実行"""
-        
-        # 初期化
-        self.initialize_population(research_fields, evaluation_criteria)
-        
-        print(f"🧬 遺伝的アルゴリズム開始: 集団サイズ{self.population_size}, 世代数{self.generations}")
-        
-        for generation in range(self.generations):
+        try:
+            with open(checkpoint_file, 'r', encoding='utf-8') as f:
+                checkpoint_data = json.load(f)
             
-            # 適応度評価
-            for individual in self.population:
-                individual.fitness = self.evaluate_fitness(individual, student_profile, labs)
+            self.current_generation = checkpoint_data["generation"]
+            self.evolution_statistics = checkpoint_data["statistics"]
+            self.best_fitness_history = checkpoint_data["best_fitness_history"]
             
-            # エリート保存
-            self.population.sort(key=lambda x: x.fitness, reverse=True)
-            elite = self.population[:self.elite_size]
+            # 適応パラメータの復元
+            adaptive_params = checkpoint_data.get("adaptive_parameters", {})
+            self.adaptive_mutation_rate = adaptive_params.get("mutation_rate", self.config.mutation_rate)
+            self.adaptive_crossover_rate = adaptive_params.get("crossover_rate", self.config.crossover_rate)
             
-            # 進捗表示
-            if generation % 10 == 0:
-                best_fitness = elite[0].fitness
-                avg_fitness = np.mean([ind.fitness for ind in self.population])
-                print(f"世代 {generation:2d}: 最高={best_fitness:.4f}, 平均={avg_fitness:.4f}")
+            # 集団の復元
+            population_file = checkpoint_data["population"]
+            self.population.load_population(population_file)
             
-            # 新しい集団生成
-            new_population = elite[:]
+            logger.info(f"チェックポイント読み込み完了: 世代{self.current_generation}")
             
-            # 選択
-            selected = self.selection()
-            
-            # 交叉・変異
-            while len(new_population) < self.population_size:
-                parent1, parent2 = random.sample(selected, 2)
-                child1, child2 = self.crossover(parent1, parent2)
-                
-                child1 = self.mutation(child1)
-                child2 = self.mutation(child2)
-                
-                new_population.extend([child1, child2])
-            
-            # 集団更新
-            self.population = new_population[:self.population_size]
-        
-        # 最良個体
-        final_evaluation = [(ind, self.evaluate_fitness(ind, student_profile, labs)) for ind in self.population]
-        final_evaluation.sort(key=lambda x: x[1], reverse=True)
-        
-        self.best_individual = final_evaluation[0][0]
-        self.best_individual.fitness = final_evaluation[0][1]
-        
-        print(f"✅ 最適化完了: 最終適応度 = {self.best_individual.fitness:.4f}")
-        
-        return self.best_individual
+        except Exception as e:
+            logger.error(f"チェックポイント読み込みエラー: {e}")
+            raise
+
+# 使用例とテスト
+def test_evolution_engine():
+    """進化エンジンのテスト"""
+    
+    print("🧬 進化エンジンテスト開始")
+    
+    # 設定の作成
+    config = EvolutionConfig(
+        population_size=20,
+        max_generations=10,
+        elite_size=2,
+        crossover_rate=0.8,
+        mutation_rate=0.1,
+        verbose=True
+    )
+    
+    # 進化エンジンの初期化
+    engine = EvolutionEngine(config, WeightVector)
+    engine.initialize_population(weight_names=["w1", "w2", "w3"])
+    
+    # 簡易適応度関数（重みの合計値）
+    def simple_fitness(individual):
+        genes = individual.get_genes()
+        return sum(genes.values())
+    
+    # 進化実行
+    result = engine.evolve(simple_fitness)
+    
+    print(f"\n📊 進化結果:")
+    print(f"  最高適応度: {result.best_fitness:.6f}")
+    print(f"  総世代数: {result.total_generations}")
+    print(f"  実行時間: {result.execution_time:.2f}秒")
+    print(f"  終了理由: {result.termination_reason}")
+    print(f"  最良個体の遺伝子: {result.best_individual.get_genes()}")
+    
+    print("✅ 進化エンジンテスト完了")
+
+if __name__ == "__main__":
+    test_evolution_engine()

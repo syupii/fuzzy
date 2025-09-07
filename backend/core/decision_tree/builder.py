@@ -1,645 +1,658 @@
 # core/decision_tree/builder.py - ファジィ決定木構築
 
-from typing import Dict, List, Any, Optional, Tuple, Callable
 import numpy as np
-from dataclasses import dataclass
-from abc import ABC, abstractmethod
 import random
+import math
+from typing import Dict, List, Any, Optional, Tuple, Callable, Union
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
 from collections import defaultdict, Counter
+import logging
 
-from core.decision_tree.tree import FuzzyDecisionTree
-from core.decision_tree.node import FuzzyTreeNode, FuzzyInternalNode, FuzzyLeafNode, NodeFactory
-from models.schemas import StudentProfile, Laboratory
+from core.decision_tree.node import (
+    FuzzyTreeNode, FuzzyInternalNode, FuzzyLeafNode, 
+    SplitCondition, FuzzyRuleNode
+)
+from core.fuzzy.membership import (
+    FuzzyVariable, MembershipFunctionFactory, 
+    TriangularMF, GaussianMF
+)
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class BuilderConfig:
-    """構築設定"""
+    """決定木構築設定"""
+    # 基本パラメータ
     max_depth: int = 8
-    min_samples_split: int = 3
+    min_samples_split: int = 2
     min_samples_leaf: int = 1
-    fuzzy_threshold: float = 0.1
     max_features: Optional[int] = None
-    criterion: str = "entropy"  # "entropy", "gini", "fuzzy_entropy"
-    splitter: str = "best"      # "best", "random"
+    
+    # ファジィ関連
+    fuzzy_threshold: float = 0.1
+    membership_overlap: float = 0.3
+    linguistic_terms: int = 3  # low, medium, high
+    
+    # 分岐基準
+    split_criterion: str = "fuzzy_gain"  # "fuzzy_gain", "gini", "entropy"
+    min_impurity_decrease: float = 1e-7
+    
+    # 枝刈り
+    pruning_enabled: bool = True
+    min_confidence_threshold: float = 0.1
+    
+    # ルール生成
+    rule_extraction: bool = True
+    max_rules_per_path: int = 10
+    
+    # その他
     random_state: Optional[int] = None
+    parallel_building: bool = False
 
-class SplitCriterion(ABC):
-    """分岐基準の抽象基底クラス"""
+@dataclass
+class SplitEvaluation:
+    """分岐評価結果"""
+    feature: str
+    threshold: float
+    linguistic_value: str
+    impurity_decrease: float
+    left_samples: List[int]
+    right_samples: List[int]
+    left_purity: float
+    right_purity: float
+    confidence: float
     
-    @abstractmethod
-    def calculate_impurity(self, y: List[str]) -> float:
-        """不純度を計算"""
-        pass
-    
-    @abstractmethod
-    def calculate_gain(self, y_parent: List[str], splits: Dict[str, List[str]]) -> float:
-        """情報ゲインを計算"""
-        pass
+    def is_valid(self) -> bool:
+        """有効な分岐かチェック"""
+        return (
+            self.impurity_decrease > 0 and
+            len(self.left_samples) > 0 and
+            len(self.right_samples) > 0 and
+            self.confidence > 0.1
+        )
 
-class EntropyCriterion(SplitCriterion):
-    """エントロピー基準"""
+class FuzzySplitEvaluator:
+    """ファジィ分岐評価器"""
     
-    def calculate_impurity(self, y: List[str]) -> float:
-        """エントロピーを計算"""
-        if not y:
+    def __init__(self, config: BuilderConfig):
+        self.config = config
+        self.fuzzy_variables: Dict[str, FuzzyVariable] = {}
+    
+    def setup_fuzzy_variables(self, feature_names: List[str], 
+                             feature_ranges: Dict[str, Tuple[float, float]]):
+        """ファジィ変数のセットアップ"""
+        
+        for feature_name in feature_names:
+            range_min, range_max = feature_ranges.get(feature_name, (0.0, 10.0))
+            
+            if self.config.linguistic_terms == 3:
+                fuzzy_var = MembershipFunctionFactory.create_standard_sets(
+                    feature_name, (range_min, range_max)
+                )
+            elif self.config.linguistic_terms == 5:
+                fuzzy_var = MembershipFunctionFactory.create_five_level_sets(
+                    feature_name, (range_min, range_max)
+                )
+            else:
+                # カスタム作成
+                fuzzy_var = self._create_custom_fuzzy_variable(
+                    feature_name, (range_min, range_max)
+                )
+            
+            self.fuzzy_variables[feature_name] = fuzzy_var
+    
+    def _create_custom_fuzzy_variable(self, name: str, 
+                                    range_tuple: Tuple[float, float]) -> FuzzyVariable:
+        """カスタムファジィ変数作成"""
+        
+        fuzzy_var = FuzzyVariable(name, range_tuple)
+        min_val, max_val = range_tuple
+        range_val = max_val - min_val
+        
+        # 均等分割でファジィ集合を作成
+        num_terms = self.config.linguistic_terms
+        overlap = self.config.membership_overlap
+        
+        for i in range(num_terms):
+            center = min_val + (i / (num_terms - 1)) * range_val
+            width = range_val / (num_terms - 1) * (1 + overlap)
+            
+            # ガウシアンメンバーシップ関数
+            mf = GaussianMF(f"term_{i}", center, width / 4)
+            
+            from core.fuzzy.membership import FuzzySet
+            fuzzy_set = FuzzySet(f"term_{i}", mf, range_tuple)
+            fuzzy_var.add_set(fuzzy_set)
+        
+        return fuzzy_var
+    
+    def evaluate_split(self, X: List[Dict[str, Any]], y: List[str], 
+                      samples: List[int], feature: str) -> List[SplitEvaluation]:
+        """ファジィ分岐の評価"""
+        
+        if feature not in self.fuzzy_variables:
+            return []
+        
+        fuzzy_var = self.fuzzy_variables[feature]
+        evaluations = []
+        
+        # 各言語値での分岐を評価
+        for set_name, fuzzy_set in fuzzy_var.sets.items():
+            
+            # ファジィメンバーシップに基づく分割
+            left_samples, right_samples = self._fuzzy_split(
+                X, samples, feature, fuzzy_set
+            )
+            
+            if len(left_samples) < self.config.min_samples_leaf or \
+               len(right_samples) < self.config.min_samples_leaf:
+                continue
+            
+            # 不純度の計算
+            parent_impurity = self._calculate_impurity(y, samples)
+            left_impurity = self._calculate_impurity(y, left_samples)
+            right_impurity = self._calculate_impurity(y, right_samples)
+            
+            # 重み付き不純度減少
+            n_total = len(samples)
+            n_left = len(left_samples)
+            n_right = len(right_samples)
+            
+            weighted_impurity = (n_left / n_total) * left_impurity + \
+                              (n_right / n_total) * right_impurity
+            
+            impurity_decrease = parent_impurity - weighted_impurity
+            
+            # 信頼度の計算
+            confidence = self._calculate_split_confidence(
+                X, samples, feature, fuzzy_set
+            )
+            
+            # 分岐評価の作成
+            evaluation = SplitEvaluation(
+                feature=feature,
+                threshold=fuzzy_set.centroid(),
+                linguistic_value=set_name,
+                impurity_decrease=impurity_decrease,
+                left_samples=left_samples,
+                right_samples=right_samples,
+                left_purity=1.0 - left_impurity,
+                right_purity=1.0 - right_impurity,
+                confidence=confidence
+            )
+            
+            if evaluation.is_valid():
+                evaluations.append(evaluation)
+        
+        return sorted(evaluations, key=lambda x: x.impurity_decrease, reverse=True)
+    
+    def _fuzzy_split(self, X: List[Dict[str, Any]], samples: List[int], 
+                    feature: str, fuzzy_set) -> Tuple[List[int], List[int]]:
+        """ファジィメンバーシップに基づく分割"""
+        
+        left_samples = []
+        right_samples = []
+        
+        for sample_idx in samples:
+            feature_value = X[sample_idx].get(feature, 0.0)
+            membership = fuzzy_set.membership(feature_value)
+            
+            # メンバーシップ度に基づく分割
+            if membership >= self.config.fuzzy_threshold:
+                left_samples.append(sample_idx)
+            else:
+                right_samples.append(sample_idx)
+        
+        return left_samples, right_samples
+    
+    def _calculate_impurity(self, y: List[str], samples: List[int]) -> float:
+        """不純度計算"""
+        
+        if not samples:
             return 0.0
         
-        class_counts = Counter(y)
-        total = len(y)
+        # クラス分布の計算
+        class_counts = Counter(y[i] for i in samples)
+        total_samples = len(samples)
+        
+        if self.config.split_criterion == "gini":
+            return self._gini_impurity(class_counts, total_samples)
+        elif self.config.split_criterion == "entropy":
+            return self._entropy_impurity(class_counts, total_samples)
+        else:  # fuzzy_gain
+            return self._fuzzy_impurity(class_counts, total_samples)
+    
+    def _gini_impurity(self, class_counts: Counter, total_samples: int) -> float:
+        """ジニ不純度"""
+        if total_samples == 0:
+            return 0.0
+        
+        impurity = 1.0
+        for count in class_counts.values():
+            prob = count / total_samples
+            impurity -= prob * prob
+        
+        return impurity
+    
+    def _entropy_impurity(self, class_counts: Counter, total_samples: int) -> float:
+        """エントロピー不純度"""
+        if total_samples == 0:
+            return 0.0
         
         entropy = 0.0
         for count in class_counts.values():
             if count > 0:
-                probability = count / total
-                entropy -= probability * np.log2(probability)
+                prob = count / total_samples
+                entropy -= prob * math.log2(prob)
         
         return entropy
     
-    def calculate_gain(self, y_parent: List[str], splits: Dict[str, List[str]]) -> float:
-        """情報ゲインを計算"""
-        parent_entropy = self.calculate_impurity(y_parent)
-        
-        total_samples = len(y_parent)
-        weighted_entropy = 0.0
-        
-        for split_y in splits.values():
-            if len(split_y) > 0:
-                weight = len(split_y) / total_samples
-                split_entropy = self.calculate_impurity(split_y)
-                weighted_entropy += weight * split_entropy
-        
-        return parent_entropy - weighted_entropy
-
-class GiniCriterion(SplitCriterion):
-    """ジニ不純度基準"""
-    
-    def calculate_impurity(self, y: List[str]) -> float:
-        """ジニ不純度を計算"""
-        if not y:
+    def _fuzzy_impurity(self, class_counts: Counter, total_samples: int) -> float:
+        """ファジィ不純度（重み付きエントロピー）"""
+        if total_samples == 0:
             return 0.0
         
-        class_counts = Counter(y)
-        total = len(y)
+        # 基本エントロピー
+        entropy = self._entropy_impurity(class_counts, total_samples)
         
-        gini = 1.0
-        for count in class_counts.values():
-            probability = count / total
-            gini -= probability ** 2
-        
-        return gini
-    
-    def calculate_gain(self, y_parent: List[str], splits: Dict[str, List[str]]) -> float:
-        """ジニゲインを計算"""
-        parent_gini = self.calculate_impurity(y_parent)
-        
-        total_samples = len(y_parent)
-        weighted_gini = 0.0
-        
-        for split_y in splits.values():
-            if len(split_y) > 0:
-                weight = len(split_y) / total_samples
-                split_gini = self.calculate_impurity(split_y)
-                weighted_gini += weight * split_gini
-        
-        return parent_gini - weighted_gini
-
-class FuzzyEntropyCriterion(SplitCriterion):
-    """ファジィエントロピー基準"""
-    
-    def __init__(self, alpha: float = 0.5):
-        self.alpha = alpha  # ファジィネス重み
-    
-    def calculate_impurity(self, y: List[str]) -> float:
-        """ファジィエントロピーを計算"""
-        if not y:
+        # クラス分布の均等性による重み
+        num_classes = len(class_counts)
+        if num_classes <= 1:
             return 0.0
         
-        class_counts = Counter(y)
-        total = len(y)
+        # 分布の偏りを考慮
+        max_count = max(class_counts.values())
+        uniformity = 1.0 - (max_count / total_samples)
         
-        # 通常のエントロピー
-        entropy = 0.0
-        for count in class_counts.values():
-            if count > 0:
-                probability = count / total
-                entropy -= probability * np.log2(probability)
-        
-        # ファジィネス項（クラス分布の偏り）
-        max_prob = max(class_counts.values()) / total
-        fuzziness = 1.0 - max_prob
-        
-        return entropy + self.alpha * fuzziness
+        return entropy * uniformity
     
-    def calculate_gain(self, y_parent: List[str], splits: Dict[str, List[str]]) -> float:
-        """ファジィ情報ゲインを計算"""
-        parent_fuzzy_entropy = self.calculate_impurity(y_parent)
+    def _calculate_split_confidence(self, X: List[Dict[str, Any]], 
+                                   samples: List[int], feature: str, 
+                                   fuzzy_set) -> float:
+        """分岐の信頼度計算"""
         
-        total_samples = len(y_parent)
-        weighted_fuzzy_entropy = 0.0
+        if not samples:
+            return 0.0
         
-        for split_y in splits.values():
-            if len(split_y) > 0:
-                weight = len(split_y) / total_samples
-                split_fuzzy_entropy = self.calculate_impurity(split_y)
-                weighted_fuzzy_entropy += weight * split_fuzzy_entropy
+        # メンバーシップ度の分布を分析
+        memberships = []
+        for sample_idx in samples:
+            feature_value = X[sample_idx].get(feature, 0.0)
+            membership = fuzzy_set.membership(feature_value)
+            memberships.append(membership)
         
-        return parent_fuzzy_entropy - weighted_fuzzy_entropy
+        # 信頼度は明確な分離度合いで計算
+        avg_membership = np.mean(memberships)
+        std_membership = np.std(memberships)
+        
+        # 標準偏差が大きいほど明確な分離
+        confidence = min(1.0, std_membership * 2)
+        
+        return confidence
 
 class FuzzyTreeBuilder:
     """ファジィ決定木構築クラス"""
     
     def __init__(self, config: BuilderConfig):
         self.config = config
+        self.split_evaluator = FuzzySplitEvaluator(config)
         
-        # 分岐基準設定
-        if config.criterion == "entropy":
-            self.criterion = EntropyCriterion()
-        elif config.criterion == "gini":
-            self.criterion = GiniCriterion()
-        elif config.criterion == "fuzzy_entropy":
-            self.criterion = FuzzyEntropyCriterion()
-        else:
-            raise ValueError(f"未知の分岐基準: {config.criterion}")
+        # 構築統計
+        self.nodes_created = 0
+        self.max_depth_reached = 0
+        self.total_splits_evaluated = 0
         
-        # ランダムシード設定
+        # ルール抽出
+        self.extracted_rules: List[Dict[str, Any]] = []
+        
         if config.random_state is not None:
             random.seed(config.random_state)
             np.random.seed(config.random_state)
-        
-        # 構築統計
-        self.build_stats = {
-            "nodes_created": 0,
-            "splits_evaluated": 0,
-            "max_depth_reached": 0
-        }
     
-    def build_tree(self, X: List[Dict[str, Any]], y: List[str]) -> FuzzyDecisionTree:
+    def build_tree(self, X: List[Dict[str, Any]], y: List[str], 
+                   feature_names: Optional[List[str]] = None) -> FuzzyTreeNode:
         """ファジィ決定木を構築"""
         
-        print(f"🌳 ファジィ決定木構築開始")
-        print(f"   サンプル数: {len(X)}")
-        print(f"   基準: {self.config.criterion}")
-        print(f"   最大深度: {self.config.max_depth}")
+        # 特徴量名の設定
+        if feature_names is None and X:
+            feature_names = list(X[0].keys())
         
-        # 決定木オブジェクト作成
-        tree = FuzzyDecisionTree(
-            max_depth=self.config.max_depth,
-            min_samples_split=self.config.min_samples_split,
-            min_samples_leaf=self.config.min_samples_leaf,
-            fuzzy_threshold=self.config.fuzzy_threshold
-        )
+        if not feature_names:
+            raise ValueError("特徴量名が指定されていません")
         
-        # 基本情報設定
-        tree.feature_names = list(X[0].keys()) if X else []
-        tree.class_names = list(set(y))
-        tree.n_features = len(tree.feature_names)
-        tree.n_classes = len(tree.class_names)
-        tree.training_samples_count = len(X)
+        # 特徴量の範囲を計算
+        feature_ranges = self._calculate_feature_ranges(X, feature_names)
         
-        # ルートノード構築
-        tree.root = self._build_node(X, y, depth=0, node_id="root")
+        # ファジィ変数のセットアップ
+        self.split_evaluator.setup_fuzzy_variables(feature_names, feature_ranges)
         
-        # 統計情報
-        print(f"✅ 構築完了")
-        print(f"   作成ノード数: {self.build_stats['nodes_created']}")
-        print(f"   評価分岐数: {self.build_stats['splits_evaluated']}")
-        print(f"   実際の深度: {self.build_stats['max_depth_reached']}")
+        # サンプルインデックス
+        samples = list(range(len(X)))
         
-        return tree
+        logger.info(f"ファジィ決定木構築開始: {len(X)}サンプル, {len(feature_names)}特徴量")
+        
+        # ルート作成
+        root = self._build_node(X, y, samples, depth=0, node_id="root")
+        
+        # ルール抽出
+        if self.config.rule_extraction:
+            self._extract_rules(root, X, y)
+        
+        # 枝刈り
+        if self.config.pruning_enabled:
+            root = self._prune_tree(root, X, y)
+        
+        logger.info(f"ファジィ決定木構築完了: {self.nodes_created}ノード, 最大深度{self.max_depth_reached}")
+        
+        return root
+    
+    def _calculate_feature_ranges(self, X: List[Dict[str, Any]], 
+                                 feature_names: List[str]) -> Dict[str, Tuple[float, float]]:
+        """特徴量の範囲を計算"""
+        
+        ranges = {}
+        
+        for feature in feature_names:
+            values = []
+            for sample in X:
+                value = sample.get(feature)
+                if value is not None and isinstance(value, (int, float)):
+                    values.append(float(value))
+            
+            if values:
+                ranges[feature] = (min(values), max(values))
+            else:
+                ranges[feature] = (0.0, 10.0)  # デフォルト範囲
+        
+        return ranges
     
     def _build_node(self, X: List[Dict[str, Any]], y: List[str], 
-                   depth: int, node_id: str) -> FuzzyTreeNode:
-        """ノードを再帰的に構築"""
+                   samples: List[int], depth: int, node_id: str) -> FuzzyTreeNode:
+        """ノードを構築"""
         
-        self.build_stats["nodes_created"] += 1
-        self.build_stats["max_depth_reached"] = max(self.build_stats["max_depth_reached"], depth)
+        self.nodes_created += 1
+        self.max_depth_reached = max(self.max_depth_reached, depth)
         
-        # 停止条件チェック
-        if self._should_stop(X, y, depth):
-            return self._create_leaf(X, y, depth, node_id)
+        # 停止条件のチェック
+        if self._should_stop_splitting(samples, depth, y):
+            return self._create_leaf_node(y, samples, node_id, depth)
         
-        # 最適分岐探索
-        best_split = self._find_best_split(X, y)
+        # 最適分岐の探索
+        best_split = self._find_best_split(X, y, samples)
         
-        if best_split is None:
-            return self._create_leaf(X, y, depth, node_id)
+        if best_split is None or not best_split.is_valid():
+            return self._create_leaf_node(y, samples, node_id, depth)
         
-        # 内部ノード作成
-        internal_node = NodeFactory.create_internal_node(
-            node_id=node_id,
-            feature=best_split["feature"],
-            threshold=best_split["threshold"],
-            linguistic_value=best_split["linguistic_value"],
-            depth=depth
+        # 内部ノードの作成
+        split_condition = SplitCondition(
+            feature=best_split.feature,
+            threshold=best_split.threshold,
+            linguistic_value=best_split.linguistic_value,
+            membership_threshold=self.config.fuzzy_threshold
         )
         
-        internal_node.samples_count = len(X)
-        internal_node.purity = self._calculate_purity(y)
+        internal_node = FuzzyInternalNode(node_id, split_condition, depth)
+        internal_node.samples_count = len(samples)
         
-        # データ分割
-        splits = self._split_data(X, y, best_split)
+        # 子ノードの再帰的構築
+        left_child = self._build_node(
+            X, y, best_split.left_samples, depth + 1, f"{node_id}_left"
+        )
+        right_child = self._build_node(
+            X, y, best_split.right_samples, depth + 1, f"{node_id}_right"
+        )
         
-        # 子ノード構築
-        for branch_name, (X_split, y_split) in splits.items():
-            if len(X_split) >= self.config.min_samples_leaf:
-                child_id = f"{node_id}_{branch_name}"
-                child_node = self._build_node(X_split, y_split, depth + 1, child_id)
-                internal_node.add_child(branch_name, child_node)
-        
-        # 子ノードが作成されなかった場合は葉ノードにする
-        if not internal_node.children:
-            return self._create_leaf(X, y, depth, node_id)
+        internal_node.add_child("left", left_child)
+        internal_node.add_child("right", right_child)
         
         return internal_node
     
-    def _should_stop(self, X: List[Dict[str, Any]], y: List[str], depth: int) -> bool:
-        """停止条件判定"""
+    def _should_stop_splitting(self, samples: List[int], depth: int, y: List[str]) -> bool:
+        """分岐停止条件のチェック"""
         
         # 深度制限
         if depth >= self.config.max_depth:
             return True
         
         # サンプル数制限
-        if len(X) < self.config.min_samples_split:
+        if len(samples) < self.config.min_samples_split:
             return True
         
-        # 純度チェック
-        if len(set(y)) <= 1:
-            return True
-        
-        # 不純度チェック
-        impurity = self.criterion.calculate_impurity(y)
-        if impurity < 1e-6:  # ほぼ純粋
+        # 純粋なノード
+        sample_labels = [y[i] for i in samples]
+        if len(set(sample_labels)) <= 1:
             return True
         
         return False
     
-    def _find_best_split(self, X: List[Dict[str, Any]], y: List[str]) -> Optional[Dict[str, Any]]:
-        """最適分岐探索"""
+    def _find_best_split(self, X: List[Dict[str, Any]], y: List[str], 
+                        samples: List[int]) -> Optional[SplitEvaluation]:
+        """最適分岐の探索"""
+        
+        feature_names = list(self.split_evaluator.fuzzy_variables.keys())
+        
+        # 特徴量選択
+        if self.config.max_features:
+            feature_names = random.sample(
+                feature_names, 
+                min(self.config.max_features, len(feature_names))
+            )
         
         best_split = None
-        best_gain = -1.0
+        best_score = -float('inf')
         
-        # 使用する特徴量を選択
-        features_to_try = self._select_features(list(X[0].keys()) if X else [])
-        
-        for feature in features_to_try:
-            feature_values = [sample.get(feature, 0) for sample in X]
+        for feature in feature_names:
+            # 各特徴量での分岐を評価
+            split_evaluations = self.split_evaluator.evaluate_split(X, y, samples, feature)
+            self.total_splits_evaluated += len(split_evaluations)
             
-            if not any(isinstance(v, (int, float)) for v in feature_values):
-                continue  # 数値でない特徴量はスキップ
-            
-            # 閾値候補生成
-            thresholds = self._generate_split_thresholds(feature_values)
-            
-            for threshold in thresholds:
-                for linguistic_value in ["low", "medium", "high"]:
+            for evaluation in split_evaluations:
+                if evaluation.impurity_decrease > self.config.min_impurity_decrease:
+                    # スコア計算（不純度減少 + 信頼度）
+                    score = evaluation.impurity_decrease * evaluation.confidence
                     
-                    self.build_stats["splits_evaluated"] += 1
-                    
-                    # 分岐評価
-                    gain = self._evaluate_split(X, y, feature, threshold, linguistic_value)
-                    
-                    if gain > best_gain:
-                        best_gain = gain
-                        best_split = {
-                            "feature": feature,
-                            "threshold": threshold,
-                            "linguistic_value": linguistic_value,
-                            "gain": gain
-                        }
-        
-        # 最小ゲイン閾値チェック
-        if best_gain < 1e-6:
-            return None
+                    if score > best_score:
+                        best_score = score
+                        best_split = evaluation
         
         return best_split
     
-    def _select_features(self, all_features: List[str]) -> List[str]:
-        """特徴量選択"""
+    def _create_leaf_node(self, y: List[str], samples: List[int], 
+                         node_id: str, depth: int) -> FuzzyLeafNode:
+        """葉ノードの作成"""
         
-        if self.config.max_features is None:
-            return all_features
+        # クラス分布の計算
+        sample_labels = [y[i] for i in samples]
+        class_counts = Counter(sample_labels)
         
-        n_features = min(self.config.max_features, len(all_features))
+        # 多数決クラス
+        predicted_class = class_counts.most_common(1)[0][0]
         
-        if self.config.splitter == "random":
-            return random.sample(all_features, n_features)
-        else:
-            return all_features[:n_features]
-    
-    def _generate_split_thresholds(self, values: List[float]) -> List[float]:
-        """分岐閾値候補生成"""
+        # 信頼度（多数決クラスの割合）
+        confidence = class_counts[predicted_class] / len(samples) if samples else 0.0
         
-        numeric_values = [v for v in values if isinstance(v, (int, float))]
+        # クラス確率分布
+        class_probabilities = {}
+        for class_name, count in class_counts.items():
+            class_probabilities[class_name] = count / len(samples)
         
-        if len(numeric_values) < 2:
-            return [np.mean(numeric_values)] if numeric_values else [0.0]
-        
-        sorted_values = sorted(set(numeric_values))
-        
-        if len(sorted_values) < 2:
-            return [sorted_values[0]]
-        
-        thresholds = []
-        
-        # 分位点ベース
-        percentiles = [10, 25, 50, 75, 90]
-        for p in percentiles:
-            threshold = np.percentile(sorted_values, p)
-            thresholds.append(threshold)
-        
-        # 隣接値の中点
-        if self.config.splitter == "best":
-            for i in range(min(10, len(sorted_values) - 1)):  # 最大10個
-                midpoint = (sorted_values[i] + sorted_values[i + 1]) / 2
-                thresholds.append(midpoint)
-        
-        return list(set(thresholds))
-    
-    def _evaluate_split(self, X: List[Dict[str, Any]], y: List[str],
-                       feature: str, threshold: float, linguistic_value: str) -> float:
-        """分岐評価"""
-        
-        # データ分割
-        splits = self._split_data(X, y, {
-            "feature": feature,
-            "threshold": threshold,
-            "linguistic_value": linguistic_value
-        })
-        
-        # 分岐されたデータのラベル部分のみ取得
-        y_splits = {branch: y_split for branch, (_, y_split) in splits.items()}
-        
-        # 基本的な情報ゲイン
-        base_gain = self.criterion.calculate_gain(y, y_splits)
-        
-        # ファジィ補正
-        fuzzy_penalty = self._calculate_fuzzy_penalty(X, feature, threshold, linguistic_value)
-        
-        # バランス補正（極端に偏った分割を避ける）
-        balance_bonus = self._calculate_balance_bonus(y_splits)
-        
-        total_gain = base_gain - fuzzy_penalty + balance_bonus
-        
-        return max(0.0, total_gain)
-    
-    def _split_data(self, X: List[Dict[str, Any]], y: List[str],
-                   split_info: Dict[str, Any]) -> Dict[str, Tuple[List[Dict], List[str]]]:
-        """ファジィ分割でデータを分割"""
-        
-        feature = split_info["feature"]
-        threshold = split_info["threshold"]
-        linguistic_value = split_info["linguistic_value"]
-        
-        splits = defaultdict(lambda: ([], []))
-        
-        for i, sample in enumerate(X):
-            feature_value = sample.get(feature, 0)
-            
-            # 帰属度計算
-            memberships = self._calculate_memberships(feature_value, threshold, linguistic_value)
-            
-            # 最大帰属度の分岐に割り当て
-            best_branch = max(memberships.keys(), key=lambda k: memberships[k])
-            
-            if memberships[best_branch] > self.config.fuzzy_threshold:
-                splits[best_branch][0].append(sample)
-                splits[best_branch][1].append(y[i])
-        
-        return dict(splits)
-    
-    def _calculate_memberships(self, value: float, threshold: float, 
-                             linguistic_value: str) -> Dict[str, float]:
-        """帰属度計算"""
-        
-        if linguistic_value == "low":
-            if value <= threshold:
-                return {"left": 1.0, "right": 0.0}
-            else:
-                distance = value - threshold
-                membership = max(0, 1.0 - distance / 3.0)
-                return {"left": membership, "right": 1.0 - membership}
-                
-        elif linguistic_value == "high":
-            if value >= threshold:
-                return {"left": 0.0, "right": 1.0}
-            else:
-                distance = threshold - value
-                membership = max(0, 1.0 - distance / 3.0)
-                return {"left": 1.0 - membership, "right": membership}
-                
-        else:  # medium
-            distance = abs(value - threshold)
-            if distance <= 1.5:
-                center_membership = 1.0 - distance / 1.5
-                return {"center": center_membership, "others": 1.0 - center_membership}
-            else:
-                return {"center": 0.0, "others": 1.0}
-    
-    def _calculate_fuzzy_penalty(self, X: List[Dict[str, Any]], feature: str,
-                               threshold: float, linguistic_value: str) -> float:
-        """ファジィネスペナルティ計算"""
-        
-        feature_values = [sample.get(feature, 0) for sample in X]
-        numeric_values = [v for v in feature_values if isinstance(v, (int, float))]
-        
-        if not numeric_values:
-            return 0.0
-        
-        # 境界付近のサンプル割合
-        boundary_samples = 0
-        boundary_width = 2.0
-        
-        for value in numeric_values:
-            if abs(value - threshold) <= boundary_width:
-                boundary_samples += 1
-        
-        boundary_ratio = boundary_samples / len(numeric_values)
-        
-        return boundary_ratio * 0.05  # ペナルティ係数
-    
-    def _calculate_balance_bonus(self, splits: Dict[str, List[str]]) -> float:
-        """分岐バランスボーナス計算"""
-        
-        if not splits:
-            return 0.0
-        
-        split_sizes = [len(split) for split in splits.values()]
-        total_size = sum(split_sizes)
-        
-        if total_size == 0:
-            return 0.0
-        
-        # 各分岐の割合
-        proportions = [size / total_size for size in split_sizes]
-        
-        # バランス度（エントロピーベース）
-        balance = -sum(p * np.log(p + 1e-10) for p in proportions if p > 0)
-        max_balance = np.log(len(split_sizes))
-        
-        normalized_balance = balance / max_balance if max_balance > 0 else 0
-        
-        return normalized_balance * 0.02  # ボーナス係数
-    
-    def _create_leaf(self, X: List[Dict[str, Any]], y: List[str],
-                    depth: int, node_id: str) -> FuzzyLeafNode:
-        """葉ノード作成"""
-        
-        # クラス分布計算
-        class_counts = Counter(y)
-        total_samples = len(y)
-        
-        class_distribution = {
-            class_name: count / total_samples
-            for class_name, count in class_counts.items()
-        }
-        
-        # 信頼度（最多クラスの割合）
-        confidence = max(class_distribution.values()) if class_distribution else 0.0
-        
-        # 葉ノード作成
-        leaf_node = NodeFactory.create_leaf_node(
+        leaf_node = FuzzyLeafNode(
             node_id=node_id,
-            class_distribution=class_distribution,
-            depth=depth,
-            confidence=confidence
+            predicted_class=predicted_class,
+            class_probabilities=class_probabilities,
+            confidence=confidence,
+            depth=depth
         )
         
-        leaf_node.samples_count = total_samples
+        leaf_node.samples_count = len(samples)
         
         return leaf_node
     
-    def _calculate_purity(self, y: List[str]) -> float:
-        """純度計算"""
-        if not y:
-            return 0.0
+    def _extract_rules(self, root: FuzzyTreeNode, X: List[Dict[str, Any]], y: List[str]):
+        """ルールの抽出"""
         
-        class_counts = Counter(y)
-        return max(class_counts.values()) / len(y)
+        self.extracted_rules = []
+        
+        def extract_path_rules(node: FuzzyTreeNode, path: List[str], conditions: List[str]):
+            if node.is_leaf():
+                # 葉ノードに到達したらルールを抽出
+                rule = {
+                    "conditions": conditions.copy(),
+                    "conclusion": node.predicted_class,
+                    "confidence": node.confidence,
+                    "path": " -> ".join(path),
+                    "samples": node.samples_count
+                }
+                self.extracted_rules.append(rule)
+            else:
+                # 内部ノードの場合は子ノードを探索
+                for branch_name, child in node.children.items():
+                    condition = f"{node.split_condition.feature} IS {node.split_condition.linguistic_value}"
+                    if branch_name == "right":
+                        condition = f"NOT ({condition})"
+                    
+                    new_path = path + [condition]
+                    new_conditions = conditions + [condition]
+                    
+                    extract_path_rules(child, new_path, new_conditions)
+        
+        extract_path_rules(root, [], [])
+        
+        logger.info(f"ルール抽出完了: {len(self.extracted_rules)}ルール")
     
-    def get_build_summary(self) -> Dict[str, Any]:
-        """構築サマリー取得"""
-        return {
-            "config": {
-                "max_depth": self.config.max_depth,
-                "min_samples_split": self.config.min_samples_split,
-                "min_samples_leaf": self.config.min_samples_leaf,
-                "criterion": self.config.criterion,
-                "splitter": self.config.splitter
-            },
-            "statistics": self.build_stats.copy()
-        }
-
-class RandomForestBuilder:
-    """ランダムフォレスト構築（複数ファジィ決定木）"""
-    
-    def __init__(self, n_estimators: int = 10, base_config: BuilderConfig = None):
-        self.n_estimators = n_estimators
-        self.base_config = base_config or BuilderConfig()
-        self.trees: List[FuzzyDecisionTree] = []
-        self.feature_importances: Dict[str, float] = {}
-    
-    def build_forest(self, X: List[Dict[str, Any]], y: List[str]) -> List[FuzzyDecisionTree]:
-        """ランダムフォレスト構築"""
+    def _prune_tree(self, root: FuzzyTreeNode, X: List[Dict[str, Any]], y: List[str]) -> FuzzyTreeNode:
+        """決定木の枝刈り"""
         
-        print(f"🌲 ランダムフォレスト構築開始 ({self.n_estimators}木)")
-        
-        self.trees = []
-        
-        for i in range(self.n_estimators):
-            print(f"   木 {i+1}/{self.n_estimators} 構築中...")
+        def prune_node(node: FuzzyTreeNode) -> FuzzyTreeNode:
+            if node.is_leaf():
+                return node
             
-            # ブートストラップサンプリング
-            X_bootstrap, y_bootstrap = self._bootstrap_sample(X, y)
+            # 子ノードを再帰的に枝刈り
+            pruned_children = {}
+            for branch_name, child in node.children.items():
+                pruned_child = prune_node(child)
+                pruned_children[branch_name] = pruned_child
             
-            # 構築設定のランダム化
-            tree_config = self._randomize_config(self.base_config)
+            # 信頼度による枝刈り判定
+            if all(child.is_leaf() for child in pruned_children.values()):
+                # 全ての子が葉ノードの場合、枝刈りを検討
+                if self._should_prune_node(node, pruned_children):
+                    # 葉ノードに変換
+                    return self._convert_to_leaf(node, pruned_children)
             
-            # 決定木構築
-            builder = FuzzyTreeBuilder(tree_config)
-            tree = builder.build_tree(X_bootstrap, y_bootstrap)
-            
-            self.trees.append(tree)
+            # 子ノードを更新
+            node.children = pruned_children
+            return node
         
-        # 特徴量重要度の集約
-        self._aggregate_feature_importances()
+        pruned_root = prune_node(root)
+        logger.info("決定木の枝刈り完了")
         
-        print(f"✅ ランダムフォレスト構築完了")
-        
-        return self.trees
+        return pruned_root
     
-    def _bootstrap_sample(self, X: List[Dict[str, Any]], y: List[str]) -> Tuple[List[Dict], List[str]]:
-        """ブートストラップサンプリング"""
+    def _should_prune_node(self, node: FuzzyInternalNode, children: Dict[str, FuzzyTreeNode]) -> bool:
+        """ノードを枝刈りすべきかの判定"""
         
-        n_samples = len(X)
-        indices = np.random.choice(n_samples, size=n_samples, replace=True)
+        # 子ノードの信頼度が低い場合は枝刈り
+        min_confidence = min(child.confidence for child in children.values())
         
-        X_bootstrap = [X[i] for i in indices]
-        y_bootstrap = [y[i] for i in indices]
-        
-        return X_bootstrap, y_bootstrap
+        return min_confidence < self.config.min_confidence_threshold
     
-    def _randomize_config(self, base_config: BuilderConfig) -> BuilderConfig:
-        """構築設定のランダム化"""
+    def _convert_to_leaf(self, node: FuzzyInternalNode, children: Dict[str, FuzzyTreeNode]) -> FuzzyLeafNode:
+        """内部ノードを葉ノードに変換"""
         
-        config = BuilderConfig(
-            max_depth=base_config.max_depth + random.randint(-2, 2),
-            min_samples_split=max(2, base_config.min_samples_split + random.randint(-1, 1)),
-            min_samples_leaf=max(1, base_config.min_samples_leaf),
-            fuzzy_threshold=base_config.fuzzy_threshold + random.uniform(-0.05, 0.05),
-            max_features=base_config.max_features,
-            criterion=random.choice(["entropy", "gini", "fuzzy_entropy"]),
-            splitter="random",
-            random_state=random.randint(0, 10000)
+        # 子ノードのクラス分布を統合
+        combined_probabilities = defaultdict(float)
+        total_samples = 0
+        
+        for child in children.values():
+            for class_name, prob in child.class_probabilities.items():
+                combined_probabilities[class_name] += prob * child.samples_count
+            total_samples += child.samples_count
+        
+        # 正規化
+        if total_samples > 0:
+            for class_name in combined_probabilities:
+                combined_probabilities[class_name] /= total_samples
+        
+        # 多数決クラス
+        predicted_class = max(combined_probabilities, key=combined_probabilities.get)
+        confidence = combined_probabilities[predicted_class]
+        
+        return FuzzyLeafNode(
+            node_id=node.node_id + "_pruned",
+            predicted_class=predicted_class,
+            class_probabilities=dict(combined_probabilities),
+            confidence=confidence,
+            depth=node.depth
         )
-        
-        # 範囲制限
-        config.max_depth = max(1, min(15, config.max_depth))
-        config.fuzzy_threshold = max(0.01, min(0.5, config.fuzzy_threshold))
-        
-        return config
     
-    def _aggregate_feature_importances(self) -> None:
-        """特徴量重要度の集約"""
+    def get_build_statistics(self) -> Dict[str, Any]:
+        """構築統計の取得"""
         
-        importance_sum = defaultdict(float)
-        
-        for tree in self.trees:
-            for feature, importance in tree.feature_importances.items():
-                importance_sum[feature] += importance
-        
-        # 平均化
-        total_trees = len(self.trees)
-        self.feature_importances = {
-            feature: importance / total_trees
-            for feature, importance in importance_sum.items()
+        return {
+            "nodes_created": self.nodes_created,
+            "max_depth_reached": self.max_depth_reached,
+            "total_splits_evaluated": self.total_splits_evaluated,
+            "extracted_rules_count": len(self.extracted_rules),
+            "config": self.config
         }
     
-    def predict_ensemble(self, X: List[Dict[str, Any]]) -> List[Dict[str, float]]:
-        """アンサンブル予測"""
-        
-        if not self.trees:
-            raise ValueError("フォレストが構築されていません")
-        
-        results = []
-        
-        for sample in X:
-            # 各木の予測を集約
-            class_votes = defaultdict(float)
-            
-            for tree in self.trees:
-                prediction = tree.predict(sample)
-                for class_name, probability in prediction.class_probabilities.items():
-                    class_votes[class_name] += probability
-            
-            # 平均化
-            total_votes = sum(class_votes.values())
-            ensemble_prediction = {
-                class_name: votes / total_votes
-                for class_name, votes in class_votes.items()
-            } if total_votes > 0 else {}
-            
-            results.append(ensemble_prediction)
-        
-        return results
+    def get_extracted_rules(self) -> List[Dict[str, Any]]:
+        """抽出されたルールを取得"""
+        return self.extracted_rules.copy()
+
+# 使用例とテスト
+def test_fuzzy_tree_builder():
+    """ファジィ決定木構築のテスト"""
+    
+    print("🌳 ファジィ決定木構築テスト開始")
+    
+    # 設定の作成
+    config = BuilderConfig(
+        max_depth=5,
+        min_samples_split=2,
+        min_samples_leaf=1,
+        fuzzy_threshold=0.2,
+        rule_extraction=True,
+        pruning_enabled=True
+    )
+    
+    # 構築器の初期化
+    builder = FuzzyTreeBuilder(config)
+    
+    # テストデータの作成
+    X = [
+        {"feature1": 8.0, "feature2": 7.0, "feature3": 6.0},
+        {"feature1": 2.0, "feature2": 3.0, "feature3": 4.0},
+        {"feature1": 7.0, "feature2": 8.0, "feature3": 9.0},
+        {"feature1": 3.0, "feature2": 2.0, "feature3": 1.0},
+        {"feature1": 6.0, "feature2": 6.0, "feature3": 7.0},
+        {"feature1": 4.0, "feature2": 5.0, "feature3": 3.0}
+    ]
+    
+    y = ["high_match", "low_match", "high_match", "low_match", "medium_match", "medium_match"]
+    
+    # 決定木構築
+    root = builder.build_tree(X, y, ["feature1", "feature2", "feature3"])
+    
+    print(f"✅ 決定木構築完了")
+    
+    # 統計情報
+    stats = builder.get_build_statistics()
+    print(f"📊 構築統計:")
+    print(f"  作成ノード数: {stats['nodes_created']}")
+    print(f"  最大深度: {stats['max_depth_reached']}")
+    print(f"  分岐評価回数: {stats['total_splits_evaluated']}")
+    
+    # 抽出ルール
+    rules = builder.get_extracted_rules()
+    print(f"\n📋 抽出ルール数: {len(rules)}")
+    for i, rule in enumerate(rules[:3]):  # 最初の3つのみ表示
+        print(f"  ルール{i+1}: {rule['path']}")
+        print(f"    結論: {rule['conclusion']} (信頼度: {rule['confidence']:.3f})")
+    
+    print("✅ ファジィ決定木構築テスト完了")
+
+if __name__ == "__main__":
+    test_fuzzy_tree_builder()

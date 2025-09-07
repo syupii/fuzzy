@@ -1,599 +1,916 @@
-# services/optimization.py - 最適化サービス
+# services/optimization.py - 最適化サービス（完全版）
 
-from typing import Dict, List, Any, Optional, Tuple, Callable
 import numpy as np
+import logging
 import time
-from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
+import json
+from typing import Dict, List, Any, Optional, Tuple, Callable, Union
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from enum import Enum
+import uuid
 
-from models.schemas import StudentProfile, Laboratory, EvaluationResponse
-from core.genetic.evolution import GeneticAlgorithm
-from core.genetic.individual import Individual
-from core.genetic.population import Population
-from core.genetic.operators import OperatorFactory, SelectionMethod, CrossoverMethod, MutationMethod
-from core.fuzzy.inference import FuzzyInferenceEngine
-from core.decision_tree.builder import FuzzyTreeBuilder, BuilderConfig
+from models.schemas import (
+    StudentProfile, Laboratory, OptimizationRequest, 
+    OptimizationResult, EvaluationResponse
+)
+from core.genetic.evolution import EvolutionEngine, EvolutionConfig, EvolutionResult
+from core.genetic.individual import Individual, WeightVector, FuzzyTreeIndividual
+from core.genetic.population import Population, PopulationConfig
+from core.genetic.operators import OperatorConfig, SelectionMethod, CrossoverMethod, MutationMethod
+from core.fuzzy.inference import FuzzyInferenceEngine, SimpleFuzzyInferenceEngine
+from core.decision_tree.tree import FuzzyDecisionTree
+from core.decision_tree.builder import BuilderConfig
+from services.lab_matching import LabMatchingService
+from utils.metrics import CompatibilityMetrics, PredictionEvaluator
+from models.storage import ModelStorage, SpecializedStorage
 from config.settings import settings
+
+logger = logging.getLogger(__name__)
+
+class OptimizationType(str, Enum):
+    """最適化タイプ"""
+    WEIGHT_OPTIMIZATION = "weight_optimization"
+    TREE_OPTIMIZATION = "tree_optimization"
+    HYBRID_OPTIMIZATION = "hybrid_optimization"
+    MULTI_OBJECTIVE = "multi_objective"
+
+class OptimizationStatus(str, Enum):
+    """最適化ステータス"""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 @dataclass
 class OptimizationConfig:
     """最適化設定"""
+    # 基本設定
+    optimization_type: OptimizationType = OptimizationType.WEIGHT_OPTIMIZATION
+    max_runtime_minutes: int = 30
+    target_fitness: Optional[float] = None
+    
     # 遺伝的アルゴリズム設定
-    population_size: int = 30
-    generations: int = 50
-    mutation_rate: float = 0.1
-    crossover_rate: float = 0.8
+    population_size: int = 50
+    max_generations: int = 100
     elite_size: int = 5
     
-    # 選択・交叉・変異手法
-    selection_method: str = "tournament"
-    crossover_method: str = "uniform"
-    mutation_method: str = "gaussian"
+    # 選択・交叉・変異設定
+    selection_method: SelectionMethod = SelectionMethod.TOURNAMENT
+    crossover_method: CrossoverMethod = CrossoverMethod.UNIFORM
+    mutation_method: MutationMethod = MutationMethod.GAUSSIAN
     
-    # 適応度関数設定
-    fitness_weights: Dict[str, float] = field(default_factory=lambda: {
-        "accuracy": 0.4,
-        "diversity": 0.2,
-        "consistency": 0.2,
-        "complexity_penalty": 0.1,
-        "convergence_bonus": 0.1
-    })
+    crossover_rate: float = 0.8
+    mutation_rate: float = 0.1
+    mutation_strength: float = 0.1
     
-    # 停止条件
+    # 適応設定
+    adaptive_parameters: bool = True
     early_stopping: bool = True
-    patience: int = 10
-    min_fitness_improvement: float = 1e-6
-    max_runtime_seconds: int = 300  # 5分
+    patience: int = 15
+    min_improvement: float = 1e-6
+    
+    # 並列化設定
+    parallel_evaluation: bool = True
+    num_processes: int = 4
+    
+    # 多目的最適化設定
+    objectives: List[str] = field(default_factory=lambda: ["accuracy", "diversity"])
+    objective_weights: Dict[str, float] = field(default_factory=lambda: {"accuracy": 0.7, "diversity": 0.3})
+    
+    # 評価設定
+    validation_split: float = 0.2
+    cross_validation_folds: int = 3
     
     # その他
-    verbose: bool = True
     random_seed: Optional[int] = None
+    verbose: bool = True
+    save_intermediate: bool = True
 
 @dataclass
-class OptimizationResult:
-    """最適化結果"""
-    best_individual: Individual
-    final_population: Population
-    optimization_history: List[Dict[str, Any]]
-    execution_time: float
-    convergence_generation: int
-    final_fitness: float
-    improvement_rate: float
-    status: str  # "completed", "early_stopped", "timeout", "failed"
+class OptimizationJob:
+    """最適化ジョブ"""
+    job_id: str
+    optimization_type: OptimizationType
+    config: OptimizationConfig
+    training_data: List[Tuple[StudentProfile, Laboratory, float]]
+    status: OptimizationStatus = OptimizationStatus.PENDING
+    
+    # 実行情報
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    current_generation: int = 0
+    best_fitness: float = 0.0
+    
+    # 結果
+    result: Optional[OptimizationResult] = None
+    error_message: Optional[str] = None
+    
+    # 進行状況
+    progress_history: List[Dict[str, Any]] = field(default_factory=list)
+    
+    def get_progress(self) -> Dict[str, Any]:
+        """進行状況の取得"""
+        
+        if self.status == OptimizationStatus.PENDING:
+            return {"status": "pending", "progress": 0.0}
+        
+        if self.status == OptimizationStatus.RUNNING:
+            progress = self.current_generation / self.config.max_generations if self.config.max_generations > 0 else 0.0
+            return {
+                "status": "running",
+                "progress": min(progress, 1.0),
+                "current_generation": self.current_generation,
+                "best_fitness": self.best_fitness
+            }
+        
+        return {"status": self.status.value, "progress": 1.0}
 
-class OptimizationObjective(ABC):
-    """最適化目的関数の抽象基底クラス"""
+class OptimizationObjective:
+    """最適化目的関数"""
     
-    @abstractmethod
-    def evaluate(self, individual: Individual, student_profile: StudentProfile,
-                labs: List[Laboratory], context: Dict[str, Any]) -> float:
-        """個体の適応度を評価"""
-        pass
-
-class LabMatchingObjective(OptimizationObjective):
-    """研究室マッチング用目的関数"""
+    def __init__(self, name: str, weight: float = 1.0, maximize: bool = True):
+        self.name = name
+        self.weight = weight
+        self.maximize = maximize
+        
+        # 評価用メトリクス
+        self.compatibility_metrics = CompatibilityMetrics()
+        self.evaluator = PredictionEvaluator()
     
-    def __init__(self, config: OptimizationConfig):
-        self.config = config
-        self.fuzzy_engine = FuzzyInferenceEngine()
-    
-    def evaluate(self, individual: Individual, student_profile: StudentProfile,
-                labs: List[Laboratory], context: Dict[str, Any]) -> float:
-        """研究室マッチングの適応度評価"""
+    def evaluate(self, individual: Individual, 
+                training_data: List[Tuple[StudentProfile, Laboratory, float]],
+                context: Dict[str, Any] = None) -> float:
+        """目的関数の評価"""
         
-        total_fitness = 0.0
-        
-        # 1. マッチング精度
-        accuracy_score = self._calculate_accuracy(individual, student_profile, labs)
-        
-        # 2. 多様性
-        diversity_score = self._calculate_diversity(individual, context.get("population", []))
-        
-        # 3. 一貫性
-        consistency_score = self._calculate_consistency(individual, student_profile)
-        
-        # 4. 複雑性ペナルティ
-        complexity_penalty = self._calculate_complexity_penalty(individual)
-        
-        # 5. 収束ボーナス
-        convergence_bonus = self._calculate_convergence_bonus(individual, context)
-        
-        # 重み付き統合
-        weights = self.config.fitness_weights
-        total_fitness = (
-            accuracy_score * weights["accuracy"] +
-            diversity_score * weights["diversity"] +
-            consistency_score * weights["consistency"] -
-            complexity_penalty * weights["complexity_penalty"] +
-            convergence_bonus * weights["convergence_bonus"]
-        )
-        
-        return max(0.0, min(1.0, total_fitness))
-    
-    def _calculate_accuracy(self, individual: Individual, student: StudentProfile,
-                          labs: List[Laboratory]) -> float:
-        """マッチング精度を計算"""
-        
-        total_score = 0.0
-        lab_count = 0
-        
-        for lab in labs:
-            # 分野適合性
-            field_score = self._evaluate_field_matching(individual, student, lab)
-            
-            # 評価基準適合性
-            criteria_score = self._evaluate_criteria_matching(individual, student, lab)
-            
-            # 総合マッチングスコア
-            lab_score = field_score * 0.6 + criteria_score * 0.4
-            total_score += lab_score
-            lab_count += 1
-        
-        return total_score / lab_count if lab_count > 0 else 0.0
-    
-    def _evaluate_field_matching(self, individual: Individual, student: StudentProfile,
-                                lab: Laboratory) -> float:
-        """分野適合性評価"""
-        
-        score = 0.0
-        matched_fields = 0
-        
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
-        
-        for field_id in lab.research_fields:
-            if field_id in student_fields:
-                student_interest = student_fields[field_id]
-                field_weight = individual.field_weights.get(field_id, 0.0)
+        try:
+            if self.name == "accuracy":
+                return self._evaluate_accuracy(individual, training_data)
+            elif self.name == "diversity":
+                return self._evaluate_diversity(individual, context)
+            elif self.name == "complexity":
+                return self._evaluate_complexity(individual)
+            elif self.name == "robustness":
+                return self._evaluate_robustness(individual, training_data)
+            else:
+                logger.warning(f"未知の目的関数: {self.name}")
+                return 0.0
                 
-                # 興味度・経験・重要度を統合
-                interest_score = (
-                    student_interest.interest_level * 0.5 +
-                    student_interest.experience_level * 0.3 +
-                    student_interest.importance_level * 0.2
-                ) / 10.0
-                
-                score += interest_score * field_weight
-                matched_fields += 1
-        
-        return score / matched_fields if matched_fields > 0 else 0.0
+        except Exception as e:
+            logger.error(f"目的関数評価エラー {self.name}: {e}")
+            return 0.0
     
-    def _evaluate_criteria_matching(self, individual: Individual, student: StudentProfile,
-                                   lab: Laboratory) -> float:
-        """評価基準適合性評価"""
+    def _evaluate_accuracy(self, individual: Individual, 
+                          training_data: List[Tuple[StudentProfile, Laboratory, float]]) -> float:
+        """精度の評価"""
         
-        score = 0.0
-        criteria_count = 0
+        if not training_data:
+            return 0.0
         
-        student_criteria = student.evaluation_criteria.dict()
-        lab_features = lab.features.dict()
+        predictions = []
+        ground_truth = []
         
-        for criterion, weight in individual.criteria_weights.items():
-            if criterion in student_criteria and criterion in lab_features:
-                student_val = student_criteria[criterion]
-                lab_val = lab_features[criterion]
+        # 簡易評価（実際の実装では詳細な予測を実行）
+        for student, lab, target_score in training_data:
+            try:
+                # 個体による予測スコア計算
+                if isinstance(individual, WeightVector):
+                    predicted_score = self._calculate_weighted_score(student, lab, individual)
+                else:
+                    predicted_score = 0.5  # デフォルト値
                 
-                # ガウシアン類似度
-                distance = abs(student_val - lab_val)
-                similarity = np.exp(-(distance ** 2) / (2 * 2.0 ** 2))
+                predictions.append(predicted_score)
+                ground_truth.append(target_score)
                 
-                score += similarity * weight
-                criteria_count += 1
+            except Exception as e:
+                logger.warning(f"予測エラー: {e}")
+                continue
         
-        return score / criteria_count if criteria_count > 0 else 0.0
+        if not predictions:
+            return 0.0
+        
+        # 平均絶対誤差の逆数
+        mae = self.compatibility_metrics.calculate_mae(predictions, ground_truth)
+        accuracy = max(0.0, 1.0 - mae)
+        
+        return accuracy
     
-    def _calculate_diversity(self, individual: Individual, population: List[Individual]) -> float:
-        """個体の多様性を計算"""
+    def _evaluate_diversity(self, individual: Individual, context: Dict[str, Any]) -> float:
+        """多様性の評価"""
+        
+        if not context or "population" not in context:
+            return 0.5
+        
+        population = context["population"]
         
         if len(population) < 2:
-            return 0.5  # デフォルト値
+            return 1.0
         
-        # 他の個体との平均距離
-        total_distance = 0.0
+        # 他個体との多様性を計算
+        total_diversity = 0.0
         comparison_count = 0
         
         for other in population:
-            if other.individual_id != individual.individual_id:
-                distance = individual.calculate_diversity(other)
-                total_distance += distance
+            if other != individual:
+                diversity = individual.get_diversity_from(other)
+                total_diversity += diversity
                 comparison_count += 1
         
-        avg_distance = total_distance / comparison_count if comparison_count > 0 else 0.0
-        
-        return min(1.0, avg_distance)
+        return total_diversity / comparison_count if comparison_count > 0 else 0.0
     
-    def _calculate_consistency(self, individual: Individual, student: StudentProfile) -> float:
-        """一貫性を計算"""
+    def _evaluate_complexity(self, individual: Individual) -> float:
+        """複雑度の評価（低いほど良い）"""
         
-        # 学生の選択と重みの一貫性
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
+        if isinstance(individual, WeightVector):
+            # 重みベクトルの複雑度（非ゼロ要素数）
+            genes = individual.get_genes()
+            non_zero_count = sum(1 for value in genes.values() if abs(value) > 1e-6)
+            complexity = non_zero_count / len(genes) if genes else 1.0
+            
+            return 1.0 - complexity  # 複雑度が低いほど高スコア
         
-        consistency_sum = 0.0
-        field_count = 0
+        elif isinstance(individual, FuzzyTreeIndividual):
+            # 決定木の複雑度
+            tree_params = individual.tree_parameters
+            max_depth = tree_params.get("max_depth", 10)
+            complexity = max_depth / 15.0  # 正規化
+            
+            return 1.0 - complexity
         
-        for field_id, weight in individual.field_weights.items():
-            if field_id in student_fields:
-                student_importance = student_fields[field_id].importance_level / 10.0
-                consistency = 1.0 - abs(weight - student_importance)
-                consistency_sum += consistency
-                field_count += 1
-        
-        field_consistency = consistency_sum / field_count if field_count > 0 else 0.0
-        
-        # 評価基準の一貫性も計算（簡略化）
-        criteria_consistency = 0.8  # 固定値として簡略化
-        
-        return (field_consistency + criteria_consistency) / 2.0
+        return 0.5
     
-    def _calculate_complexity_penalty(self, individual: Individual) -> float:
-        """複雑性ペナルティを計算"""
+    def _evaluate_robustness(self, individual: Individual,
+                            training_data: List[Tuple[StudentProfile, Laboratory, float]]) -> float:
+        """頑健性の評価"""
         
-        # 重みの分散（過度に複雑な重み分布にペナルティ）
-        field_weights = list(individual.field_weights.values())
-        criteria_weights = list(individual.criteria_weights.values())
+        if len(training_data) < 5:
+            return 0.5
         
-        field_std = np.std(field_weights) if len(field_weights) > 1 else 0.0
-        criteria_std = np.std(criteria_weights) if len(criteria_weights) > 1 else 0.0
+        # ノイズを加えたデータでの性能評価
+        noise_levels = [0.05, 0.1, 0.15]
+        robustness_scores = []
         
-        # 標準偏差が大きいほどペナルティが大きい（但し適度な分散は許可）
-        field_penalty = max(0, field_std - 0.2) * 2.0
-        criteria_penalty = max(0, criteria_std - 0.2) * 2.0
+        for noise_level in noise_levels:
+            noisy_predictions = []
+            ground_truth = []
+            
+            for student, lab, target_score in training_data[:10]:  # サブサンプル
+                try:
+                    # ノイズを加えた予測
+                    if isinstance(individual, WeightVector):
+                        base_score = self._calculate_weighted_score(student, lab, individual)
+                        noise = np.random.normal(0, noise_level)
+                        noisy_score = np.clip(base_score + noise, 0, 1)
+                        noisy_predictions.append(noisy_score)
+                        ground_truth.append(target_score)
+                        
+                except Exception:
+                    continue
+            
+            if noisy_predictions:
+                mae = self.compatibility_metrics.calculate_mae(noisy_predictions, ground_truth)
+                robustness_scores.append(max(0.0, 1.0 - mae))
         
-        return min(1.0, (field_penalty + criteria_penalty) / 2.0)
+        return np.mean(robustness_scores) if robustness_scores else 0.5
     
-    def _calculate_convergence_bonus(self, individual: Individual, context: Dict[str, Any]) -> float:
-        """収束ボーナスを計算"""
+    def _calculate_weighted_score(self, student: StudentProfile, 
+                                 laboratory: Laboratory, 
+                                 weights: WeightVector) -> float:
+        """重み付きスコアの計算"""
         
-        generation = context.get("generation", 0)
-        max_generations = context.get("max_generations", 50)
+        # 基本的な適合性計算
+        student_criteria = student.evaluation_criteria.dict()
+        lab_criteria = laboratory.characteristics.dict()
+        weight_genes = weights.get_genes()
         
-        # 世代の進行に応じてボーナス
-        progress = generation / max_generations if max_generations > 0 else 0.0
+        total_score = 0.0
+        total_weight = 0.0
         
-        # 適応度履歴があれば改善率を考慮
-        if len(individual.evaluation_history) > 1:
-            recent_improvement = individual._calculate_improvement_rate()
-            improvement_bonus = max(0, recent_improvement) * 0.5
-        else:
-            improvement_bonus = 0.0
+        for criterion, student_value in student_criteria.items():
+            if student_value is not None:
+                lab_value = lab_criteria.get(criterion, 5.0)
+                if lab_value is not None:
+                    # 差分ベースの適合性
+                    diff = abs(student_value - lab_value)
+                    similarity = max(0.0, 1.0 - diff / 9.0)
+                    
+                    # 重みの適用
+                    weight = weight_genes.get(criterion, 0.1)
+                    total_score += similarity * weight
+                    total_weight += weight
         
-        return min(1.0, progress * 0.3 + improvement_bonus)
+        return total_score / total_weight if total_weight > 0 else 0.0
+
+class MultiObjectiveOptimizer:
+    """多目的最適化器"""
+    
+    def __init__(self, objectives: List[OptimizationObjective]):
+        self.objectives = objectives
+    
+    def evaluate_individual(self, individual: Individual,
+                           training_data: List[Tuple[StudentProfile, Laboratory, float]],
+                           context: Dict[str, Any] = None) -> float:
+        """個体の多目的評価"""
+        
+        objective_scores = []
+        
+        for objective in self.objectives:
+            score = objective.evaluate(individual, training_data, context)
+            
+            # 最大化/最小化の調整
+            if not objective.maximize:
+                score = 1.0 - score
+            
+            # 重み付き
+            weighted_score = score * objective.weight
+            objective_scores.append(weighted_score)
+        
+        # 重み付き平均
+        total_weight = sum(obj.weight for obj in self.objectives)
+        final_score = sum(objective_scores) / total_weight if total_weight > 0 else 0.0
+        
+        return final_score
+    
+    def get_pareto_front(self, population: List[Individual],
+                        training_data: List[Tuple[StudentProfile, Laboratory, float]]) -> List[Individual]:
+        """パレート最適解の取得"""
+        
+        # 各個体の目的関数値を計算
+        objective_values = []
+        
+        for individual in population:
+            values = []
+            for objective in self.objectives:
+                score = objective.evaluate(individual, training_data)
+                values.append(score)
+            objective_values.append(values)
+        
+        # パレート支配関係の計算
+        pareto_front = []
+        
+        for i, individual in enumerate(population):
+            is_dominated = False
+            
+            for j, other_values in enumerate(objective_values):
+                if i != j:
+                    # 支配関係のチェック
+                    if self._dominates(other_values, objective_values[i]):
+                        is_dominated = True
+                        break
+            
+            if not is_dominated:
+                pareto_front.append(individual)
+        
+        return pareto_front
+    
+    def _dominates(self, values1: List[float], values2: List[float]) -> bool:
+        """支配関係のチェック"""
+        
+        better_in_any = False
+        
+        for v1, v2, obj in zip(values1, values2, self.objectives):
+            if obj.maximize:
+                if v1 < v2:
+                    return False
+                elif v1 > v2:
+                    better_in_any = True
+            else:
+                if v1 > v2:
+                    return False
+                elif v1 < v2:
+                    better_in_any = True
+        
+        return better_in_any
 
 class OptimizationService:
-    """最適化サービスメインクラス"""
+    """最適化サービス"""
     
-    def __init__(self, config: OptimizationConfig = None):
-        self.config = config or OptimizationConfig()
+    def __init__(self, storage: Optional[SpecializedStorage] = None):
+        self.storage = storage
+        self.active_jobs: Dict[str, OptimizationJob] = {}
+        self.completed_jobs: List[OptimizationJob] = []
         
-        # 演算子設定
-        self.selection_operator = OperatorFactory.create_selection_operator(
-            self.config.selection_method,
-            tournament_size=3
-        )
-        self.crossover_operator = OperatorFactory.create_crossover_operator(
-            self.config.crossover_method,
-            crossover_rate=self.config.crossover_rate
-        )
-        self.mutation_operator = OperatorFactory.create_mutation_operator(
-            self.config.mutation_method,
-            mutation_rate=self.config.mutation_rate
-        )
+        # 実行プール
+        self.thread_pool = ThreadPoolExecutor(max_workers=4)
+        self.process_pool = ProcessPoolExecutor(max_workers=2)
         
-        # 目的関数
-        self.objective = LabMatchingObjective(self.config)
+        # 統計情報
+        self.total_optimizations = 0
+        self.successful_optimizations = 0
         
-        # 最適化履歴
-        self.optimization_history: List[OptimizationResult] = []
+        # サービス
+        self.lab_matching_service: Optional[LabMatchingService] = None
     
-    def optimize_lab_matching(self, student_profile: StudentProfile,
-                            labs: List[Laboratory]) -> OptimizationResult:
-        """研究室マッチングの最適化を実行"""
-        
-        start_time = time.time()
-        
-        if self.config.verbose:
-            print(f"🔧 最適化開始")
-            print(f"   集団サイズ: {self.config.population_size}")
-            print(f"   世代数: {self.config.generations}")
-            print(f"   選択手法: {self.config.selection_method}")
+    def submit_optimization(self, request: OptimizationRequest) -> str:
+        """最適化ジョブの投入"""
         
         try:
-            # 集団初期化
-            population = self._initialize_population(student_profile)
+            # ジョブIDの生成
+            job_id = str(uuid.uuid4())[:12]
             
-            # 最適化実行
-            optimization_result = self._run_optimization(
-                population, student_profile, labs, start_time
+            # 設定の変換
+            config = OptimizationConfig(
+                optimization_type=OptimizationType.WEIGHT_OPTIMIZATION,
+                population_size=request.population_size,
+                max_generations=request.generations,
+                crossover_rate=request.crossover_rate,
+                mutation_rate=request.mutation_rate,
+                max_runtime_minutes=request.timeout_seconds // 60,
+                verbose=request.verbose
             )
             
-            # 結果保存
-            self.optimization_history.append(optimization_result)
+            # 訓練データの準備
+            training_data = self._prepare_training_data(request)
             
-            if self.config.verbose:
-                print(f"✅ 最適化完了")
-                print(f"   実行時間: {optimization_result.execution_time:.2f}秒")
-                print(f"   最終適応度: {optimization_result.final_fitness:.4f}")
-                print(f"   収束世代: {optimization_result.convergence_generation}")
+            # ジョブの作成
+            job = OptimizationJob(
+                job_id=job_id,
+                optimization_type=config.optimization_type,
+                config=config,
+                training_data=training_data
+            )
             
-            return optimization_result
+            self.active_jobs[job_id] = job
+            
+            # バックグラウンドで実行
+            self.thread_pool.submit(self._run_optimization, job)
+            
+            logger.info(f"最適化ジョブ投入: {job_id}")
+            return job_id
             
         except Exception as e:
-            execution_time = time.time() - start_time
+            logger.error(f"最適化ジョブ投入エラー: {e}")
+            raise
+    
+    def get_optimization_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """最適化ステータスの取得"""
+        
+        # アクティブジョブから検索
+        if job_id in self.active_jobs:
+            job = self.active_jobs[job_id]
+            return {
+                "job_id": job_id,
+                "status": job.status.value,
+                "progress": job.get_progress(),
+                "start_time": job.start_time.isoformat() if job.start_time else None,
+                "current_generation": job.current_generation,
+                "best_fitness": job.best_fitness,
+                "error_message": job.error_message
+            }
+        
+        # 完了ジョブから検索
+        for job in self.completed_jobs:
+            if job.job_id == job_id:
+                return {
+                    "job_id": job_id,
+                    "status": job.status.value,
+                    "progress": job.get_progress(),
+                    "start_time": job.start_time.isoformat() if job.start_time else None,
+                    "end_time": job.end_time.isoformat() if job.end_time else None,
+                    "result": job.result.dict() if job.result else None,
+                    "error_message": job.error_message
+                }
+        
+        return None
+    
+    def cancel_optimization(self, job_id: str) -> bool:
+        """最適化のキャンセル"""
+        
+        if job_id in self.active_jobs:
+            job = self.active_jobs[job_id]
+            job.status = OptimizationStatus.CANCELLED
+            logger.info(f"最適化キャンセル: {job_id}")
+            return True
+        
+        return False
+    
+    def _prepare_training_data(self, request: OptimizationRequest) -> List[Tuple[StudentProfile, Laboratory, float]]:
+        """訓練データの準備"""
+        
+        training_data = []
+        
+        # リクエストから学生と研究室のペアを作成
+        for student in request.student_profiles:
+            for lab in request.target_labs:
+                # 簡易的な適合性スコアを計算（実際のアプリケーションではより詳細）
+                target_score = self._calculate_target_score(student, lab)
+                training_data.append((student, lab, target_score))
+        
+        return training_data
+    
+    def _calculate_target_score(self, student: StudentProfile, laboratory: Laboratory) -> float:
+        """目標スコアの計算"""
+        
+        # 分野適合性
+        field_match = 0.0
+        for interest in student.field_interests:
+            if interest.field == laboratory.research_field:
+                field_match = interest.interest_level / 10.0
+                break
+        
+        # 基本基準の適合性
+        student_criteria = student.evaluation_criteria.dict()
+        lab_criteria = laboratory.characteristics.dict()
+        
+        criterion_matches = []
+        for criterion in ["research_intensity", "advisor_style", "team_work", "workload", "theory_practice"]:
+            student_val = student_criteria.get(criterion, 5.0)
+            lab_val = lab_criteria.get(criterion, 5.0)
             
-            # エラー時のダミー結果
-            error_result = OptimizationResult(
-                best_individual=Individual(),
-                final_population=Population(1),
-                optimization_history=[],
-                execution_time=execution_time,
-                convergence_generation=-1,
-                final_fitness=0.0,
-                improvement_rate=0.0,
-                status="failed"
+            if student_val is not None and lab_val is not None:
+                diff = abs(student_val - lab_val)
+                match = max(0.0, 1.0 - diff / 9.0)
+                criterion_matches.append(match)
+        
+        criterion_avg = np.mean(criterion_matches) if criterion_matches else 0.5
+        
+        # 総合スコア
+        target_score = 0.6 * criterion_avg + 0.4 * field_match
+        
+        return target_score
+    
+    def _run_optimization(self, job: OptimizationJob):
+        """最適化の実行"""
+        
+        try:
+            job.status = OptimizationStatus.RUNNING
+            job.start_time = datetime.now()
+            
+            logger.info(f"最適化開始: {job.job_id}")
+            
+            # 進化設定の構築
+            evolution_config = EvolutionConfig(
+                population_size=job.config.population_size,
+                max_generations=job.config.max_generations,
+                selection_method=job.config.selection_method,
+                crossover_method=job.config.crossover_method,
+                mutation_method=job.config.mutation_method,
+                crossover_rate=job.config.crossover_rate,
+                mutation_rate=job.config.mutation_rate,
+                mutation_strength=job.config.mutation_strength,
+                target_fitness=job.config.target_fitness,
+                max_runtime_seconds=job.config.max_runtime_minutes * 60,
+                adaptive_parameters=job.config.adaptive_parameters,
+                early_stopping=job.config.early_stopping,
+                convergence_generations=job.config.patience,
+                min_improvement=job.config.min_improvement,
+                verbose=job.config.verbose,
+                random_seed=job.config.random_seed
             )
             
-            if self.config.verbose:
-                print(f"❌ 最適化失敗: {str(e)}")
+            # 最適化の実行
+            if job.config.optimization_type == OptimizationType.WEIGHT_OPTIMIZATION:
+                result = self._run_weight_optimization(job, evolution_config)
+            elif job.config.optimization_type == OptimizationType.MULTI_OBJECTIVE:
+                result = self._run_multi_objective_optimization(job, evolution_config)
+            else:
+                raise ValueError(f"未対応の最適化タイプ: {job.config.optimization_type}")
             
-            return error_result
-    
-    def _initialize_population(self, student_profile: StudentProfile) -> Population:
-        """集団初期化"""
-        
-        population = Population(self.config.population_size)
-        
-        # シード初期化（学生プロフィールベース）
-        population.initialize_with_seeding(
-            research_fields=list(settings.research_fields.keys()),
-            evaluation_criteria=settings.evaluation_criteria,
-            student_profile=student_profile,
-            seed_ratio=0.3
-        )
-        
-        return population
-    
-    def _run_optimization(self, population: Population, student_profile: StudentProfile,
-                         labs: List[Laboratory], start_time: float) -> OptimizationResult:
-        """最適化実行"""
-        
-        optimization_history = []
-        best_fitness_history = []
-        no_improvement_count = 0
-        
-        for generation in range(self.config.generations):
+            # 結果の保存
+            job.result = result
+            job.status = OptimizationStatus.COMPLETED
+            job.end_time = datetime.now()
             
-            # タイムアウトチェック
-            if time.time() - start_time > self.config.max_runtime_seconds:
-                status = "timeout"
-                break
+            # 最適化重みの保存
+            if self.storage and result.success:
+                self._save_optimization_result(job)
             
-            # 適応度評価
-            self._evaluate_population(population, student_profile, labs, generation)
+            self.successful_optimizations += 1
+            logger.info(f"最適化完了: {job.job_id} (適応度: {result.best_fitness:.6f})")
             
-            # 統計記録
-            stats = population.get_population_summary()
-            optimization_history.append({
-                "generation": generation,
-                "best_fitness": stats["fitness"]["best"],
-                "avg_fitness": stats["fitness"]["average"],
-                "diversity": stats["diversity"]["diversity"],
-                "convergence_rate": stats["convergence"]["rate"]
-            })
+        except Exception as e:
+            job.status = OptimizationStatus.FAILED
+            job.error_message = str(e)
+            job.end_time = datetime.now()
             
-            best_fitness_history.append(stats["fitness"]["best"])
+            logger.error(f"最適化エラー {job.job_id}: {e}")
+        
+        finally:
+            # アクティブジョブから完了ジョブに移動
+            if job.job_id in self.active_jobs:
+                del self.active_jobs[job.job_id]
             
-            # 進捗表示
-            if self.config.verbose and generation % 10 == 0:
-                print(f"   世代 {generation:2d}: 最高={stats['fitness']['best']:.4f}, "
-                      f"平均={stats['fitness']['average']:.4f}, "
-                      f"多様性={stats['diversity']['diversity']:.3f}")
+            self.completed_jobs.append(job)
+            self.total_optimizations += 1
             
-            # 早期停止チェック
-            if self.config.early_stopping and self._check_early_stopping(
-                best_fitness_history, generation
-            ):
-                status = "early_stopped"
-                break
+            # 完了ジョブの履歴制限
+            if len(self.completed_jobs) > 100:
+                self.completed_jobs = self.completed_jobs[-50:]
+    
+    def _run_weight_optimization(self, job: OptimizationJob, 
+                                evolution_config: EvolutionConfig) -> OptimizationResult:
+        """重み最適化の実行"""
+        
+        # 進化エンジンの初期化
+        evolution_engine = EvolutionEngine(evolution_config, WeightVector)
+        
+        # 重み名の決定
+        weight_names = list(settings.evaluation_criteria)
+        evolution_engine.initialize_population(weight_names=weight_names)
+        
+        # 目的関数の設定
+        objectives = [
+            OptimizationObjective("accuracy", weight=0.7, maximize=True),
+            OptimizationObjective("diversity", weight=0.2, maximize=True),
+            OptimizationObjective("complexity", weight=0.1, maximize=True)
+        ]
+        
+        multi_objective_optimizer = MultiObjectiveOptimizer(objectives)
+        
+        # 適応度関数
+        def fitness_function(individual: WeightVector) -> float:
+            # ジョブキャンセルチェック
+            if job.status == OptimizationStatus.CANCELLED:
+                return 0.0
             
-            # 次世代生成
-            if generation < self.config.generations - 1:
-                population = self._generate_next_generation(population)
-        else:
-            status = "completed"
+            # 進行状況の更新
+            job.current_generation = evolution_engine.current_generation
+            
+            # 多目的評価
+            context = {"population": evolution_engine.population.individuals}
+            fitness = multi_objective_optimizer.evaluate_individual(
+                individual, job.training_data, context
+            )
+            
+            # 最高適応度の更新
+            job.best_fitness = max(job.best_fitness, fitness)
+            
+            return fitness
         
-        # 結果作成
-        execution_time = time.time() - start_time
-        convergence_generation = self._find_convergence_generation(best_fitness_history)
-        improvement_rate = self._calculate_improvement_rate(best_fitness_history)
+        # 進化実行
+        evolution_result = evolution_engine.evolve(fitness_function)
         
-        return OptimizationResult(
-            best_individual=population.best_individual,
-            final_population=population,
-            optimization_history=optimization_history,
-            execution_time=execution_time,
-            convergence_generation=convergence_generation,
-            final_fitness=population.best_individual.fitness if population.best_individual else 0.0,
-            improvement_rate=improvement_rate,
-            status=status
-        )
-    
-    def _evaluate_population(self, population: Population, student_profile: StudentProfile,
-                           labs: List[Laboratory], generation: int) -> None:
-        """集団の適応度評価"""
-        
-        context = {
-            "generation": generation,
-            "max_generations": self.config.generations,
-            "population": population.individuals
-        }
-        
-        for individual in population.individuals:
-            if individual.fitness == 0.0:  # 未評価の場合のみ
-                fitness = self.objective.evaluate(individual, student_profile, labs, context)
-                individual.update_fitness(fitness)
-        
-        population._update_best_individual()
-        population._update_statistics()
-    
-    def _generate_next_generation(self, population: Population) -> Population:
-        """次世代生成"""
-        
-        # 選択
-        selected = self.selection_operator.apply(population.individuals, self.config.population_size)
-        
-        # 交叉
-        offspring = []
-        elite = population.get_elite()
-        offspring.extend([ind.clone() for ind in elite])
-        
-        while len(offspring) < self.config.population_size:
-            parent1, parent2 = np.random.choice(selected, 2, replace=False)
-            child1, child2 = self.crossover_operator.apply(parent1, parent2)
-            offspring.extend([child1, child2])
-        
-        offspring = offspring[:self.config.population_size]
-        
-        # 変異
-        for i in range(self.config.elite_size, len(offspring)):
-            offspring[i] = self.mutation_operator.apply(offspring[i])
-        
-        # 新しい集団作成
-        new_population = Population(self.config.population_size)
-        new_population.advance_generation(offspring)
-        
-        return new_population
-    
-    def _check_early_stopping(self, fitness_history: List[float], generation: int) -> bool:
-        """早期停止判定"""
-        
-        if generation < self.config.patience:
-            return False
-        
-        # 最近の改善率をチェック
-        recent_fitness = fitness_history[-self.config.patience:]
-        improvement = max(recent_fitness) - min(recent_fitness)
-        
-        return improvement < self.config.min_fitness_improvement
-    
-    def _find_convergence_generation(self, fitness_history: List[float]) -> int:
-        """収束世代を特定"""
-        
-        if len(fitness_history) < 5:
-            return len(fitness_history) - 1
-        
-        # 適応度の変化が安定した世代を探す
-        for i in range(5, len(fitness_history)):
-            recent_std = np.std(fitness_history[i-5:i])
-            if recent_std < self.config.min_fitness_improvement:
-                return i
-        
-        return len(fitness_history) - 1
-    
-    def _calculate_improvement_rate(self, fitness_history: List[float]) -> float:
-        """改善率を計算"""
-        
-        if len(fitness_history) < 2:
-            return 0.0
-        
-        initial_fitness = fitness_history[0]
-        final_fitness = fitness_history[-1]
-        
-        return (final_fitness - initial_fitness) / max(initial_fitness, 1e-10)
-    
-    def get_optimization_summary(self) -> Dict[str, Any]:
-        """最適化履歴のサマリーを取得"""
-        
-        if not self.optimization_history:
-            return {"message": "最適化履歴がありません"}
-        
-        recent_result = self.optimization_history[-1]
-        
-        return {
-            "total_optimizations": len(self.optimization_history),
-            "latest_result": {
-                "status": recent_result.status,
-                "execution_time": recent_result.execution_time,
-                "final_fitness": recent_result.final_fitness,
-                "convergence_generation": recent_result.convergence_generation,
-                "improvement_rate": recent_result.improvement_rate
-            },
-            "config": {
-                "population_size": self.config.population_size,
-                "generations": self.config.generations,
-                "selection_method": self.config.selection_method,
-                "crossover_method": self.config.crossover_method,
-                "mutation_method": self.config.mutation_method
-            },
-            "average_performance": {
-                "avg_execution_time": np.mean([r.execution_time for r in self.optimization_history]),
-                "avg_final_fitness": np.mean([r.final_fitness for r in self.optimization_history]),
-                "success_rate": len([r for r in self.optimization_history if r.status == "completed"]) / len(self.optimization_history)
+        # 結果の構築
+        optimization_result = OptimizationResult(
+            request_id=job.job_id,
+            best_weights=evolution_result.best_individual.get_genes(),
+            best_fitness=evolution_result.best_fitness,
+            generation_history=[
+                {
+                    "generation": i,
+                    "best_fitness": fitness,
+                    "average_fitness": avg_fitness,
+                    "diversity": diversity
+                }
+                for i, (fitness, avg_fitness, diversity) in enumerate(
+                    zip(evolution_result.fitness_history,
+                        evolution_engine.average_fitness_history,
+                        evolution_result.diversity_history)
+                )
+            ],
+            convergence_generation=evolution_result.convergence_generation,
+            execution_time=evolution_result.execution_time,
+            total_evaluations=evolution_result.total_evaluations,
+            success=evolution_result.success,
+            algorithm_config={
+                "population_size": evolution_config.population_size,
+                "generations": evolution_config.max_generations,
+                "crossover_rate": evolution_config.crossover_rate,
+                "mutation_rate": evolution_config.mutation_rate
             }
-        }
+        )
+        
+        return optimization_result
     
-    def clear_history(self) -> None:
-        """最適化履歴をクリア"""
-        self.optimization_history.clear()
-
-class HyperparameterOptimizer:
-    """ハイパーパラメータ最適化"""
+    def _run_multi_objective_optimization(self, job: OptimizationJob,
+                                        evolution_config: EvolutionConfig) -> OptimizationResult:
+        """多目的最適化の実行"""
+        
+        # 進化エンジンの初期化
+        evolution_engine = EvolutionEngine(evolution_config, WeightVector)
+        weight_names = list(settings.evaluation_criteria)
+        evolution_engine.initialize_population(weight_names=weight_names)
+        
+        # 多目的最適化器の設定
+        objectives = []
+        for obj_name, weight in job.config.objective_weights.items():
+            maximize = obj_name in ["accuracy", "diversity"]
+            objectives.append(OptimizationObjective(obj_name, weight, maximize))
+        
+        multi_objective_optimizer = MultiObjectiveOptimizer(objectives)
+        
+        # 適応度関数
+        def fitness_function(individual: WeightVector) -> float:
+            if job.status == OptimizationStatus.CANCELLED:
+                return 0.0
+            
+            job.current_generation = evolution_engine.current_generation
+            
+            context = {"population": evolution_engine.population.individuals}
+            fitness = multi_objective_optimizer.evaluate_individual(
+                individual, job.training_data, context
+            )
+            
+            job.best_fitness = max(job.best_fitness, fitness)
+            return fitness
+        
+        # 進化実行
+        evolution_result = evolution_engine.evolve(fitness_function)
+        
+        # パレート最適解の取得
+        pareto_front = multi_objective_optimizer.get_pareto_front(
+            evolution_engine.population.individuals, job.training_data
+        )
+        
+        # 結果の構築（パレート最適解から最良を選択）
+        best_individual = max(pareto_front, key=lambda x: x.get_fitness()) if pareto_front else evolution_result.best_individual
+        
+        optimization_result = OptimizationResult(
+            request_id=job.job_id,
+            best_weights=best_individual.get_genes(),
+            best_fitness=best_individual.get_fitness(),
+            generation_history=[
+                {
+                    "generation": i,
+                    "best_fitness": fitness,
+                    "pareto_front_size": len(pareto_front) if i == len(evolution_result.fitness_history) - 1 else 0
+                }
+                for i, fitness in enumerate(evolution_result.fitness_history)
+            ],
+            convergence_generation=evolution_result.convergence_generation,
+            execution_time=evolution_result.execution_time,
+            total_evaluations=evolution_result.total_evaluations,
+            success=evolution_result.success,
+            algorithm_config={
+                "optimization_type": "multi_objective",
+                "objectives": [obj.name for obj in objectives],
+                "objective_weights": {obj.name: obj.weight for obj in objectives}
+            }
+        )
+        
+        return optimization_result
     
-    def __init__(self, parameter_space: Dict[str, Any]):
-        self.parameter_space = parameter_space
-        self.optimization_results: List[Tuple[Dict, float]] = []
+    def _save_optimization_result(self, job: OptimizationJob):
+        """最適化結果の保存"""
+        
+        try:
+            if not job.result or not job.result.success:
+                return
+            
+            # 最適化重みの保存
+            best_weights = WeightVector(weight_names=list(job.result.best_weights.keys()))
+            best_weights.set_genes(job.result.best_weights)
+            best_weights.set_fitness(job.result.best_fitness)
+            
+            optimization_info = {
+                "job_id": job.job_id,
+                "optimization_type": job.optimization_type.value,
+                "execution_time": job.result.execution_time,
+                "total_evaluations": job.result.total_evaluations,
+                "convergence_generation": job.result.convergence_generation,
+                "algorithm_config": job.result.algorithm_config
+            }
+            
+            weights_id = f"optimized_weights_{job.job_id}_{int(time.time())}"
+            
+            self.storage.save_optimized_weights(
+                weights=best_weights,
+                weights_id=weights_id,
+                optimization_info=optimization_info,
+                description=f"最適化ジョブ {job.job_id} の結果"
+            )
+            
+            logger.info(f"最適化結果保存完了: {weights_id}")
+            
+        except Exception as e:
+            logger.error(f"最適化結果保存エラー: {e}")
     
-    def optimize_hyperparameters(self, student_profile: StudentProfile,
-                                labs: List[Laboratory], n_trials: int = 20) -> Dict[str, Any]:
-        """ハイパーパラメータ最適化実行"""
-        
-        print(f"🎛️ ハイパーパラメータ最適化開始 ({n_trials}試行)")
-        
-        best_params = None
-        best_score = -1.0
-        
-        for trial in range(n_trials):
-            # パラメータサンプリング
-            params = self._sample_parameters()
-            
-            # 最適化実行
-            config = OptimizationConfig(**params)
-            config.verbose = False  # 詳細出力を抑制
-            
-            optimizer = OptimizationService(config)
-            result = optimizer.optimize_lab_matching(student_profile, labs)
-            
-            score = result.final_fitness
-            self.optimization_results.append((params, score))
-            
-            if score > best_score:
-                best_score = score
-                best_params = params
-            
-            if (trial + 1) % 5 == 0:
-                print(f"   試行 {trial + 1}/{n_trials}: 最高スコア = {best_score:.4f}")
-        
-        print(f"✅ ハイパーパラメータ最適化完了")
-        print(f"   最高スコア: {best_score:.4f}")
+    def get_service_statistics(self) -> Dict[str, Any]:
+        """サービス統計の取得"""
         
         return {
-            "best_parameters": best_params,
-            "best_score": best_score,
-            "all_results": self.optimization_results
+            "total_optimizations": self.total_optimizations,
+            "successful_optimizations": self.successful_optimizations,
+            "success_rate": self.successful_optimizations / max(self.total_optimizations, 1),
+            "active_jobs": len(self.active_jobs),
+            "completed_jobs": len(self.completed_jobs),
+            "active_job_ids": list(self.active_jobs.keys())
         }
     
-    def _sample_parameters(self) -> Dict[str, Any]:
-        """パラメータをサンプリング"""
+    def cleanup_old_jobs(self, max_age_hours: int = 24):
+        """古いジョブのクリーンアップ"""
         
-        params = {}
+        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
         
-        for param_name, param_range in self.parameter_space.items():
-            if isinstance(param_range, dict):
-                if param_range["type"] == "int":
-                    params[param_name] = np.random.randint(param_range["min"], param_range["max"] + 1)
-                elif param_range["type"] == "float":
-                    params[param_name] = np.random.uniform(param_range["min"], param_range["max"])
-                elif param_range["type"] == "choice":
-                    params[param_name] = np.random.choice(param_range["choices"])
-            elif isinstance(param_range, list):
-                params[param_name] = np.random.choice(param_range)
+        # 完了ジョブのクリーンアップ
+        self.completed_jobs = [
+            job for job in self.completed_jobs
+            if job.end_time and job.end_time > cutoff_time
+        ]
         
-        return params
+        logger.info(f"古いジョブクリーンアップ完了: {len(self.completed_jobs)}件残存")
+    
+    def shutdown(self):
+        """サービスのシャットダウン"""
+        
+        # アクティブジョブのキャンセル
+        for job_id in list(self.active_jobs.keys()):
+            self.cancel_optimization(job_id)
+        
+        # 実行プールのシャットダウン
+        self.thread_pool.shutdown(wait=True)
+        self.process_pool.shutdown(wait=True)
+        
+        logger.info("最適化サービスシャットダウン完了")
+
+# 使用例とテスト
+def test_optimization_service():
+    """最適化サービスのテスト"""
+    
+    print("🧬 最適化サービステスト開始")
+    
+    # サービスの初期化
+    service = OptimizationService()
+    
+    # テスト用データの作成
+    from models.schemas import (
+        StudentProfile, EvaluationCriteria, FieldInterest, 
+        Laboratory, Faculty, ResearchFieldEnum, OptimizationRequest
+    )
+    
+    # テスト学生プロフィール
+    test_students = [
+        StudentProfile(
+            student_id="test_001",
+            evaluation_criteria=EvaluationCriteria(
+                research_intensity=8.0, advisor_style=7.0, team_work=6.0,
+                workload=7.0, theory_practice=8.0
+            ),
+            field_interests=[
+                FieldInterest(field=ResearchFieldEnum.AI_MACHINE_LEARNING, 
+                             interest_level=9.0, priority=1)
+            ]
+        )
+    ]
+    
+    # テスト研究室
+    test_labs = [
+        Laboratory(
+            lab_id="lab_001",
+            faculty=Faculty(name="テスト教授", specialties=["AI", "ML"]),
+            research_field=ResearchFieldEnum.AI_MACHINE_LEARNING,
+            characteristics=EvaluationCriteria(
+                research_intensity=8.5, advisor_style=7.5, team_work=6.5,
+                workload=7.0, theory_practice=8.0
+            )
+        )
+    ]
+    
+    # 最適化リクエスト
+    request = OptimizationRequest(
+        student_profiles=test_students,
+        target_labs=test_labs,
+        population_size=10,
+        generations=5,
+        timeout_seconds=60,
+        verbose=True
+    )
+    
+    # 最適化ジョブの投入
+    job_id = service.submit_optimization(request)
+    print(f"✅ 最適化ジョブ投入: {job_id}")
+    
+    # ステータス確認
+    import time
+    for i in range(10):
+        status = service.get_optimization_status(job_id)
+        if status:
+            print(f"📊 ステータス: {status['status']} (進行率: {status['progress']['progress']:.1%})")
+            
+            if status['status'] in ['completed', 'failed']:
+                break
+        
+        time.sleep(2)
+    
+    # 最終結果
+    final_status = service.get_optimization_status(job_id)
+    if final_status and final_status['status'] == 'completed':
+        result = final_status['result']
+        print(f"🎯 最適化完了:")
+        print(f"  最高適応度: {result['best_fitness']:.6f}")
+        print(f"  実行時間: {result['execution_time']:.2f}秒")
+        print(f"  総評価回数: {result['total_evaluations']}")
+        
+        # 最適重みの表示
+        best_weights = result['best_weights']
+        print(f"📊 最適重み (上位5つ):")
+        sorted_weights = sorted(best_weights.items(), key=lambda x: x[1], reverse=True)
+        for name, weight in sorted_weights[:5]:
+            print(f"  {name}: {weight:.3f}")
+    
+    # 統計情報
+    stats = service.get_service_statistics()
+    print(f"\n📈 サービス統計:")
+    print(f"  総最適化数: {stats['total_optimizations']}")
+    print(f"  成功率: {stats['success_rate']:.3f}")
+    print(f"  アクティブジョブ数: {stats['active_jobs']}")
+    
+    # シャットダウン
+    service.shutdown()
+    
+    print("✅ 最適化サービステスト完了")
+
+if __name__ == "__main__":
+    test_optimization_service()

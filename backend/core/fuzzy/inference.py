@@ -1,401 +1,484 @@
 # core/fuzzy/inference.py - ファジィ推論エンジン
 
 import numpy as np
-from typing import Dict, List, Tuple, Any
-from dataclasses import dataclass
+from typing import Dict, List, Any, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from abc import ABC, abstractmethod
+import logging
 
-from core.fuzzy.membership import MembershipFunction
-from core.fuzzy.rules import FuzzyRuleBase, FuzzyRule, RuleOperator
-from models.schemas import StudentProfile, Laboratory
+from core.fuzzy.membership import (
+    FuzzyVariable, FuzzySet, MembershipFunctionFactory,
+    TriangularMF, TrapezoidalMF, GaussianMF
+)
+from core.fuzzy.rules import FuzzyRule, FuzzyRuleSet, RuleOperator
+from models.schemas import StudentProfile, Laboratory, EvaluationCriteria
+
+logger = logging.getLogger(__name__)
 
 @dataclass
 class InferenceResult:
     """推論結果"""
-    variable: str                    # 推論変数名
-    crisp_value: float              # 明確化された値
-    fuzzy_values: Dict[str, float]  # 各言語値のメンバーシップ度
-    activated_rules: List[str]      # 発火したルールID
-    confidence: float               # 推論の信頼度
+    output_value: float
+    confidence: float
+    activated_rules: List[str]
+    rule_activations: Dict[str, float]
+    intermediate_values: Dict[str, Any]
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        return {
+            "output_value": self.output_value,
+            "confidence": self.confidence,
+            "activated_rules": self.activated_rules,
+            "rule_activations": self.rule_activations,
+            "intermediate_values": self.intermediate_values
+        }
+
+class InferenceMethod(str):
+    """推論手法"""
+    MAMDANI = "mamdani"
+    SUGENO = "sugeno"
+    TSUKAMOTO = "tsukamoto"
+
+class DefuzzificationMethod(str):
+    """非ファジィ化手法"""
+    CENTROID = "centroid"
+    BISECTOR = "bisector"
+    MOM = "mean_of_maximum"
+    SOM = "smallest_of_maximum"
+    LOM = "largest_of_maximum"
 
 class FuzzyInferenceEngine:
     """ファジィ推論エンジン"""
     
-    def __init__(self):
-        self.membership_func = MembershipFunction()
-        self.rule_base = FuzzyRuleBase()
-        self.inference_history: List[InferenceResult] = []
-    
-    def infer(self, input_data: Dict[str, float], 
-              target_variable: str) -> InferenceResult:
-        """
-        ファジィ推論を実行
+    def __init__(self, inference_method: str = InferenceMethod.MAMDANI,
+                 defuzzification_method: str = DefuzzificationMethod.CENTROID):
         
-        Args:
-            input_data: 入力データ {変数名: 値}
-            target_variable: 推論対象変数
+        self.inference_method = inference_method
+        self.defuzzification_method = defuzzification_method
+        
+        # ファジィ変数群
+        self.input_variables: Dict[str, FuzzyVariable] = {}
+        self.output_variables: Dict[str, FuzzyVariable] = {}
+        
+        # ルール集合
+        self.rule_sets: Dict[str, FuzzyRuleSet] = {}
+        
+        # 設定
+        self.confidence_threshold = 0.1
+        self.min_activation = 1e-6
+        
+        # 統計情報
+        self.inference_count = 0
+        self.total_inference_time = 0.0
+        
+        # 研究室選択支援用の初期化
+        self._initialize_lab_matching_system()
+    
+    def _initialize_lab_matching_system(self):
+        """研究室選択支援システム用の初期化"""
+        
+        # 入力変数の定義（13の評価基準）
+        evaluation_criteria = [
+            "research_intensity", "advisor_style", "team_work", "workload", 
+            "theory_practice", "research_field_match", "skill_development",
+            "lab_atmosphere", "flexibility", "publication_opportunity",
+            "interdisciplinary", "communication_style", "innovation_risk"
+        ]
+        
+        for criterion in evaluation_criteria:
+            var = MembershipFunctionFactory.create_standard_sets(criterion, (1.0, 10.0))
+            self.add_input_variable(var)
+        
+        # 出力変数の定義（適合性）
+        compatibility_var = MembershipFunctionFactory.create_compatibility_variable()
+        self.add_output_variable(compatibility_var)
+        
+        # 基本ルールセットの作成
+        self._create_basic_rule_set()
+    
+    def add_input_variable(self, variable: FuzzyVariable):
+        """入力変数を追加"""
+        self.input_variables[variable.name] = variable
+    
+    def add_output_variable(self, variable: FuzzyVariable):
+        """出力変数を追加"""
+        self.output_variables[variable.name] = variable
+    
+    def add_rule_set(self, rule_set: FuzzyRuleSet):
+        """ルールセットを追加"""
+        self.rule_sets[rule_set.name] = rule_set
+    
+    def _create_basic_rule_set(self):
+        """基本ルールセットの作成"""
+        
+        try:
+            from core.fuzzy.rules import FuzzyRuleSet, FuzzyRule, Condition, Conclusion
             
-        Returns:
-            InferenceResult: 推論結果
-        """
-        
-        # 1. ファジィ化（入力値を言語値に変換）
-        fuzzified_inputs = self._fuzzify_inputs(input_data)
-        
-        # 2. 適用可能なルールを取得
-        applicable_rules = self._get_applicable_rules(target_variable, input_data)
-        
-        # 3. ルール評価（前件部の評価）
-        rule_activations = self._evaluate_rules(applicable_rules, fuzzified_inputs)
-        
-        # 4. 推論実行（後件部の計算）
-        fuzzy_output = self._execute_inference(rule_activations)
-        
-        # 5. 非ファジィ化（明確化）
-        crisp_value = self._defuzzify(fuzzy_output)
-        
-        # 6. 信頼度計算
-        confidence = self._calculate_confidence(rule_activations, applicable_rules)
-        
-        # 推論結果作成
-        result = InferenceResult(
-            variable=target_variable,
-            crisp_value=crisp_value,
-            fuzzy_values=fuzzy_output,
-            activated_rules=[rule.rule_id for rule, _ in rule_activations if _ > 0],
-            confidence=confidence
-        )
-        
-        self.inference_history.append(result)
-        return result
-    
-    def _fuzzify_inputs(self, input_data: Dict[str, float]) -> Dict[str, Dict[str, float]]:
-        """入力値をファジィ化"""
-        
-        fuzzified = {}
-        
-        for variable, value in input_data.items():
-            fuzzified[variable] = {}
+            # 基本適合性ルールセット
+            basic_rules = FuzzyRuleSet("basic_compatibility")
             
-            # 各言語値に対するメンバーシップ度を計算
-            for linguistic_value in ["very_low", "low", "medium", "high", "very_high"]:
-                membership = self.membership_func.evaluate(value, linguistic_value)
-                fuzzified[variable][linguistic_value] = membership
-        
-        return fuzzified
+            # 高適合性ルール群
+            high_compatibility_rules = [
+                # 研究強度と指導スタイルの組み合わせ
+                "IF research_intensity IS high AND advisor_style IS high THEN compatibility IS high_match",
+                "IF research_intensity IS medium AND advisor_style IS medium THEN compatibility IS medium_match",
+                
+                # チームワークとコミュニケーションの組み合わせ
+                "IF team_work IS high AND communication_style IS high THEN compatibility IS high_match",
+                
+                # 理論実践バランス
+                "IF theory_practice IS medium THEN compatibility IS medium_match",
+                
+                # ワークロードとスキル開発
+                "IF workload IS high AND skill_development IS high THEN compatibility IS high_match",
+                
+                # 分野適合性重視
+                "IF research_field_match IS high THEN compatibility IS high_match",
+            ]
+            
+            # ルールを文字列からパース（簡易版）
+            for rule_str in high_compatibility_rules:
+                rule = self._parse_rule_string(rule_str)
+                if rule:
+                    basic_rules.add_rule(rule)
+            
+            self.add_rule_set(basic_rules)
+            
+        except ImportError:
+            # rulesモジュールが利用できない場合は後で追加
+            logger.warning("ルールモジュールが利用できません。後で追加してください。")
     
-    def _get_applicable_rules(self, target_variable: str, 
-                            input_data: Dict[str, float]) -> List[FuzzyRule]:
-        """対象変数に適用可能なルールを取得"""
+    def _parse_rule_string(self, rule_str: str) -> Optional['FuzzyRule']:
+        """ルール文字列の簡易パース"""
         
-        # 対象変数を後件部に持つルールを取得
-        target_rules = self.rule_base.get_rules_by_consequent(target_variable)
+        try:
+            # 簡易パーサー（実装を簡略化）
+            parts = rule_str.split(" THEN ")
+            if len(parts) != 2:
+                return None
+            
+            antecedent_str = parts[0].replace("IF ", "")
+            consequent_str = parts[1]
+            
+            # 実際の実装では適切なパーサーを使用
+            # ここでは None を返して後で手動で追加
+            return None
+            
+        except Exception as e:
+            logger.warning(f"ルール解析エラー: {rule_str} - {e}")
+            return None
+    
+    def infer(self, inputs: Dict[str, float], 
+              output_variable: str = "compatibility") -> InferenceResult:
+        """ファジィ推論を実行"""
         
-        # 入力データに必要な変数を持つルールのみを選択
-        applicable_rules = []
+        start_time = time.time()
         
-        for rule in target_rules:
-            has_all_inputs = all(
-                condition.variable in input_data
-                for condition in rule.antecedent
+        try:
+            # 1. ファジィ化
+            fuzzified_inputs = {}
+            for var_name, value in inputs.items():
+                if var_name in self.input_variables:
+                    fuzzified_inputs[var_name] = self.input_variables[var_name].fuzzify(value)
+            
+            # 2. ルール評価
+            rule_activations = {}
+            activated_rules = []
+            
+            if output_variable in self.rule_sets:
+                rule_set = self.rule_sets[output_variable]
+                
+                for rule in rule_set.rules:
+                    activation = self._evaluate_rule(rule, fuzzified_inputs)
+                    if activation > self.min_activation:
+                        rule_activations[rule.name] = activation
+                        activated_rules.append(rule.name)
+            
+            # 3. 含意と統合
+            output_memberships = self._aggregate_outputs(
+                rule_activations, output_variable
             )
             
-            if has_all_inputs:
-                applicable_rules.append(rule)
-        
-        return applicable_rules
-    
-    def _evaluate_rules(self, rules: List[FuzzyRule], 
-                       fuzzified_inputs: Dict[str, Dict[str, float]]) -> List[Tuple[FuzzyRule, float]]:
-        """ルールの前件部を評価"""
-        
-        rule_activations = []
-        
-        for rule in rules:
-            activation = self._evaluate_antecedent(rule, fuzzified_inputs)
-            rule_activations.append((rule, activation))
-        
-        return rule_activations
-    
-    def _evaluate_antecedent(self, rule: FuzzyRule, 
-                           fuzzified_inputs: Dict[str, Dict[str, float]]) -> float:
-        """ルールの前件部を評価"""
-        
-        condition_values = []
-        
-        # 各条件のメンバーシップ度を取得
-        for condition in rule.antecedent:
-            variable = condition.variable
-            linguistic_value = condition.linguistic_value
-            weight = condition.weight
+            # 4. 非ファジィ化
+            if output_variable in self.output_variables:
+                output_value = self.output_variables[output_variable].defuzzify(
+                    output_memberships, self.defuzzification_method
+                )
+            else:
+                output_value = 0.5  # デフォルト値
             
-            if variable in fuzzified_inputs and linguistic_value in fuzzified_inputs[variable]:
-                membership = fuzzified_inputs[variable][linguistic_value]
-                weighted_membership = membership * weight
-                condition_values.append(weighted_membership)
-        
-        if not condition_values:
-            return 0.0
-        
-        # 演算子に基づいて結合
-        if rule.operator == RuleOperator.AND:
-            # AND演算：最小値
-            activation = min(condition_values)
-        elif rule.operator == RuleOperator.OR:
-            # OR演算：最大値
-            activation = max(condition_values)
-        else:
-            # デフォルトはAND
-            activation = min(condition_values)
-        
-        # ルールの信頼度を適用
-        return activation * rule.confidence
+            # 5. 信頼度計算
+            confidence = self._calculate_confidence(
+                rule_activations, output_memberships
+            )
+            
+            # 統計更新
+            self.inference_count += 1
+            self.total_inference_time += time.time() - start_time
+            
+            return InferenceResult(
+                output_value=output_value,
+                confidence=confidence,
+                activated_rules=activated_rules,
+                rule_activations=rule_activations,
+                intermediate_values={
+                    "fuzzified_inputs": fuzzified_inputs,
+                    "output_memberships": output_memberships
+                }
+            )
+            
+        except Exception as e:
+            logger.error(f"推論エラー: {e}")
+            return InferenceResult(
+                output_value=0.0,
+                confidence=0.0,
+                activated_rules=[],
+                rule_activations={},
+                intermediate_values={}
+            )
     
-    def _execute_inference(self, rule_activations: List[Tuple[FuzzyRule, float]]) -> Dict[str, float]:
-        """推論を実行"""
+    def _evaluate_rule(self, rule: 'FuzzyRule', 
+                      fuzzified_inputs: Dict[str, Dict[str, float]]) -> float:
+        """ルールの活性化度を評価"""
         
-        fuzzy_output = {
-            "very_low": 0.0,
-            "low": 0.0,
-            "medium": 0.0,
-            "high": 0.0,
-            "very_high": 0.0
-        }
+        # 簡易版：全ての条件の最小値を取る（AND結合）
+        activation = 1.0
         
-        # 各ルールの後件部を適用
-        for rule, activation in rule_activations:
-            if activation > 0:
-                consequent_value = rule.consequent.linguistic_value
+        try:
+            for condition in rule.conditions:
+                var_name = condition.variable
+                set_name = condition.linguistic_value
                 
-                # 最大値合成（Max-Min合成）
-                if consequent_value in fuzzy_output:
-                    fuzzy_output[consequent_value] = max(
-                        fuzzy_output[consequent_value], 
-                        activation
-                    )
-        
-        return fuzzy_output
+                if var_name in fuzzified_inputs:
+                    membership = fuzzified_inputs[var_name].get(set_name, 0.0)
+                    activation = min(activation, membership)
+                else:
+                    activation = 0.0
+                    break
+            
+            return activation
+            
+        except Exception:
+            return 0.0
     
-    def _defuzzify(self, fuzzy_output: Dict[str, float]) -> float:
-        """重心法による非ファジィ化"""
+    def _aggregate_outputs(self, rule_activations: Dict[str, float],
+                          output_variable: str) -> Dict[str, float]:
+        """出力の統合"""
         
-        # 言語値を数値に対応付け
-        linguistic_to_numeric = {
-            "very_low": 1.0,
-            "low": 3.0,
-            "medium": 5.0,
-            "high": 7.0,
-            "very_high": 9.0
-        }
+        output_memberships = {}
         
-        numerator = 0.0
-        denominator = 0.0
+        try:
+            if output_variable in self.rule_sets:
+                rule_set = self.rule_sets[output_variable]
+                
+                for rule in rule_set.rules:
+                    if rule.name in rule_activations:
+                        activation = rule_activations[rule.name]
+                        conclusion_set = rule.conclusion.linguistic_value
+                        
+                        # 最大値結合
+                        current_membership = output_memberships.get(conclusion_set, 0.0)
+                        output_memberships[conclusion_set] = max(current_membership, activation)
+            
+        except Exception as e:
+            logger.warning(f"出力統合エラー: {e}")
         
-        for linguistic_value, membership in fuzzy_output.items():
-            if membership > 0:
-                numeric_value = linguistic_to_numeric[linguistic_value]
-                numerator += numeric_value * membership
-                denominator += membership
-        
-        if denominator > 0:
-            crisp_value = numerator / denominator
-        else:
-            crisp_value = 5.0  # デフォルト値（中間値）
-        
-        return crisp_value
+        return output_memberships
     
-    def _calculate_confidence(self, rule_activations: List[Tuple[FuzzyRule, float]], 
-                            applicable_rules: List[FuzzyRule]) -> float:
-        """推論の信頼度を計算"""
+    def _calculate_confidence(self, rule_activations: Dict[str, float],
+                             output_memberships: Dict[str, float]) -> float:
+        """信頼度を計算"""
         
-        if not applicable_rules:
+        if not rule_activations:
             return 0.0
         
-        # 発火したルールの重み付き平均
-        total_activation = 0.0
-        total_weight = 0.0
+        # 活性化されたルール数と活性化度から信頼度を計算
+        avg_activation = sum(rule_activations.values()) / len(rule_activations)
+        rule_coverage = len(rule_activations) / max(len(self.rule_sets), 1)
         
-        for rule, activation in rule_activations:
-            if activation > 0:
-                total_activation += activation * rule.confidence
-                total_weight += rule.confidence
-        
-        if total_weight > 0:
-            confidence = total_activation / total_weight
-        else:
-            confidence = 0.0
-        
-        # ルール適用率も考慮
-        activation_rate = len([a for _, a in rule_activations if a > 0]) / len(applicable_rules)
-        
-        # 最終信頼度
-        final_confidence = confidence * 0.8 + activation_rate * 0.2
-        
-        return min(1.0, max(0.0, final_confidence))
+        return min(avg_activation * rule_coverage, 1.0)
     
-    def infer_lab_compatibility(self, student: StudentProfile, 
-                              lab: Laboratory) -> Dict[str, InferenceResult]:
-        """研究室適合性を総合的に推論"""
+    def infer_lab_compatibility(self, student_profile: StudentProfile,
+                               laboratory: Laboratory) -> InferenceResult:
+        """研究室適合性の推論"""
         
-        # 入力データ準備
-        input_data = self._prepare_lab_input_data(student, lab)
-        
-        # 各側面を段階的に推論
-        results = {}
-        
-        # 1. 分野適合性
-        field_compatibility = self.infer(input_data, "field_compatibility")
-        results["field_compatibility"] = field_compatibility
-        
-        # 2. 経験マッチング
-        experience_match = self.infer(input_data, "experience_match")
-        results["experience_match"] = experience_match
-        
-        # 3. 研究スタイルマッチング
-        research_style_match = self.infer(input_data, "research_style_match")
-        results["research_style_match"] = research_style_match
-        
-        # 4. 指導スタイルマッチング
-        advisor_match = self.infer(input_data, "advisor_match")
-        results["advisor_match"] = advisor_match
-        
-        # 中間結果を入力データに追加
-        input_data.update({
-            "field_compatibility": field_compatibility.crisp_value,
-            "experience_match": experience_match.crisp_value,
-            "research_style_match": research_style_match.crisp_value,
-            "advisor_match": advisor_match.crisp_value
-        })
-        
-        # 5. 総合適合性
-        overall_compatibility = self.infer(input_data, "overall_compatibility")
-        results["overall_compatibility"] = overall_compatibility
-        
-        return results
-    
-    def _prepare_lab_input_data(self, student: StudentProfile, 
-                              lab: Laboratory) -> Dict[str, float]:
-        """研究室マッチング用の入力データを準備"""
-        
-        input_data = {}
+        # 学生と研究室の特性値を入力として準備
+        inputs = {}
         
         # 学生の評価基準
-        student_criteria = student.evaluation_criteria.dict()
-        for key, value in student_criteria.items():
-            input_data[f"student_{key}"] = float(value)
+        student_criteria = student_profile.evaluation_criteria.dict()
+        lab_criteria = laboratory.characteristics.dict()
         
-        # 研究室特徴
-        lab_features = lab.features.dict()
-        for key, value in lab_features.items():
-            input_data[f"lab_{key}"] = float(value)
+        # 適合性計算のため、学生と研究室の特性の差分や組み合わせを考慮
+        for criterion, student_value in student_criteria.items():
+            if student_value is not None:
+                lab_value = lab_criteria.get(criterion, 5.0)  # デフォルト値
+                
+                if lab_value is not None:
+                    # 差分ベースの適合性
+                    diff = abs(student_value - lab_value)
+                    compatibility_score = max(0, 10 - diff * 2)  # 差が小さいほど高得点
+                    inputs[criterion] = compatibility_score
+                else:
+                    inputs[criterion] = student_value
         
-        # 分野興味度（選択した分野の平均）
-        student_fields = {fi.field_id: fi for fi in student.field_interests}
+        # 分野適合性の特別処理
+        field_match_score = self._calculate_field_match(
+            student_profile, laboratory
+        )
+        inputs["research_field_match"] = field_match_score
         
-        field_interest_scores = []
-        field_experience_scores = []
-        field_importance_scores = []
+        # ファジィ推論実行
+        return self.infer(inputs, "compatibility")
+    
+    def _calculate_field_match(self, student_profile: StudentProfile,
+                              laboratory: Laboratory) -> float:
+        """研究分野適合性を計算"""
         
-        for field_id in lab.research_fields:
-            if field_id in student_fields:
-                field_interest = student_fields[field_id]
-                field_interest_scores.append(field_interest.interest_level)
-                field_experience_scores.append(field_interest.experience_level)
-                field_importance_scores.append(field_interest.importance_level)
+        lab_field = laboratory.research_field.value
         
-        if field_interest_scores:
-            input_data["interest_level"] = np.mean(field_interest_scores)
-            input_data["experience_level"] = np.mean(field_experience_scores)
-            input_data["importance_level"] = np.mean(field_importance_scores)
-        else:
-            input_data["interest_level"] = 0.0
-            input_data["experience_level"] = 0.0
-            input_data["importance_level"] = 0.0
+        # 学生の興味分野から適合度を計算
+        for interest in student_profile.field_interests:
+            if interest.field.value == lab_field:
+                return interest.interest_level
         
-        # 分野難易度（研究室の分野の平均難易度）
-        from config.settings import settings
+        # 該当なしの場合は低めの値
+        return 3.0
+
+class SimpleFuzzyInferenceEngine:
+    """簡易ファジィ推論エンジン（フォールバック用）"""
+    
+    def __init__(self):
+        self.inference_count = 0
+    
+    def infer_lab_compatibility(self, student_profile: StudentProfile,
+                               laboratory: Laboratory) -> InferenceResult:
+        """簡易適合性推論"""
         
-        difficulty_scores = []
-        for field_id in lab.research_fields:
-            field_info = settings.research_fields.get(field_id, {})
-            difficulty = field_info.get("difficulty", "intermediate")
+        # 基本5項目の重み付き平均を計算
+        basic_criteria = [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+        
+        total_score = 0.0
+        total_weight = 0.0
+        matched_criteria = 0
+        
+        student_criteria = student_profile.evaluation_criteria.dict()
+        lab_criteria = laboratory.characteristics.dict()
+        
+        for criterion in basic_criteria:
+            student_val = student_criteria.get(criterion)
+            lab_val = lab_criteria.get(criterion)
             
-            difficulty_map = {"beginner": 3, "intermediate": 6, "advanced": 9}
-            difficulty_scores.append(difficulty_map[difficulty])
+            if student_val is not None and lab_val is not None:
+                # 差分ベースの適合性計算
+                diff = abs(student_val - lab_val)
+                compatibility = max(0, 1 - diff / 9.0)  # 0-1の範囲に正規化
+                
+                weight = 1.0  # 基本重み
+                total_score += compatibility * weight
+                total_weight += weight
+                matched_criteria += 1
         
-        if difficulty_scores:
-            input_data["field_difficulty"] = np.mean(difficulty_scores)
-        else:
-            input_data["field_difficulty"] = 6.0  # デフォルト：中級
+        # 分野適合性ボーナス
+        field_bonus = self._simple_field_match(student_profile, laboratory)
+        total_score += field_bonus * 0.5
+        total_weight += 0.5
         
-        return input_data
+        # 最終スコア計算
+        final_score = total_score / total_weight if total_weight > 0 else 0.0
+        confidence = matched_criteria / len(basic_criteria)
+        
+        self.inference_count += 1
+        
+        return InferenceResult(
+            output_value=final_score,
+            confidence=confidence,
+            activated_rules=[f"simple_rule_{i}" for i in range(matched_criteria)],
+            rule_activations={f"rule_{i}": final_score for i in range(matched_criteria)},
+            intermediate_values={
+                "matched_criteria": matched_criteria,
+                "field_bonus": field_bonus
+            }
+        )
     
-    def explain_inference(self, result: InferenceResult) -> str:
-        """推論過程の説明を生成"""
+    def _simple_field_match(self, student_profile: StudentProfile,
+                           laboratory: Laboratory) -> float:
+        """簡易分野適合性"""
         
-        explanation = f"📊 {result.variable}の推論結果\n"
-        explanation += f"   明確化値: {result.crisp_value:.2f}\n"
-        explanation += f"   信頼度: {result.confidence:.3f}\n\n"
+        lab_field = laboratory.research_field.value
         
-        explanation += "🔥 発火したルール:\n"
-        for rule_id in result.activated_rules:
-            rule = self.rule_base.get_rule(rule_id)
-            if rule:
-                explanation += f"   - {rule_id}: {rule.description}\n"
+        for interest in student_profile.field_interests:
+            if interest.field.value == lab_field:
+                return interest.interest_level / 10.0  # 0-1に正規化
         
-        explanation += "\n🎯 ファジィ値:\n"
-        for linguistic_value, membership in result.fuzzy_values.items():
-            if membership > 0:
-                explanation += f"   - {linguistic_value}: {membership:.3f}\n"
-        
-        return explanation
+        return 0.2  # デフォルト低値
+
+
+# 使用例とテスト
+def test_inference_engine():
+    """推論エンジンのテスト"""
     
-    def get_inference_summary(self) -> Dict[str, Any]:
-        """推論の統計サマリーを取得"""
-        
-        if not self.inference_history:
-            return {"message": "推論履歴がありません"}
-        
-        summary = {
-            "total_inferences": len(self.inference_history),
-            "variables_inferred": list(set(r.variable for r in self.inference_history)),
-            "average_confidence": np.mean([r.confidence for r in self.inference_history]),
-            "rule_usage": {}
-        }
-        
-        # ルール使用統計
-        all_activated_rules = []
-        for result in self.inference_history:
-            all_activated_rules.extend(result.activated_rules)
-        
-        from collections import Counter
-        rule_counts = Counter(all_activated_rules)
-        summary["rule_usage"] = dict(rule_counts.most_common(10))
-        
-        return summary
+    print("🧠 ファジィ推論エンジンテスト開始")
     
-    def clear_history(self):
-        """推論履歴をクリア"""
-        self.inference_history.clear()
+    # エンジンの初期化
+    engine = SimpleFuzzyInferenceEngine()
     
-    def validate_inference_system(self) -> List[str]:
-        """推論システムの妥当性チェック"""
-        
-        issues = []
-        
-        # ルールベースの検証
-        rule_issues = self.rule_base.validate_rules()
-        issues.extend(rule_issues)
-        
-        # メンバーシップ関数の検証
-        test_values = [0, 2.5, 5, 7.5, 10]
-        
-        for value in test_values:
-            for linguistic_value in ["very_low", "low", "medium", "high", "very_high"]:
-                try:
-                    membership = self.membership_func.evaluate(value, linguistic_value)
-                    if membership < 0 or membership > 1:
-                        issues.append(f"メンバーシップ値が範囲外: {linguistic_value}({value}) = {membership}")
-                except Exception as e:
-                    issues.append(f"メンバーシップ関数エラー: {str(e)}")
-        
-        return issues
+    # テスト用データ
+    from models.schemas import (
+        StudentProfile, EvaluationCriteria, FieldInterest, 
+        Laboratory, Faculty, ResearchFieldEnum
+    )
+    
+    # テスト学生プロフィール
+    test_student = StudentProfile(
+        student_id="test_001",
+        evaluation_criteria=EvaluationCriteria(
+            research_intensity=8.0,
+            advisor_style=7.0,
+            team_work=6.0,
+            workload=7.0,
+            theory_practice=8.0
+        ),
+        field_interests=[
+            FieldInterest(
+                field=ResearchFieldEnum.AI_MACHINE_LEARNING,
+                interest_level=9.0,
+                priority=1
+            )
+        ]
+    )
+    
+    # テスト研究室
+    test_lab = Laboratory(
+        lab_id="lab_001",
+        faculty=Faculty(
+            name="テスト教授",
+            specialties=["機械学習", "データ解析"]
+        ),
+        research_field=ResearchFieldEnum.AI_MACHINE_LEARNING,
+        characteristics=EvaluationCriteria(
+            research_intensity=8.5,
+            advisor_style=7.5,
+            team_work=6.5,
+            workload=7.0,
+            theory_practice=8.0
+        )
+    )
+    
+    # 推論実行
+    result = engine.infer_lab_compatibility(test_student, test_lab)
+    
+    print(f"📊 推論結果:")
+    print(f"  適合性スコア: {result.output_value:.3f}")
+    print(f"  信頼度: {result.confidence:.3f}")
+    print(f"  活性化ルール数: {len(result.activated_rules)}")
+    
+    print("✅ ファジィ推論エンジンテスト完了")
+
+if __name__ == "__main__":
+    import time
+    test_inference_engine()
