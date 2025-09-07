@@ -1,298 +1,202 @@
-"""
-メンバーシップ関数 - core/fuzzy/membership.py
-ファジィ論理のメンバーシップ関数実装
-"""
+# core/fuzzy/membership.py - ファジィメンバーシップ関数
 
-from abc import ABC, abstractmethod
-from typing import Union, List, Dict, Any
 import numpy as np
-from enum import Enum
+from typing import Dict, List, Tuple, Callable
+from models.schemas import FieldInterest
 
-
-class MembershipType(Enum):
-    """メンバーシップ関数の種類"""
-    TRIANGULAR = "triangular"
-    GAUSSIAN = "gaussian"  
-    TRAPEZOIDAL = "trapezoidal"
-
-
-class MembershipFunction(ABC):
-    """メンバーシップ関数の抽象基底クラス"""
+class MembershipFunction:
+    """ファジィメンバーシップ関数クラス"""
     
-    def __init__(self, name: str):
-        self.name = name
-        self.activation_count = 0
-        self.total_membership = 0.0
-    
-    @abstractmethod
-    def membership(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """メンバーシップ度を計算"""
-        pass
-    
-    @abstractmethod
-    def get_params(self) -> Dict[str, float]:
-        """パラメータを取得"""
-        pass
-    
-    def get_statistics(self) -> Dict[str, Any]:
-        """統計情報を取得"""
-        return {
-            'name': self.name,
-            'activation_count': self.activation_count,
-            'average_membership': self.total_membership / max(1, self.activation_count),
-            'utilization_rate': self.activation_count / max(1, self.activation_count + 100)
+    def __init__(self):
+        # 基本メンバーシップ関数の定義
+        self.functions = {
+            "very_low": self._create_trapezoid(0, 0, 1, 2.5),
+            "low": self._create_trapezoid(1, 2.5, 3.5, 5),
+            "medium": self._create_trapezoid(3.5, 5, 5, 6.5),
+            "high": self._create_trapezoid(5, 6.5, 7.5, 9),
+            "very_high": self._create_trapezoid(7.5, 9, 10, 10)
         }
-
-
-class TriangularMF(MembershipFunction):
-    """三角形メンバーシップ関数"""
-    
-    def __init__(self, name: str, a: float, b: float, c: float):
-        super().__init__(name)
-        self.a = a  # 左端
-        self.b = b  # 頂点
-        self.c = c  # 右端
         
-        # パラメータ検証
-        if not (a <= b <= c):
-            raise ValueError(f"Invalid triangular parameters: a={a}, b={b}, c={c}")
+        # 興味度レベル分類
+        self.interest_levels = {
+            "no_interest": (0, 2),
+            "slight_interest": (2, 4),
+            "moderate_interest": (4, 6),
+            "strong_interest": (6, 8),
+            "very_strong_interest": (8, 10)
+        }
+        
+        # 経験レベル分類
+        self.experience_levels = {
+            "novice": (0, 2),
+            "beginner": (2, 4),
+            "intermediate": (4, 6),
+            "advanced": (6, 8),
+            "expert": (8, 10)
+        }
     
-    def membership(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """三角形メンバーシップ度計算"""
-        if isinstance(x, np.ndarray):
-            result = np.zeros_like(x)
-            
-            # 左側の傾斜
-            mask1 = (x >= self.a) & (x <= self.b)
-            if self.b != self.a:
-                result[mask1] = (x[mask1] - self.a) / (self.b - self.a)
-            
-            # 右側の傾斜  
-            mask2 = (x > self.b) & (x <= self.c)
-            if self.c != self.b:
-                result[mask2] = (self.c - x[mask2]) / (self.c - self.b)
-            
-            # 頂点
-            result[x == self.b] = 1.0
-            
+    def _create_trapezoid(self, a: float, b: float, c: float, d: float) -> Callable:
+        """台形メンバーシップ関数を作成"""
+        def trapezoid(x: float) -> float:
+            if x <= a or x >= d:
+                return 0.0
+            elif a < x <= b:
+                return (x - a) / (b - a) if b != a else 1.0
+            elif b < x <= c:
+                return 1.0
+            elif c < x < d:
+                return (d - x) / (d - c) if d != c else 1.0
+            return 0.0
+        return trapezoid
+    
+    def _create_triangle(self, a: float, b: float, c: float) -> Callable:
+        """三角メンバーシップ関数を作成"""
+        def triangle(x: float) -> float:
+            if x <= a or x >= c:
+                return 0.0
+            elif a < x <= b:
+                return (x - a) / (b - a) if b != a else 1.0
+            elif b < x < c:
+                return (c - x) / (c - b) if c != b else 1.0
+            return 0.0
+        return triangle
+    
+    def evaluate(self, value: float, level: str) -> float:
+        """メンバーシップ値を計算"""
+        if level in self.functions:
+            return self.functions[level](value)
+        return 0.0
+    
+    def field_compatibility(self, student_interest: FieldInterest, 
+                          field_info: Dict) -> float:
+        """分野適合性をファジィ計算"""
+        
+        # 興味度の評価
+        interest_score = self._evaluate_interest(student_interest.interest_level)
+        
+        # 経験レベルと分野難易度のマッチング評価
+        experience_match = self._evaluate_experience_match(
+            student_interest.experience_level, 
+            field_info.get("difficulty", "intermediate")
+        )
+        
+        # 重要度の重み
+        importance_weight = student_interest.importance_level / 10.0
+        
+        # ファジィ統合（重み付き平均）
+        compatibility = (
+            interest_score * 0.4 +
+            experience_match * 0.3 +
+            importance_weight * 0.3
+        )
+        
+        return min(1.0, max(0.0, compatibility))
+    
+    def _evaluate_interest(self, interest_level: int) -> float:
+        """興味度をファジィ評価"""
+        # 高い興味を重視
+        high_membership = self.evaluate(interest_level, "high")
+        very_high_membership = self.evaluate(interest_level, "very_high")
+        
+        return max(high_membership, very_high_membership)
+    
+    def _evaluate_experience_match(self, experience_level: int, 
+                                 difficulty: str) -> float:
+        """経験レベルと分野難易度のマッチング評価"""
+        
+        # 難易度を数値に変換
+        difficulty_map = {
+            "beginner": 3,
+            "intermediate": 6,
+            "advanced": 9
+        }
+        
+        target_experience = difficulty_map.get(difficulty, 6)
+        
+        # 経験レベルとのマッチング計算
+        # 経験が足りない場合とオーバースペックの場合を考慮
+        distance = abs(experience_level - target_experience)
+        
+        if distance <= 1:
+            return 1.0  # 完全マッチ
+        elif distance <= 2:
+            return 0.8  # 良好なマッチ
+        elif distance <= 3:
+            return 0.6  # 中程度のマッチ
+        elif distance <= 4:
+            return 0.4  # やや困難
         else:
-            if x <= self.a or x >= self.c:
-                result = 0.0
-            elif x == self.b:
-                result = 1.0
-            elif x < self.b:
-                result = (x - self.a) / (self.b - self.a) if self.b != self.a else 0.0
-            else:
-                result = (self.c - x) / (self.c - self.b) if self.c != self.b else 0.0
+            return 0.2  # 困難
+    
+    def criteria_similarity(self, student_value: int, lab_value: float) -> float:
+        """評価基準の類似度をファジィ計算"""
         
-        # 統計更新
-        if isinstance(result, np.ndarray):
-            active_count = np.sum(result > 0.1)
-            self.activation_count += active_count
-            self.total_membership += np.sum(result)
+        # 距離ベースの類似度
+        distance = abs(student_value - lab_value)
+        
+        # ガウシアンメンバーシップ関数を使用
+        sigma = 2.0  # 標準偏差
+        similarity = np.exp(-(distance ** 2) / (2 * sigma ** 2))
+        
+        return similarity
+    
+    def fuzzy_and(self, *values: float) -> float:
+        """ファジィAND演算（最小値）"""
+        return min(values)
+    
+    def fuzzy_or(self, *values: float) -> float:
+        """ファジィOR演算（最大値）"""
+        return max(values)
+    
+    def fuzzy_not(self, value: float) -> float:
+        """ファジィNOT演算"""
+        return 1.0 - value
+    
+    def defuzzify_centroid(self, membership_values: Dict[float, float]) -> float:
+        """重心法によるファジィ値の明確化"""
+        
+        if not membership_values:
+            return 0.0
+        
+        numerator = sum(value * membership for value, membership in membership_values.items())
+        denominator = sum(membership_values.values())
+        
+        return numerator / denominator if denominator > 0 else 0.0
+    
+    def linguistic_evaluation(self, value: float) -> str:
+        """数値を言語的評価に変換"""
+        
+        if value >= 8.5:
+            return "非常に良い"
+        elif value >= 7.0:
+            return "良い"
+        elif value >= 5.5:
+            return "普通"
+        elif value >= 3.5:
+            return "やや劣る"
         else:
-            if result > 0.1:
-                self.activation_count += 1
-                self.total_membership += result
-        
-        return np.clip(result, 0, 1)
+            return "劣る"
     
-    def get_params(self) -> Dict[str, float]:
-        return {'a': self.a, 'b': self.b, 'c': self.c}
-
-
-class GaussianMF(MembershipFunction):
-    """ガウシアンメンバーシップ関数"""
-    
-    def __init__(self, name: str, center: float, sigma: float):
-        super().__init__(name)
-        self.center = center
-        self.sigma = max(sigma, 0.01)  # シグマは正の値
-    
-    def membership(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """ガウシアンメンバーシップ度計算"""
-        result = np.exp(-0.5 * ((x - self.center) / self.sigma) ** 2)
+    def calculate_confidence(self, field_interests: List[FieldInterest]) -> float:
+        """学生の選択に対する信頼度を計算"""
         
-        # 統計更新
-        if isinstance(result, np.ndarray):
-            active_count = np.sum(result > 0.1)
-            self.activation_count += active_count
-            self.total_membership += np.sum(result)
-        else:
-            if result > 0.1:
-                self.activation_count += 1
-                self.total_membership += result
+        if not field_interests:
+            return 0.0
         
-        return result
-    
-    def get_params(self) -> Dict[str, float]:
-        return {'center': self.center, 'sigma': self.sigma}
-
-
-class TrapezoidalMF(MembershipFunction):
-    """台形メンバーシップ関数"""
-    
-    def __init__(self, name: str, a: float, b: float, c: float, d: float):
-        super().__init__(name)
-        self.a = a  # 左下端
-        self.b = b  # 左上端
-        self.c = c  # 右上端
-        self.d = d  # 右下端
+        # 興味度の分散と平均を考慮
+        interest_levels = [fi.interest_level for fi in field_interests]
+        experience_levels = [fi.experience_level for fi in field_interests]
         
-        # パラメータ検証
-        if not (a <= b <= c <= d):
-            raise ValueError(f"Invalid trapezoidal parameters: a={a}, b={b}, c={c}, d={d}")
-    
-    def membership(self, x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
-        """台形メンバーシップ度計算"""
-        if isinstance(x, np.ndarray):
-            result = np.zeros_like(x)
-            
-            # 左側の傾斜
-            mask1 = (x >= self.a) & (x <= self.b)
-            if self.b != self.a:
-                result[mask1] = (x[mask1] - self.a) / (self.b - self.a)
-            
-            # 平坦部分
-            mask2 = (x >= self.b) & (x <= self.c)
-            result[mask2] = 1.0
-            
-            # 右側の傾斜
-            mask3 = (x >= self.c) & (x <= self.d)
-            if self.d != self.c:
-                result[mask3] = (self.d - x[mask3]) / (self.d - self.c)
-                
-        else:
-            if x <= self.a or x >= self.d:
-                result = 0.0
-            elif self.b <= x <= self.c:
-                result = 1.0
-            elif self.a < x < self.b:
-                result = (x - self.a) / (self.b - self.a) if self.b != self.a else 0.0
-            else:  # self.c < x < self.d
-                result = (self.d - x) / (self.d - self.c) if self.d != self.c else 0.0
+        interest_mean = np.mean(interest_levels)
+        interest_std = np.std(interest_levels)
         
-        # 統計更新
-        if isinstance(result, np.ndarray):
-            active_count = np.sum(result > 0.1)
-            self.activation_count += active_count
-            self.total_membership += np.sum(result)
-        else:
-            if result > 0.1:
-                self.activation_count += 1
-                self.total_membership += result
+        experience_mean = np.mean(experience_levels)
         
-        return np.clip(result, 0, 1)
-    
-    def get_params(self) -> Dict[str, float]:
-        return {'a': self.a, 'b': self.b, 'c': self.c, 'd': self.d}
-
-
-class MembershipFunctionFactory:
-    """メンバーシップ関数ファクトリー"""
-    
-    @staticmethod
-    def create_membership_function(mf_type: MembershipType, name: str, 
-                                 **params) -> MembershipFunction:
-        """メンバーシップ関数を作成"""
+        # 信頼度計算（高い興味と一貫性を重視）
+        confidence = (
+            (interest_mean / 10.0) * 0.5 +  # 平均興味度
+            (1.0 - min(interest_std / 5.0, 1.0)) * 0.3 +  # 一貫性
+            (experience_mean / 10.0) * 0.2  # 経験レベル
+        )
         
-        if mf_type == MembershipType.TRIANGULAR:
-            return TriangularMF(name, params['a'], params['b'], params['c'])
-        elif mf_type == MembershipType.GAUSSIAN:
-            return GaussianMF(name, params['center'], params['sigma'])
-        elif mf_type == MembershipType.TRAPEZOIDAL:
-            return TrapezoidalMF(name, params['a'], params['b'], params['c'], params['d'])
-        else:
-            raise ValueError(f"Unsupported membership function type: {mf_type}")
-    
-    @staticmethod
-    def create_fuzzy_sets(variable_name: str, domain_range: tuple, 
-                         num_sets: int = 3, mf_type: MembershipType = MembershipType.TRIANGULAR,
-                         labels: List[str] = None) -> Dict[str, MembershipFunction]:
-        """変数に対するファジィ集合を自動生成"""
-        
-        min_val, max_val = domain_range
-        if labels is None:
-            if num_sets == 3:
-                labels = ['Low', 'Medium', 'High']
-            elif num_sets == 5:
-                labels = ['Very Low', 'Low', 'Medium', 'High', 'Very High']
-            else:
-                labels = [f'Set_{i+1}' for i in range(num_sets)]
-        
-        fuzzy_sets = {}
-        
-        if mf_type == MembershipType.TRIANGULAR:
-            # 三角形メンバーシップ関数の均等分割
-            step = (max_val - min_val) / (num_sets - 1)
-            overlap = step * 0.5  # 重複度
-            
-            for i, label in enumerate(labels[:num_sets]):
-                center = min_val + i * step
-                left = center - overlap
-                right = center + overlap
-                
-                # 境界調整
-                if i == 0:
-                    left = min_val
-                if i == num_sets - 1:
-                    right = max_val
-                
-                fuzzy_sets[label] = TriangularMF(
-                    f"{variable_name}_{label}",
-                    left, center, right
-                )
-        
-        elif mf_type == MembershipType.GAUSSIAN:
-            # ガウシアンメンバーシップ関数
-            step = (max_val - min_val) / (num_sets - 1)
-            sigma = step * 0.3  # 標準偏差
-            
-            for i, label in enumerate(labels[:num_sets]):
-                center = min_val + i * step
-                fuzzy_sets[label] = GaussianMF(
-                    f"{variable_name}_{label}",
-                    center, sigma
-                )
-        
-        return fuzzy_sets
-    
-    @staticmethod
-    def create_adaptive_fuzzy_sets(data: np.ndarray, variable_name: str,
-                                 num_sets: int = 3, labels: List[str] = None) -> Dict[str, MembershipFunction]:
-        """データに基づく適応的ファジィ集合生成"""
-        
-        if labels is None:
-            labels = ['Low', 'Medium', 'High'] if num_sets == 3 else [f'Set_{i+1}' for i in range(num_sets)]
-        
-        # データの分位点に基づいてメンバーシップ関数を配置
-        percentiles = np.linspace(0, 100, num_sets + 2)[1:-1]  # 境界を除く
-        split_points = np.percentile(data, percentiles)
-        
-        min_val, max_val = data.min(), data.max()
-        fuzzy_sets = {}
-        
-        # 三角形メンバーシップ関数で構築
-        for i, label in enumerate(labels[:num_sets]):
-            if i == 0:
-                # 最初の集合
-                left = min_val
-                center = split_points[0] if len(split_points) > 0 else min_val
-                right = split_points[1] if len(split_points) > 1 else max_val
-            elif i == num_sets - 1:
-                # 最後の集合
-                left = split_points[i-1] if i-1 < len(split_points) else min_val
-                center = split_points[i] if i < len(split_points) else max_val
-                right = max_val
-            else:
-                # 中間の集合
-                left = split_points[i-1]
-                center = split_points[i]
-                right = split_points[i+1] if i+1 < len(split_points) else max_val
-            
-            fuzzy_sets[label] = TriangularMF(
-                f"{variable_name}_{label}",
-                left, center, right
-            )
-        
-        return fuzzy_sets
+        return min(1.0, max(0.0, confidence))

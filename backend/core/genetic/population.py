@@ -1,679 +1,436 @@
-"""
-集団管理 - core/genetic/population.py
-遺伝的アルゴリズムの個体集団を管理するクラス
-"""
+# core/genetic/population.py - 遺伝的アルゴリズムの集団管理
 
-from typing import List, Dict, Any, Optional, Callable, Tuple
-import numpy as np
 import random
+import numpy as np
+from typing import List, Dict, Tuple, Optional, Any, Callable
 from dataclasses import dataclass
-from enum import Enum
+from collections import defaultdict
+import statistics
 
-from .individual import GeneticIndividual, IndividualType
-
+from core.genetic.individual import Individual
 
 @dataclass
-class PopulationConfig:
-    """集団設定"""
-    population_size: int = 30
-    elite_size: int = 3
-    tournament_size: int = 3
-    max_generations: int = 20
-    convergence_threshold: float = 0.001
-    diversity_maintenance: bool = True
-    aging_enabled: bool = False
-    max_age: int = 10
-
-
-class SelectionMethod(Enum):
-    """選択方法"""
-    TOURNAMENT = "tournament"
-    ROULETTE = "roulette"
-    RANK = "rank"
-    ELITE = "elite"
-
-
-class ReplacementStrategy(Enum):
-    """世代交代戦略"""
-    GENERATIONAL = "generational"
-    STEADY_STATE = "steady_state"
-    ELITE_REPLACEMENT = "elite_replacement"
-    TOURNAMENT_REPLACEMENT = "tournament_replacement"
-
+class PopulationStats:
+    """集団統計情報"""
+    generation: int
+    population_size: int
+    best_fitness: float
+    worst_fitness: float
+    average_fitness: float
+    median_fitness: float
+    fitness_std: float
+    diversity_score: float
+    convergence_rate: float
 
 class Population:
-    """遺伝的アルゴリズムの集団"""
+    """遺伝的アルゴリズムの集団クラス"""
     
-    def __init__(self, *args, **kwargs):
-        """
-        柔軟な初期化：複数の呼び出しパターンに対応
-        
-        パターン1: Population(config)
-        パターン2: Population(population_size, individual_type) 
-        パターン3: Population() (デフォルト)
-        """
-        
-        # 引数解析
-        if len(args) == 0:
-            # デフォルト初期化
-            self.config = kwargs.get('config', PopulationConfig())
-        elif len(args) == 1:
-            # 設定オブジェクトまたは集団サイズ
-            if hasattr(args[0], 'population_size'):  # PopulationConfig オブジェクト
-                self.config = args[0]
-            else:  # 集団サイズ（整数）
-                self.config = PopulationConfig(population_size=int(args[0]))
-        elif len(args) == 2:
-            # (population_size, individual_type) の形式
-            population_size = int(args[0])
-            individual_type = args[1]  # 使用しないが受け入れる
-            self.config = PopulationConfig(population_size=population_size)
-        else:
-            # それ以外はエラー
-            raise ValueError(f"Population() takes 0-2 positional arguments but {len(args)} were given")
-        
-        # キーワード引数で設定を上書き
-        if 'config' in kwargs:
-            self.config = kwargs['config']
-        
-        # インスタンス変数初期化
-        self.individuals: List[GeneticIndividual] = []
+    def __init__(self, population_size: int):
+        self.population_size = population_size
+        self.individuals: List[Individual] = []
         self.generation = 0
-        self.best_individual: Optional[GeneticIndividual] = None
-        self.fitness_history: List[float] = []
-        self.diversity_history: List[float] = []
+        self.best_individual: Optional[Individual] = None
+        self.statistics_history: List[PopulationStats] = []
         
-        # 統計情報
-        self.total_evaluations = 0
-        self.stagnation_count = 0
-        self.last_improvement_generation = 0
-    
-    def initialize_random(self, genome_length: int, feature_names: List[str],
-                         individual_type: IndividualType = IndividualType.HYBRID,
-                         max_depth: int = 6, min_samples_leaf: int = 5):
-        """ランダム初期化（拡張版）"""
+        # 集団管理パラメータ
+        self.elite_size = max(1, population_size // 10)  # エリートサイズ（10%）
+        self.tournament_size = 3                         # トーナメントサイズ
         
-        print(f"集団ランダム初期化: サイズ={self.config.population_size}")
+    def initialize_random(self, research_fields: List[str], 
+                         evaluation_criteria: List[str]) -> None:
+        """ランダムに集団を初期化"""
         
         self.individuals = []
         
-        for i in range(self.config.population_size):
-            individual = GeneticIndividual(individual_type)
-            individual.initialize_random(genome_length, feature_names, max_depth, min_samples_leaf)
+        for i in range(self.population_size):
+            individual = Individual()
+            individual.initialize_random(research_fields, evaluation_criteria)
             individual.generation = 0
             self.individuals.append(individual)
         
-        print(f"初期集団作成完了: {len(self.individuals)}個体")
+        print(f"🎲 ランダム集団初期化完了: {self.population_size}個体")
     
-    def evaluate_fitness(self, training_data: np.ndarray, 
-                        feature_names: List[str], target_name: str):
-        """集団の適応度評価"""
+    def initialize_with_seeding(self, research_fields: List[str],
+                               evaluation_criteria: List[str],
+                               student_profile: 'StudentProfile',
+                               seed_ratio: float = 0.3) -> None:
+        """学生プロフィールを考慮した集団初期化"""
         
-        print(f"世代{self.generation}の適応度評価中...")
+        self.individuals = []
+        seed_count = int(self.population_size * seed_ratio)
         
-        for individual in self.individuals:
-            individual.evaluate_fitness(training_data, feature_names, target_name)
-            self.total_evaluations += 1
+        # シード個体（学生プロフィールベース）
+        for i in range(seed_count):
+            individual = Individual()
+            individual.initialize_from_profile(student_profile, research_fields, evaluation_criteria)
+            individual.generation = 0
+            self.individuals.append(individual)
         
-        # 適応度でソート
-        self.individuals.sort(key=lambda x: x.fitness, reverse=True)
+        # ランダム個体
+        for i in range(seed_count, self.population_size):
+            individual = Individual()
+            individual.initialize_random(research_fields, evaluation_criteria)
+            individual.generation = 0
+            self.individuals.append(individual)
         
-        # 最良個体更新
-        current_best = self.individuals[0]
-        if self.best_individual is None or current_best.fitness > self.best_individual.fitness:
-            self.best_individual = current_best.clone()
-            self.last_improvement_generation = self.generation
-            self.stagnation_count = 0
-        else:
-            self.stagnation_count += 1
-        
-        # 統計更新
-        fitness_values = [ind.fitness for ind in self.individuals]
-        avg_fitness = np.mean(fitness_values)
-        self.fitness_history.append(avg_fitness)
-        
-        # 多様性計算
-        diversity = self._calculate_diversity()
-        self.diversity_history.append(diversity)
-        
-        print(f"  最良適応度: {current_best.fitness:.4f}")
-        print(f"  平均適応度: {avg_fitness:.4f}")
-        print(f"  多様性: {diversity:.4f}")
+        print(f"🌱 シード集団初期化完了: シード{seed_count}個体 + ランダム{self.population_size - seed_count}個体")
     
-    def evaluate_population(self, training_data: np.ndarray, test_data: np.ndarray,
-                          feature_names: List[str], target_name: str,
-                          fitness_weights: Dict[str, float] = None) -> Dict[str, Any]:
-        """集団評価（拡張版）"""
-        
-        evaluated_count = 0
+    def evaluate_population(self, fitness_function: Callable[[Individual], float]) -> None:
+        """集団全体の適応度を評価"""
         
         for individual in self.individuals:
             if individual.fitness == 0.0:  # 未評価の個体のみ
-                individual.evaluate_fitness(training_data, feature_names, target_name)
-                evaluated_count += 1
-                self.total_evaluations += 1
+                fitness = fitness_function(individual)
+                individual.update_fitness(fitness)
         
-        # ソートと統計更新
-        self.individuals.sort(key=lambda x: x.fitness, reverse=True)
+        # 最良個体を更新
         self._update_best_individual()
+        
+        # 統計情報を更新
         self._update_statistics()
-        
-        return {
-            'evaluated_count': evaluated_count,
-            'best_fitness': self.best_individual.fitness if self.best_individual else 0.0,
-            'average_fitness': np.mean([ind.fitness for ind in self.individuals]),
-            'diversity': self.diversity_history[-1] if self.diversity_history else 0.0
-        }
     
-    def _update_best_individual(self):
-        """最良個体の更新"""
-        
+    def _update_best_individual(self) -> None:
+        """最良個体を更新"""
         if not self.individuals:
             return
         
-        current_best = self.individuals[0]
+        current_best = max(self.individuals, key=lambda x: x.fitness)
+        
         if self.best_individual is None or current_best.fitness > self.best_individual.fitness:
             self.best_individual = current_best.clone()
-            self.last_improvement_generation = self.generation
-            self.stagnation_count = 0
-        else:
-            self.stagnation_count += 1
+            print(f"🏆 新しい最良個体: {self.best_individual.fitness:.4f} (世代{self.generation})")
     
-    def _update_statistics(self):
-        """統計情報の更新"""
-        
+    def _update_statistics(self) -> None:
+        """統計情報を更新"""
         if not self.individuals:
             return
         
         fitness_values = [ind.fitness for ind in self.individuals]
-        avg_fitness = np.mean(fitness_values)
-        self.fitness_history.append(avg_fitness)
         
-        diversity = self._calculate_diversity()
-        self.diversity_history.append(diversity)
+        stats = PopulationStats(
+            generation=self.generation,
+            population_size=len(self.individuals),
+            best_fitness=max(fitness_values),
+            worst_fitness=min(fitness_values),
+            average_fitness=statistics.mean(fitness_values),
+            median_fitness=statistics.median(fitness_values),
+            fitness_std=statistics.stdev(fitness_values) if len(fitness_values) > 1 else 0,
+            diversity_score=self._calculate_population_diversity(),
+            convergence_rate=self._calculate_convergence_rate()
+        )
+        
+        self.statistics_history.append(stats)
     
-    def select_parents(self, selection_method: SelectionMethod = SelectionMethod.TOURNAMENT,
-                      tournament_size: int = None, num_parents: int = None) -> List[GeneticIndividual]:
-        """
-        親個体選択（拡張版）
-        
-        Args:
-            selection_method: 選択方法
-            tournament_size: トーナメントサイズ（evolution.pyから渡される）
-            num_parents: 選択する親個体数
-        
-        Returns:
-            選択された親個体のリスト
-        """
-        
-        # 引数の調整
-        if num_parents is None:
-            num_parents = self.config.population_size - self.config.elite_size
-        
-        if tournament_size is not None:
-            # tournament_size が指定された場合は設定を一時的に更新
-            original_tournament_size = self.config.tournament_size
-            self.config.tournament_size = tournament_size
-        
-        parents = []
-        
-        try:
-            if selection_method == SelectionMethod.TOURNAMENT:
-                parents = self._tournament_selection(num_parents)
-            elif selection_method == SelectionMethod.ROULETTE:
-                parents = self._roulette_selection(num_parents)
-            elif selection_method == SelectionMethod.RANK:
-                parents = self._rank_selection(num_parents)
-            else:
-                # デフォルトはトーナメント選択
-                parents = self._tournament_selection(num_parents)
-        finally:
-            # tournament_size を元に戻す（指定されていた場合）
-            if tournament_size is not None:
-                self.config.tournament_size = original_tournament_size
-        
-        return parents
-    
-    def _tournament_selection(self, num_parents: int) -> List[GeneticIndividual]:
-        """トーナメント選択"""
-        
-        parents = []
-        
-        for _ in range(num_parents):
-            tournament = random.sample(self.individuals, 
-                                     min(self.config.tournament_size, len(self.individuals)))
-            winner = max(tournament, key=lambda x: x.fitness)
-            parents.append(winner)
-        
-        return parents
-    
-    def _roulette_selection(self, num_parents: int) -> List[GeneticIndividual]:
-        """ルーレット選択"""
-        
-        # 適応度を正の値に調整
-        min_fitness = min(ind.fitness for ind in self.individuals)
-        if min_fitness < 0:
-            adjusted_fitness = [ind.fitness - min_fitness + 0.1 for ind in self.individuals]
-        else:
-            adjusted_fitness = [ind.fitness for ind in self.individuals]
-        
-        total_fitness = sum(adjusted_fitness)
-        if total_fitness == 0:
-            return random.sample(self.individuals, num_parents)
-        
-        parents = []
-        
-        for _ in range(num_parents):
-            spin = random.uniform(0, total_fitness)
-            cumulative = 0
-            
-            for i, fitness in enumerate(adjusted_fitness):
-                cumulative += fitness
-                if cumulative >= spin:
-                    parents.append(self.individuals[i])
-                    break
-        
-        return parents
-    
-    def _rank_selection(self, num_parents: int) -> List[GeneticIndividual]:
-        """ランク選択"""
-        
-        # 既にソートされているのでランクを利用
-        ranks = list(range(len(self.individuals), 0, -1))  # 降順ランク
-        total_rank = sum(ranks)
-        
-        parents = []
-        
-        for _ in range(num_parents):
-            spin = random.uniform(0, total_rank)
-            cumulative = 0
-            
-            for i, rank in enumerate(ranks):
-                cumulative += rank
-                if cumulative >= spin:
-                    parents.append(self.individuals[i])
-                    break
-        
-        return parents
-    
-    def create_next_generation(self, parents: List[GeneticIndividual],
-                             crossover_rate: float = 0.8,
-                             mutation_rate: float = 0.1) -> List[GeneticIndividual]:
-        """次世代作成"""
-        
-        next_generation = []
-        
-        # エリート保存
-        elite_count = min(self.config.elite_size, len(self.individuals))
-        for i in range(elite_count):
-            elite = self.individuals[i].clone()
-            elite.generation = self.generation + 1
-            next_generation.append(elite)
-        
-        # 交叉と突然変異で残りを生成
-        while len(next_generation) < self.config.population_size:
-            # 親選択
-            parent1 = random.choice(parents)
-            parent2 = random.choice(parents)
-            
-            # 交叉
-            if random.random() < crossover_rate and parent1 != parent2:
-                child1, child2 = parent1.crossover(parent2, crossover_rate)
-            else:
-                child1 = parent1.clone()
-                child2 = parent2.clone()
-            
-            # 突然変異
-            child1 = child1.mutate(mutation_rate)
-            child2 = child2.mutate(mutation_rate)
-            
-            # 次世代に追加
-            child1.generation = self.generation + 1
-            child2.generation = self.generation + 1
-            
-            next_generation.append(child1)
-            if len(next_generation) < self.config.population_size:
-                next_generation.append(child2)
-        
-        # サイズ調整
-        next_generation = next_generation[:self.config.population_size]
-        
-        return next_generation
-    
-    def create_offspring(self, parents: List[GeneticIndividual],
-                        crossover_rate: float = 0.8,
-                        mutation_rate: float = 0.1) -> List[GeneticIndividual]:
-        """子個体生成"""
-        
-        offspring = []
-        offspring_count = self.config.population_size - self.config.elite_size
-        
-        for _ in range(0, offspring_count, 2):
-            # 親選択
-            parent1 = random.choice(parents)
-            parent2 = random.choice(parents)
-            
-            # 交叉
-            if random.random() < crossover_rate and parent1 != parent2:
-                child1, child2 = parent1.crossover(parent2, crossover_rate)
-            else:
-                child1 = parent1.clone()
-                child2 = parent2.clone()
-            
-            # 突然変異
-            child1 = child1.mutate(mutation_rate)
-            child2 = child2.mutate(mutation_rate)
-            
-            # 世代設定
-            child1.generation = self.generation + 1
-            child2.generation = self.generation + 1
-            
-            offspring.extend([child1, child2])
-        
-        return offspring[:offspring_count]
-    
-    def replace_population(self, offspring: List[GeneticIndividual],
-                          strategy: ReplacementStrategy = ReplacementStrategy.ELITE_REPLACEMENT,
-                          elite_count: int = None):
-        """世代交代"""
-        
-        if elite_count is None:
-            elite_count = self.config.elite_size
-        
-        if strategy == ReplacementStrategy.GENERATIONAL:
-            # 全世代交代
-            self.individuals = offspring
-        elif strategy == ReplacementStrategy.ELITE_REPLACEMENT:
-            # エリート保存世代交代
-            new_population = []
-            
-            # エリート保存
-            for i in range(min(elite_count, len(self.individuals))):
-                elite = self.individuals[i].clone()
-                elite.generation = self.generation + 1
-                new_population.append(elite)
-            
-            # 残りを子個体で置換
-            remaining_count = self.config.population_size - len(new_population)
-            new_population.extend(offspring[:remaining_count])
-            
-            self.individuals = new_population
-        elif strategy == ReplacementStrategy.STEADY_STATE:
-            # 定常状態交代（最悪個体を置換）
-            sorted_population = sorted(self.individuals, key=lambda x: x.fitness)
-            worst_count = min(len(offspring), len(sorted_population))
-            
-            for i in range(worst_count):
-                self.individuals[self.individuals.index(sorted_population[i])] = offspring[i]
-        
-        self.generation += 1
-    
-    def advance_generation(self, new_individuals: List[GeneticIndividual]):
-        """世代進行"""
-        
-        self.individuals = new_individuals
-        self.generation += 1
-        
-        # 年齢更新（有効な場合）
-        if self.config.aging_enabled:
-            for individual in self.individuals:
-                individual.age += 1
-        
-        # 多様性維持（有効な場合）
-        if self.config.diversity_maintenance:
-            self._maintain_diversity()
-    
-    def _maintain_diversity(self):
-        """多様性維持"""
-        
-        # 類似個体の検出と置換
-        similarity_threshold = 0.9
-        replaced_count = 0
-        
-        for i in range(len(self.individuals)):
-            for j in range(i + 1, len(self.individuals)):
-                similarity = self._calculate_similarity(self.individuals[i], self.individuals[j])
-                
-                if similarity > similarity_threshold:
-                    # より適応度の低い個体をランダム個体で置換
-                    if self.individuals[i].fitness < self.individuals[j].fitness:
-                        self.individuals[i] = self._create_random_individual()
-                        replaced_count += 1
-                    else:
-                        self.individuals[j] = self._create_random_individual()
-                        replaced_count += 1
-                    
-                    if replaced_count >= 3:  # 過度な置換を防ぐ
-                        break
-            
-            if replaced_count >= 3:
-                break
-        
-        if replaced_count > 0:
-            print(f"  多様性維持: {replaced_count}個体を置換")
-    
-    def maintain_diversity(self, injection_rate: float = 0.1) -> int:
-        """多様性維持（注入率指定版）"""
-        
-        diversity = self._calculate_diversity()
-        if diversity > 0.3:  # 十分な多様性がある
-            return 0
-        
-        # 注入する個体数
-        injection_count = max(1, int(self.config.population_size * injection_rate))
-        
-        # 最悪個体を置換
-        sorted_individuals = sorted(self.individuals, key=lambda x: x.fitness)
-        
-        replaced_count = 0
-        for i in range(min(injection_count, len(sorted_individuals))):
-            new_individual = self._create_random_individual()
-            # 最悪個体を見つけて置換
-            worst_idx = self.individuals.index(sorted_individuals[i])
-            self.individuals[worst_idx] = new_individual
-            replaced_count += 1
-        
-        return replaced_count
-    
-    def _create_random_individual(self) -> GeneticIndividual:
-        """ランダム個体作成"""
-        
-        individual = GeneticIndividual(IndividualType.HYBRID)
-        # 既存の個体から設定を推定
-        if self.individuals:
-            example = self.individuals[0]
-            if example.genome is not None:
-                genome_length = len(example.genome)
-                feature_names = list(example.tree_genes.get('membership_params', {}).keys())
-                if not feature_names:
-                    feature_names = ['feature_1', 'feature_2', 'feature_3']
-                individual.initialize_random(genome_length, feature_names)
-        else:
-            # フォールバック：デフォルト設定
-            default_features = ['research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice']
-            individual.initialize_random(10, default_features)
-        
-        individual.generation = self.generation
-        return individual
-    
-    def _calculate_similarity(self, ind1: GeneticIndividual, ind2: GeneticIndividual) -> float:
-        """個体間類似度計算"""
-        
-        if ind1.genome is None or ind2.genome is None:
-            return 0.0
-        
-        try:
-            # ゲノム類似度（コサイン類似度）
-            dot_product = np.dot(ind1.genome, ind2.genome)
-            norm1 = np.linalg.norm(ind1.genome)
-            norm2 = np.linalg.norm(ind2.genome)
-            
-            if norm1 == 0 or norm2 == 0:
-                return 0.0
-            
-            return dot_product / (norm1 * norm2)
-        except:
-            return 0.0
-    
-    def _calculate_diversity(self) -> float:
-        """集団多様性計算"""
-        
+    def _calculate_population_diversity(self) -> float:
+        """集団の多様性を計算"""
         if len(self.individuals) < 2:
             return 0.0
         
-        total_similarity = 0.0
-        count = 0
+        diversity_sum = 0.0
+        comparison_count = 0
         
+        # すべてのペアの多様性を計算
         for i in range(len(self.individuals)):
             for j in range(i + 1, len(self.individuals)):
-                similarity = self._calculate_similarity(self.individuals[i], self.individuals[j])
-                total_similarity += similarity
-                count += 1
+                diversity = self.individuals[i].calculate_diversity(self.individuals[j])
+                diversity_sum += diversity
+                comparison_count += 1
         
-        if count == 0:
-            return 1.0
-        
-        avg_similarity = total_similarity / count
-        diversity = 1.0 - avg_similarity  # 類似度が低いほど多様性が高い
-        
-        return max(0.0, min(1.0, diversity))
+        return diversity_sum / comparison_count if comparison_count > 0 else 0.0
     
-    def is_low_diversity(self, threshold: float = 0.2) -> bool:
-        """多様性の低さ判定"""
+    def _calculate_convergence_rate(self) -> float:
+        """収束率を計算"""
+        if len(self.statistics_history) < 2:
+            return 0.0
         
-        current_diversity = self._calculate_diversity()
-        return current_diversity < threshold
+        # 最近5世代の最良適応度の変化率
+        recent_stats = self.statistics_history[-5:]
+        if len(recent_stats) < 2:
+            return 0.0
+        
+        fitness_changes = []
+        for i in range(1, len(recent_stats)):
+            change = recent_stats[i].best_fitness - recent_stats[i-1].best_fitness
+            fitness_changes.append(change)
+        
+        return statistics.mean(fitness_changes)
     
-    def is_converged(self) -> bool:
+    def selection_tournament(self, tournament_size: Optional[int] = None) -> List[Individual]:
+        """トーナメント選択"""
+        if tournament_size is None:
+            tournament_size = self.tournament_size
+        
+        selected = []
+        
+        for _ in range(self.population_size):
+            # トーナメント参加者をランダム選択
+            tournament = random.sample(self.individuals, min(tournament_size, len(self.individuals)))
+            
+            # 最良個体を選択
+            winner = max(tournament, key=lambda x: x.fitness)
+            selected.append(winner)
+        
+        return selected
+    
+    def selection_roulette(self) -> List[Individual]:
+        """ルーレット選択"""
+        fitness_values = [ind.fitness for ind in self.individuals]
+        
+        # 負の適応度を0に調整
+        min_fitness = min(fitness_values)
+        if min_fitness < 0:
+            adjusted_fitness = [f - min_fitness + 0.1 for f in fitness_values]
+        else:
+            adjusted_fitness = [f + 0.1 for f in fitness_values]  # 最低値0.1を保証
+        
+        total_fitness = sum(adjusted_fitness)
+        
+        if total_fitness == 0:
+            # 全個体の適応度が0の場合はランダム選択
+            return random.choices(self.individuals, k=self.population_size)
+        
+        # 確率に基づく選択
+        probabilities = [f / total_fitness for f in adjusted_fitness]
+        selected = random.choices(self.individuals, weights=probabilities, k=self.population_size)
+        
+        return selected
+    
+    def selection_rank(self) -> List[Individual]:
+        """ランク選択"""
+        # 適応度でソート
+        sorted_individuals = sorted(self.individuals, key=lambda x: x.fitness)
+        
+        # ランクに基づく重み（線形ランキング）
+        ranks = list(range(1, len(sorted_individuals) + 1))
+        total_rank = sum(ranks)
+        
+        probabilities = [rank / total_rank for rank in ranks]
+        
+        selected = random.choices(sorted_individuals, weights=probabilities, k=self.population_size)
+        
+        return selected
+    
+    def crossover_population(self, selected: List[Individual], 
+                           crossover_rate: float = 0.8) -> List[Individual]:
+        """集団全体での交叉"""
+        offspring = []
+        
+        # エリートを保存
+        elite = self.get_elite()
+        offspring.extend([ind.clone() for ind in elite])
+        
+        # 残りを交叉で生成
+        while len(offspring) < self.population_size:
+            parent1, parent2 = random.sample(selected, 2)
+            
+            if random.random() < crossover_rate:
+                child1, child2 = parent1.crossover_with(parent2, crossover_rate)
+            else:
+                child1, child2 = parent1.clone(), parent2.clone()
+            
+            offspring.extend([child1, child2])
+        
+        # サイズ調整
+        return offspring[:self.population_size]
+    
+    def mutate_population(self, offspring: List[Individual], 
+                         mutation_rate: float = 0.1) -> List[Individual]:
+        """集団全体での変異"""
+        
+        # エリートは変異しない
+        elite_count = self.elite_size
+        
+        for i in range(elite_count, len(offspring)):
+            offspring[i].mutate(mutation_rate)
+        
+        return offspring
+    
+    def get_elite(self) -> List[Individual]:
+        """エリート個体を取得"""
+        sorted_individuals = sorted(self.individuals, key=lambda x: x.fitness, reverse=True)
+        return sorted_individuals[:self.elite_size]
+    
+    def replace_worst_with_immigrants(self, immigrant_ratio: float = 0.05,
+                                    research_fields: List[str] = None,
+                                    evaluation_criteria: List[str] = None) -> None:
+        """最悪個体を移民で置換（多様性維持）"""
+        
+        if research_fields is None or evaluation_criteria is None:
+            return
+        
+        immigrant_count = max(1, int(self.population_size * immigrant_ratio))
+        
+        # 最悪個体を特定
+        sorted_individuals = sorted(self.individuals, key=lambda x: x.fitness)
+        worst_individuals = sorted_individuals[:immigrant_count]
+        
+        # 移民個体を生成
+        immigrants = []
+        for _ in range(immigrant_count):
+            immigrant = Individual()
+            immigrant.initialize_random(research_fields, evaluation_criteria)
+            immigrant.generation = self.generation
+            immigrants.append(immigrant)
+        
+        # 置換
+        for i, worst_ind in enumerate(worst_individuals):
+            idx = self.individuals.index(worst_ind)
+            self.individuals[idx] = immigrants[i]
+        
+        print(f"🌍 移民導入: {immigrant_count}個体を置換")
+    
+    def advance_generation(self, new_population: List[Individual]) -> None:
+        """次世代に進む"""
+        self.individuals = new_population
+        self.generation += 1
+        
+        # 世代番号を更新
+        for individual in self.individuals:
+            if individual.generation < self.generation:
+                individual.generation = self.generation
+    
+    def is_converged(self, convergence_threshold: float = 1e-6,
+                    stagnation_generations: int = 10) -> bool:
         """収束判定"""
         
-        # 停滞回数による判定
-        if self.stagnation_count >= 5:
-            return True
+        if len(self.statistics_history) < stagnation_generations:
+            return False
         
-        # 適応度履歴による判定
-        if len(self.fitness_history) >= 5:
-            recent_fitness = self.fitness_history[-5:]
-            fitness_variance = np.var(recent_fitness)
-            
-            if fitness_variance < self.config.convergence_threshold:
-                return True
+        # 最近の世代での適応度変化をチェック
+        recent_best_fitness = [stats.best_fitness for stats in self.statistics_history[-stagnation_generations:]]
         
-        # 多様性による判定
-        if len(self.diversity_history) >= 3:
-            recent_diversity = self.diversity_history[-3:]
-            if all(d < 0.1 for d in recent_diversity):
-                return True
+        # 適応度の標準偏差が閾値以下なら収束
+        if len(recent_best_fitness) > 1:
+            fitness_std = statistics.stdev(recent_best_fitness)
+            return fitness_std < convergence_threshold
         
         return False
     
-    def get_statistics(self) -> Dict[str, Any]:
-        """集団統計情報"""
+    def get_diversity_statistics(self) -> Dict[str, float]:
+        """多様性統計を取得"""
         
-        if not self.individuals:
-            return {'error': 'No individuals in population'}
+        if len(self.individuals) < 2:
+            return {"diversity": 0.0, "avg_distance": 0.0, "cluster_count": 1}
         
-        fitness_values = [ind.fitness for ind in self.individuals]
+        # 平均遺伝的距離
+        total_distance = 0.0
+        comparison_count = 0
+        
+        for i in range(len(self.individuals)):
+            for j in range(i + 1, len(self.individuals)):
+                distance = self.individuals[i].distance_to(self.individuals[j])
+                total_distance += distance
+                comparison_count += 1
+        
+        avg_distance = total_distance / comparison_count if comparison_count > 0 else 0.0
+        
+        # クラスター数の推定（類似個体のグループ数）
+        clusters = self._estimate_clusters()
         
         return {
-            'generation': self.generation,
-            'population_size': len(self.individuals),
-            'best_fitness': max(fitness_values),
-            'worst_fitness': min(fitness_values),
-            'average_fitness': np.mean(fitness_values),
-            'fitness_std': np.std(fitness_values),
-            'diversity': self.diversity_history[-1] if self.diversity_history else 0.0,
-            'total_evaluations': self.total_evaluations,
-            'stagnation_count': self.stagnation_count,
-            'last_improvement_generation': self.last_improvement_generation,
-            'convergence_status': self.is_converged(),
-            'elite_fitness': [ind.fitness for ind in self.individuals[:self.config.elite_size]],
-            'fitness_components': {
-                'accuracy': np.mean([ind.fitness_components.accuracy for ind in self.individuals]),
-                'complexity': np.mean([ind.fitness_components.complexity for ind in self.individuals]),
-                'interpretability': np.mean([ind.fitness_components.interpretability for ind in self.individuals]),
-                'generalization': np.mean([ind.fitness_components.generalization for ind in self.individuals])
-            }
+            "diversity": self._calculate_population_diversity(),
+            "avg_distance": avg_distance,
+            "cluster_count": len(clusters),
+            "largest_cluster_size": max(len(cluster) for cluster in clusters) if clusters else 0
         }
     
-    def get_diversity_statistics(self) -> Dict[str, Any]:
-        """多様性統計情報"""
+    def _estimate_clusters(self, similarity_threshold: float = 0.1) -> List[List[Individual]]:
+        """類似個体のクラスターを推定"""
         
-        return {
-            'current_diversity': self._calculate_diversity(),
-            'diversity_history': self.diversity_history,
-            'is_low_diversity': self.is_low_diversity(),
-            'average_diversity': np.mean(self.diversity_history) if self.diversity_history else 0.0,
-            'diversity_trend': 'increasing' if len(self.diversity_history) >= 2 and 
-                             self.diversity_history[-1] > self.diversity_history[-2] else 'decreasing'
-        }
+        clusters = []
+        unassigned = self.individuals[:]
+        
+        while unassigned:
+            # 新しいクラスター開始
+            cluster = [unassigned.pop(0)]
+            
+            # 類似個体を同じクラスターに追加
+            i = 0
+            while i < len(unassigned):
+                is_similar = any(
+                    cluster_member.is_similar_to(unassigned[i], similarity_threshold)
+                    for cluster_member in cluster
+                )
+                
+                if is_similar:
+                    cluster.append(unassigned.pop(i))
+                else:
+                    i += 1
+            
+            clusters.append(cluster)
+        
+        return clusters
     
-    def export_population(self) -> Dict[str, Any]:
-        """集団のエクスポート"""
+    def get_population_summary(self) -> Dict[str, Any]:
+        """集団の統計サマリーを取得"""
+        
+        if not self.statistics_history:
+            return {"message": "統計データがありません"}
+        
+        current_stats = self.statistics_history[-1]
+        diversity_stats = self.get_diversity_statistics()
+        
+        # 適応度推移
+        fitness_trend = [stats.best_fitness for stats in self.statistics_history[-10:]]
+        
+        # エリート分析
+        elite = self.get_elite()
+        elite_analysis = {
+            "count": len(elite),
+            "avg_fitness": statistics.mean([ind.fitness for ind in elite]),
+            "fitness_range": max([ind.fitness for ind in elite]) - min([ind.fitness for ind in elite]) if len(elite) > 1 else 0
+        }
         
         return {
-            'config': {
-                'population_size': self.config.population_size,
-                'elite_size': self.config.elite_size,
-                'tournament_size': self.config.tournament_size,
-                'max_generations': self.config.max_generations
+            "generation": current_stats.generation,
+            "population_size": current_stats.population_size,
+            "fitness": {
+                "best": current_stats.best_fitness,
+                "worst": current_stats.worst_fitness,
+                "average": current_stats.average_fitness,
+                "median": current_stats.median_fitness,
+                "std": current_stats.fitness_std
             },
-            'generation': self.generation,
-            'individuals': [ind.to_dict() for ind in self.individuals],
-            'best_individual': self.best_individual.to_dict() if self.best_individual else None,
-            'fitness_history': self.fitness_history,
-            'diversity_history': self.diversity_history,
-            'statistics': self.get_statistics()
+            "diversity": diversity_stats,
+            "convergence": {
+                "rate": current_stats.convergence_rate,
+                "is_converged": self.is_converged()
+            },
+            "elite": elite_analysis,
+            "fitness_trend": fitness_trend
         }
     
-    @classmethod
-    def import_population(cls, data: Dict[str, Any]) -> 'Population':
-        """集団のインポート"""
+    def export_population_data(self) -> Dict[str, Any]:
+        """集団データをエクスポート"""
         
-        config_data = data.get('config', {})
-        config = PopulationConfig(
-            population_size=config_data.get('population_size', 30),
-            elite_size=config_data.get('elite_size', 3),
-            tournament_size=config_data.get('tournament_size', 3),
-            max_generations=config_data.get('max_generations', 20)
-        )
-        
-        population = cls(config)
-        population.generation = data.get('generation', 0)
-        
-        # 個体復元
-        individuals_data = data.get('individuals', [])
-        population.individuals = [
-            GeneticIndividual.from_dict(ind_data) 
-            for ind_data in individuals_data
-        ]
-        
-        # 最良個体復元
-        best_data = data.get('best_individual')
-        if best_data:
-            population.best_individual = GeneticIndividual.from_dict(best_data)
-        
-        # 履歴復元
-        population.fitness_history = data.get('fitness_history', [])
-        population.diversity_history = data.get('diversity_history', [])
-        
-        return population
+        return {
+            "generation": self.generation,
+            "population_size": self.population_size,
+            "individuals": [ind.to_dict() for ind in self.individuals],
+            "best_individual": self.best_individual.to_dict() if self.best_individual else None,
+            "statistics_history": [
+                {
+                    "generation": stats.generation,
+                    "best_fitness": stats.best_fitness,
+                    "average_fitness": stats.average_fitness,
+                    "diversity_score": stats.diversity_score
+                }
+                for stats in self.statistics_history
+            ]
+        }
+    
+    def clear_statistics(self) -> None:
+        """統計履歴をクリア"""
+        self.statistics_history.clear()
     
     def __len__(self) -> int:
-        """集団サイズを返す"""
         return len(self.individuals)
     
-    def __getitem__(self, index: int) -> GeneticIndividual:
-        """インデックスアクセス"""
+    def __getitem__(self, index: int) -> Individual:
         return self.individuals[index]
     
     def __iter__(self):
-        """イテレータ"""
         return iter(self.individuals)
     
-    def __repr__(self) -> str:
-        """文字列表現"""
-        best_fitness = self.best_individual.fitness if self.best_individual else 0.0
-        return (f"Population(size={len(self.individuals)}, "
-                f"generation={self.generation}, "
-                f"best_fitness={best_fitness:.4f})")
+    def __str__(self) -> str:
+        return f"Population(Gen:{self.generation}, Size:{len(self.individuals)}, Best:{self.best_individual.fitness:.4f if self.best_individual else 0:.4f})"
