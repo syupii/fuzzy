@@ -15,7 +15,7 @@ import {
   CircularProgress,
   Backdrop
 } from '@mui/material';
-import { EvaluationForm } from './components/EvaluationForm';
+import EvaluationForm from './components/EvaluationForm';
 import { ResultsList } from './components/ResultsList';
 import { EvaluationResponse, testApiConnection } from './services/api';
 

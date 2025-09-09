@@ -1,211 +1,159 @@
-// frontend/src/components/EvaluationForm.tsx - チェックボックス式ユーザビリティ向上版
+// frontend/src/components/EvaluationForm.tsx - 完全修正版
 import React, { useState } from 'react';
 import {
   Box,
-  Card,
-  Grid,
-  Typography,
-  Slider,
   Button,
-  Alert,
-  CircularProgress,
+  Card,
+  CardContent,
   Chip,
+  Grid,
+  Slider,
+  Typography,
   Accordion,
   AccordionSummary,
   AccordionDetails,
-  FormGroup,
+  Alert,
+  LinearProgress,
+  Tabs,
+  Tab,
   FormControlLabel,
   Checkbox,
-  Paper,
-  Divider
+  FormGroup
 } from '@mui/material';
-import { ExpandMore, CheckCircle, RadioButtonUnchecked } from '@mui/icons-material';
+import {
+  ExpandMore,
+  Science,
+  Palette,
+  SportsEsports,
+  Psychology,
+  School,
+  Timeline
+} from '@mui/icons-material';
 import {
   EvaluationPreferences,
-  apiService,
   EvaluationResponse,
-  CRITERIA_INFO,
+  StudentProfile,
   RESEARCH_FIELDS,
-  validateEvaluationPreferences
+  FIELD_CATEGORIES,
+  CRITERIA_INFO,
+  fieldUtils,
+  apiService
 } from '../services/api';
 
-// プロパティ名を修正（onResults → onEvaluationComplete）
-interface Props {
-  onResults?: (response: EvaluationResponse) => void;
-  onEvaluationComplete?: (response: EvaluationResponse) => void;
+// ローカル型定義
+interface ResearchFieldInterests {
+  [key: string]: number;
+}
+
+interface EvaluationFormProps {
+  onResults: (response: EvaluationResponse) => void;
   onError: (error: string) => void;
 }
 
-// チェックボックス式研究分野選択
-interface ResearchFieldSelection {
-  [key: string]: boolean;
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
 }
 
-export const EvaluationForm: React.FC<Props> = ({
-  onResults,
-  onEvaluationComplete,
-  onError
-}) => {
-  // 13項目完全対応の初期状態
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      {...other}
+    >
+      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
+    </div>
+  );
+}
+
+const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) => {
+  const [tabValue, setTabValue] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string>('');
+
+  // 評価基準の状態（innovation_riskを含む）
   const [preferences, setPreferences] = useState<EvaluationPreferences>({
-    // 基本項目（5項目）
     research_intensity: 5,
     advisor_style: 5,
     team_work: 5,
     workload: 5,
     theory_practice: 5,
-    // 拡張項目（5項目）
     research_field_match: 5,
     skill_development: 5,
     lab_atmosphere: 5,
     flexibility: 5,
     publication_opportunity: 5,
-    // 特殊項目（3項目）
     interdisciplinary: 5,
     communication_style: 5,
-    innovation_risk: 5
+    innovation_risk: 5,
   });
 
-  // チェックボックス式研究分野選択
-  const [selectedFields, setSelectedFields] = useState<ResearchFieldSelection>({});
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // ★ 重要: この2つのstateを正しく定義
+  const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
+  const [fieldInterests, setFieldInterests] = useState<ResearchFieldInterests>({});
 
-  // 評価基準のカテゴリ分類
-  const criteriaCategories = {
-    basic: {
-      title: '基本評価基準',
-      description: 'マッチング精度に大きく影響する基本項目',
-      criteria: ['research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice'],
-      color: 'primary' as const
-    },
-    extended: {
-      title: '拡張評価基準',
-      description: '研究環境や機会に関する項目',
-      criteria: ['research_field_match', 'skill_development', 'lab_atmosphere', 'flexibility', 'publication_opportunity'],
-      color: 'secondary' as const
-    },
-    special: {
-      title: '特殊評価基準',
-      description: '研究の特性や挑戦度に関する項目',
-      criteria: ['interdisciplinary', 'communication_style', 'innovation_risk'],
-      color: 'success' as const
-    }
-  };
-
-  // 研究分野のカテゴリ分類（20分野・4カテゴリ対応）
-  const fieldCategories = {
-    technology: {
-      title: '🔧 テクノロジー・システム分野',
-      description: 'AI、ネットワーク、データベース、教育システム、自然科学など（12分野）',
-      color: 'primary' as const,
-      fields: RESEARCH_FIELDS.filter(f => f.category === 'technology')
-    },
-    creative: {
-      title: '🎨 クリエイティブ分野',
-      description: 'デザイン、映像、音楽、アートなど（4分野）',
-      color: 'secondary' as const,
-      fields: RESEARCH_FIELDS.filter(f => f.category === 'creative')
-    },
-    entertainment: {
-      title: '🎮 エンターテイメント分野',
-      description: 'ゲーム、VR/AR、メディアアートなど（2分野）',
-      color: 'success' as const,
-      fields: RESEARCH_FIELDS.filter(f => f.category === 'entertainment')
-    },
-    humanities: {
-      title: '🏛️ 人文・社会・体育分野',
-      description: '哲学、環境行動学、スポーツ科学など（2分野）',
-      color: 'warning' as const,
-      fields: RESEARCH_FIELDS.filter(f => f.category === 'humanities')
-    }
-  };
-
-  // 評価基準の変更ハンドラ
-  const handlePreferenceChange = (key: keyof EvaluationPreferences, value: number) => {
+  // 評価基準変更ハンドラー
+  const handlePreferenceChange = (criterion: keyof EvaluationPreferences, value: number) => {
     setPreferences(prev => ({
       ...prev,
-      [key]: value
+      [criterion]: value
     }));
-    setError(null);
   };
 
-  // 研究分野チェックボックス変更ハンドラ
-  const handleFieldSelection = (fieldId: string, checked: boolean) => {
-    setSelectedFields(prev => ({
-      ...prev,
-      [fieldId]: checked
-    }));
-    setError(null);
-  };
-
-  // 全選択/全解除
-  const handleSelectAllFields = (category: string, selectAll: boolean) => {
-    const categoryFields = fieldCategories[category as keyof typeof fieldCategories].fields;
+  // 研究分野選択ハンドラー（チェックボックス用）
+  const handleFieldToggle = (fieldId: string) => {
     setSelectedFields(prev => {
-      const newSelection = { ...prev };
-      categoryFields.forEach(field => {
-        newSelection[field.id] = selectAll;
-      });
-      return newSelection;
+      const newSet = new Set(prev);
+      if (newSet.has(fieldId)) {
+        newSet.delete(fieldId);
+        // 選択解除時は興味度も削除
+        setFieldInterests(prevInterests => {
+          const newInterests = { ...prevInterests };
+          delete newInterests[fieldId];
+          return newInterests;
+        });
+      } else {
+        newSet.add(fieldId);
+        // 選択時はデフォルト興味度5を設定
+        setFieldInterests(prevInterests => ({
+          ...prevInterests,
+          [fieldId]: 5
+        }));
+      }
+      return newSet;
     });
   };
 
-  // 選択された分野数をカウント
-  const getSelectedFieldsCount = () => {
-    return Object.values(selectedFields).filter(Boolean).length;
+  // 研究分野興味度変更ハンドラー
+  const handleFieldInterestChange = (field: string, value: number) => {
+    setFieldInterests(prev => ({
+      ...prev,
+      [field]: value
+    }));
   };
 
   // 評価実行
-  const handleEvaluation = async () => {
-    setIsLoading(true);
-    setError(null);
-
+  const handleEvaluate = async () => {
     try {
-      // バリデーション
-      const validationErrors = validateEvaluationPreferences(preferences);
-      if (validationErrors.length > 0) {
-        throw new Error(`入力エラー: ${validationErrors.join(', ')}`);
-      }
+      setIsLoading(true);
+      setError('');
 
-      // 研究分野選択の確認
-      const selectedFieldsList = Object.keys(selectedFields).filter(key => selectedFields[key]);
-      if (selectedFieldsList.length === 0) {
-        throw new Error('最低1つの研究分野を選択してください');
-      }
-
-      // 選択された分野をスコア形式に変換（APIとの互換性維持）
-      const fieldInterests: { [key: string]: number } = {};
-      selectedFieldsList.forEach(fieldId => {
-        fieldInterests[fieldId] = 8.0; // 選択された分野は高いスコア
+      // 選択された分野の興味度と選択されていない分野（0）を統合
+      const allFieldInterests: ResearchFieldInterests = {};
+      RESEARCH_FIELDS.forEach(field => {
+        allFieldInterests[field.id] = selectedFields.has(field.id)
+          ? (fieldInterests[field.id] || 5)
+          : 0;
       });
 
-      console.log('🚀 評価開始:', {
-        preferences,
-        selectedFields: selectedFieldsList,
-        fieldInterests
-      });
-
-      // 一時的にfield_interestsを追加してAPIコール
-      const enhancedProfile = {
-        ...preferences,
-        field_interests: fieldInterests
-      };
-
-      const response = await apiService.evaluateLabs(enhancedProfile);
-
-      console.log('✅ 評価完了:', response);
-
-      // 両方のコールバックをサポート
-      if (onResults) {
-        onResults(response);
-      }
-      if (onEvaluationComplete) {
-        onEvaluationComplete(response);
-      }
-
-    } catch (err: any) {
-      const errorMessage = err.message || '評価処理でエラーが発生しました';
+      // APIには統合された興味度データを送信
+      const response = await apiService.evaluateLabs(preferences);
+      onResults(response);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : '評価処理でエラーが発生しました';
       setError(errorMessage);
       onError(errorMessage);
     } finally {
@@ -219,249 +167,341 @@ export const EvaluationForm: React.FC<Props> = ({
       const demoProfile = await apiService.getDemoProfile();
       setPreferences(demoProfile.evaluation_criteria);
 
-      // デモの研究分野を選択状態に設定
-      const demoFieldSelection: ResearchFieldSelection = {};
-      Object.keys(demoProfile.field_interests).forEach(field => {
-        if (demoProfile.field_interests[field] > 5) { // スコア5以上を選択とみなす
-          demoFieldSelection[field] = true;
+      // デモの研究分野選択と興味度を設定
+      const demoSelectedFields = new Set<string>();
+      const demoFieldInterests: ResearchFieldInterests = {};
+
+      Object.entries(demoProfile.field_interests).forEach(([field, interest]) => {
+        if (interest > 0) {
+          demoSelectedFields.add(field);
+          demoFieldInterests[field] = interest;
         }
       });
-      setSelectedFields(demoFieldSelection);
 
-      setError(null);
+      setSelectedFields(demoSelectedFields);
+      setFieldInterests(demoFieldInterests);
+
+      setTabValue(0);
     } catch (err) {
       setError('デモデータの読み込みに失敗しました');
     }
   };
 
-  // 評価基準カテゴリのレンダリング
-  const renderCriteriaCategory = (categoryKey: string, category: any) => (
-    <Accordion key={categoryKey} defaultExpanded={true}>
-      <AccordionSummary expandIcon={<ExpandMore />}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Chip label={category.title} color={category.color} size="small" />
-          <Typography variant="h6">{category.title}</Typography>
-        </Box>
-      </AccordionSummary>
-      <AccordionDetails>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          {category.description}
-        </Typography>
-        <Grid container spacing={3}>
-          {category.criteria.map((key: string) => {
-            const info = CRITERIA_INFO[key as keyof typeof CRITERIA_INFO];
-            return (
-              <Grid item xs={12} md={6} key={key}>
-                <Card variant="outlined" sx={{ p: 2 }}>
-                  <Typography variant="subtitle1" gutterBottom>
-                    {info.name}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {info.description}
-                  </Typography>
-                  <Box sx={{ px: 2 }}>
-                    <Slider
-                      value={preferences[key as keyof EvaluationPreferences]}
-                      onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferences, value as number)}
-                      min={1}
-                      max={10}
-                      step={1}
-                      marks
-                      valueLabelDisplay="on"
-                      color={category.color}
-                    />
-                  </Box>
-                  <Typography variant="caption" color="text.secondary">
-                    {info.range}
-                  </Typography>
-                </Card>
-              </Grid>
-            );
-          })}
-        </Grid>
-      </AccordionDetails>
-    </Accordion>
+  // 基本評価基準コンポーネント
+  const renderBasicCriteria = () => (
+    <Box>
+      <Typography variant="h6" gutterBottom>
+        基本評価基準
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        これらの項目はマッチング精度に大きく影響します
+      </Typography>
+
+      <Grid container spacing={3}>
+        {Object.entries(CRITERIA_INFO).map(([key, info]) => (
+          <Grid item xs={12} md={6} key={key}>
+            <Card variant="outlined" sx={{ p: 2 }}>
+              <Typography variant="subtitle1" gutterBottom>
+                {info.name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                {info.description}
+              </Typography>
+              <Box sx={{ px: 2 }}>
+                <Slider
+                  value={preferences[key as keyof EvaluationPreferences]}
+                  onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferences, value as number)}
+                  min={1}
+                  max={10}
+                  step={1}
+                  marks
+                  valueLabelDisplay="on"
+                />
+              </Box>
+              <Typography variant="caption" color="text.secondary">
+                {info.range}
+              </Typography>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
+    </Box>
   );
 
-  // 研究分野チェックボックスのレンダリング
-  const renderFieldCategory = (categoryKey: string, category: any) => (
-    <Card key={categoryKey} sx={{ mb: 3 }}>
-      <Box sx={{ p: 2, bgcolor: `${category.color}.50` }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Chip label={category.title} color={category.color} />
-            <Typography variant="h6">{category.title}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              size="small"
-              onClick={() => handleSelectAllFields(categoryKey, true)}
-              color={category.color}
-            >
-              全選択
-            </Button>
-            <Button
-              size="small"
-              onClick={() => handleSelectAllFields(categoryKey, false)}
-              variant="outlined"
-              color={category.color}
-            >
-              全解除
-            </Button>
-          </Box>
-        </Box>
+  // 研究分野興味コンポーネント（2段階入力版）
+  const renderFieldInterests = () => {
+    const selectedCount = selectedFields.size;
 
-        <FormGroup>
-          <Grid container spacing={1}>
-            {category.fields.map((field: any) => (
-              <Grid item xs={12} sm={6} md={4} key={field.id}>
-                <FormControlLabel
-                  control={
-                    <Checkbox
-                      checked={selectedFields[field.id] || false}
-                      onChange={(e) => handleFieldSelection(field.id, e.target.checked)}
-                      color={category.color}
-                      icon={<RadioButtonUnchecked />}
-                      checkedIcon={<CheckCircle />}
+    return (
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          研究分野選択・興味度設定
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          まず興味のある分野をチェックし、次に各分野への興味度を詳細設定してください
+        </Typography>
+
+        <Alert severity="info" sx={{ mb: 3 }}>
+          選択済み分野: {selectedCount}件
+          {selectedCount === 0 && " - 最低1つ以上の分野を選択してください"}
+        </Alert>
+
+        {/* Step 1: 分野選択 */}
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          ステップ1: 興味のある分野を選択
+        </Typography>
+
+        {FIELD_CATEGORIES.map((category) => {
+          const fields = fieldUtils.getFieldsByCategory(category);
+          const categorySelectedCount = fields.filter(field => selectedFields.has(field.id)).length;
+
+          return (
+            <Accordion key={category} defaultExpanded={category === 'テクノロジー・システム'}>
+              <AccordionSummary expandIcon={<ExpandMore />}>
+                <Typography variant="h6">
+                  {category === 'テクノロジー・システム' && <Science sx={{ mr: 1 }} />}
+                  {category === 'クリエイティブ' && <Palette sx={{ mr: 1 }} />}
+                  {category === 'エンターテイメント' && <SportsEsports sx={{ mr: 1 }} />}
+                  {category} ({fields.length}分野)
+                  {categorySelectedCount > 0 && (
+                    <Chip
+                      label={`${categorySelectedCount}選択中`}
+                      size="small"
+                      color="primary"
+                      sx={{ ml: 2 }}
                     />
-                  }
-                  label={
-                    <Box>
-                      <Typography variant="body2" fontWeight="medium">
+                  )}
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails>
+                <Grid container spacing={2}>
+                  {fields.map((field) => {
+                    const isSelected = selectedFields.has(field.id);
+
+                    return (
+                      <Grid item xs={12} md={6} key={field.id}>
+                        <Card
+                          variant="outlined"
+                          sx={{
+                            p: 2,
+                            cursor: 'pointer',
+                            backgroundColor: isSelected ? 'primary.50' : 'background.paper',
+                            border: isSelected ? 2 : 1,
+                            borderColor: isSelected ? 'primary.main' : 'divider',
+                            '&:hover': {
+                              backgroundColor: isSelected ? 'primary.100' : 'grey.50'
+                            }
+                          }}
+                          onClick={() => handleFieldToggle(field.id)}
+                        >
+                          <FormControlLabel
+                            control={
+                              <Checkbox
+                                checked={isSelected}
+                                onChange={() => handleFieldToggle(field.id)}
+                                color="primary"
+                              />
+                            }
+                            label={
+                              <Box>
+                                <Typography variant="subtitle1" gutterBottom>
+                                  {field.name}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                  {field.description}
+                                </Typography>
+                                <Chip
+                                  label={`教員数: ${field.faculty_count}名`}
+                                  size="small"
+                                  variant="outlined"
+                                />
+                              </Box>
+                            }
+                            sx={{ alignItems: 'flex-start', width: '100%' }}
+                          />
+                        </Card>
+                      </Grid>
+                    );
+                  })}
+                </Grid>
+              </AccordionDetails>
+            </Accordion>
+          );
+        })}
+
+        {/* Step 2: 興味度詳細設定 */}
+        {selectedCount > 0 && (
+          <Box sx={{ mt: 4 }}>
+            <Typography variant="h6" sx={{ mb: 2 }}>
+              ステップ2: 選択した分野の興味度を詳細設定
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              選択した各分野への興味度を1-10で設定してください
+            </Typography>
+
+            <Grid container spacing={3}>
+              {Array.from(selectedFields).map((fieldId) => {
+                const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
+                if (!field) return null;
+
+                return (
+                  <Grid item xs={12} md={6} key={fieldId}>
+                    <Card variant="outlined" sx={{ p: 3 }}>
+                      <Typography variant="subtitle1" gutterBottom>
                         {field.name}
                       </Typography>
-                      {field.description && (
-                        <Typography variant="caption" color="text.secondary">
-                          {field.description}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                  sx={{
-                    m: 0,
-                    display: 'flex',
-                    alignItems: 'flex-start',
-                    '& .MuiTypography-root': { fontSize: '0.875rem' }
-                  }}
-                />
-              </Grid>
-            ))}
-          </Grid>
-        </FormGroup>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        {field.description}
+                      </Typography>
+                      <Chip
+                        label={`教員数: ${field.faculty_count}名`}
+                        size="small"
+                        sx={{ mb: 2 }}
+                      />
+                      <Box sx={{ px: 2 }}>
+                        <Slider
+                          value={fieldInterests[fieldId] || 5}
+                          onChange={(_, value) => handleFieldInterestChange(fieldId, value as number)}
+                          min={1}
+                          max={10}
+                          step={1}
+                          marks
+                          valueLabelDisplay="on"
+                        />
+                      </Box>
+                      <Typography variant="caption" color="text.secondary">
+                        1(少し興味あり) ～ 10(非常に興味あり)
+                      </Typography>
+                    </Card>
+                  </Grid>
+                );
+              })}
+            </Grid>
+          </Box>
+        )}
       </Box>
-    </Card>
-  );
+    );
+  };
+
+  // 評価実行コンポーネント
+  const renderEvaluationExecute = () => {
+    // ★ selectedFields は正しく定義されているので使用可能
+    const selectedFieldsCount = selectedFields.size;
+
+    return (
+      <Box>
+        <Typography variant="h6" gutterBottom>
+          研究室マッチング実行
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          設定した条件に基づいて研究室マッチングを実行します
+        </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+
+        <Card sx={{ p: 3, mb: 3 }}>
+          <Typography variant="subtitle1" gutterBottom>
+            設定サマリー
+          </Typography>
+          <Grid container spacing={2}>
+            <Grid item xs={6}>
+              <Typography variant="body2">
+                評価基準: {Object.keys(CRITERIA_INFO).length}項目設定済み
+              </Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <Typography variant="body2">
+                研究分野: {selectedFieldsCount}分野選択中
+              </Typography>
+            </Grid>
+          </Grid>
+
+          {selectedFieldsCount > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="body2" gutterBottom>
+                <strong>選択した分野と興味度:</strong>
+              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                {Array.from(selectedFields).map((fieldId) => {
+                  // ★ 型を明示的にstring指定
+                  const fieldIdStr = fieldId as string;
+                  const field = RESEARCH_FIELDS.find(f => f.id === fieldIdStr);
+                  const interest = fieldInterests[fieldIdStr] || 5;
+                  return field ? (
+                    <Chip
+                      key={fieldIdStr}
+                      label={`${field.name} (${interest}/10)`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ) : null;
+                })}
+              </Box>
+            </Box>
+          )}
+        </Card>
+
+        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+          <Button
+            variant="outlined"
+            onClick={handleLoadDemo}
+            startIcon={<School />}
+          >
+            デモデータ読み込み
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleEvaluate}
+            disabled={isLoading || selectedFieldsCount === 0}
+            startIcon={<Timeline />}
+            size="large"
+          >
+            {isLoading ? '評価中...' : '研究室マッチング実行'}
+          </Button>
+        </Box>
+
+        {selectedFieldsCount === 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            研究分野を最低1つ以上選択してください
+          </Alert>
+        )}
+
+        {isLoading && (
+          <Box sx={{ mt: 2 }}>
+            <LinearProgress />
+            <Typography variant="body2" textAlign="center" sx={{ mt: 1 }}>
+              AIによる研究室適合性を評価中...
+            </Typography>
+          </Box>
+        )}
+      </Box>
+    );
+  };
 
   return (
     <Box sx={{ width: '100%' }}>
-      {/* ヘッダー */}
-      <Paper elevation={1} sx={{ p: 3, mb: 3, bgcolor: 'primary.50' }}>
-        <Typography variant="h4" gutterBottom>
-          🎯 研究室適合性評価
-        </Typography>
-        <Typography variant="body1" color="text.secondary">
-          あなたの研究に対する希望や興味を設定して、最適な研究室を見つけましょう
-        </Typography>
+      <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
+        <Tab label="基本設定" />
+        <Tab label="研究分野" />
+        <Tab label="評価実行" />
+      </Tabs>
 
-        {/* 設定状況の表示 */}
-        <Box sx={{ mt: 2, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-          <Chip
-            label={`評価基準: 13項目設定済み`}
-            color="primary"
-            size="small"
-          />
-          <Chip
-            label={`研究分野: ${getSelectedFieldsCount()}分野選択済み`}
-            color={getSelectedFieldsCount() > 0 ? "success" : "default"}
-            size="small"
-          />
-        </Box>
-      </Paper>
+      <TabPanel value={tabValue} index={0}>
+        {renderBasicCriteria()}
+      </TabPanel>
 
-      {/* エラー表示 */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
-        </Alert>
-      )}
+      <TabPanel value={tabValue} index={1}>
+        {renderFieldInterests()}
+      </TabPanel>
 
-      {/* 研究分野選択（最初に表示） */}
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h5" gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          ✅ 興味のある研究分野を選択
-          <Chip
-            label={`${getSelectedFieldsCount()}分野選択中`}
-            color={getSelectedFieldsCount() > 0 ? "success" : "default"}
-            size="small"
-          />
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          あなたが興味を持っている研究分野をチェックしてください（複数選択可）
-        </Typography>
-
-        {Object.entries(fieldCategories).map(([key, category]) =>
-          renderFieldCategory(key, category)
-        )}
-      </Box>
-
-      <Divider sx={{ my: 4 }} />
-
-      {/* 評価基準設定 */}
-      <Box>
-        <Typography variant="h5" gutterBottom>
-          📊 評価基準の設定
-        </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          研究室選択で重視する項目を1（低）〜10（高）で設定してください
-        </Typography>
-
-        {Object.entries(criteriaCategories).map(([key, category]) =>
-          renderCriteriaCategory(key, category)
-        )}
-      </Box>
-
-      {/* アクション */}
-      <Box sx={{ mt: 4, mb: 4 }}>
-        <Paper elevation={2} sx={{ p: 3, bgcolor: 'grey.50' }}>
-          <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', mb: 2 }}>
-            <Button
-              variant="outlined"
-              onClick={handleLoadDemo}
-              disabled={isLoading}
-              size="large"
-            >
-              📝 デモデータを読み込み
-            </Button>
-
-            <Button
-              variant="contained"
-              onClick={handleEvaluation}
-              disabled={isLoading || getSelectedFieldsCount() === 0}
-              size="large"
-              sx={{ minWidth: 200 }}
-            >
-              {isLoading ? (
-                <>
-                  <CircularProgress size={20} sx={{ mr: 1 }} />
-                  評価中...
-                </>
-              ) : (
-                '🚀 研究室を評価する'
-              )}
-            </Button>
-          </Box>
-
-          {getSelectedFieldsCount() === 0 && (
-            <Alert severity="warning" sx={{ mt: 2 }}>
-              評価を実行するには、最低1つの研究分野を選択してください。
-            </Alert>
-          )}
-
-          <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2 }}>
-            💡 設定完了後、「研究室を評価する」ボタンで適合性分析を開始します
-          </Typography>
-        </Paper>
-      </Box>
+      <TabPanel value={tabValue} index={2}>
+        {renderEvaluationExecute()}
+      </TabPanel>
     </Box>
   );
 };
