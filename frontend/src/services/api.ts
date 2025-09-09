@@ -594,7 +594,7 @@ class ApiService {
         publication_opportunity: 6,
         interdisciplinary: 6,
         communication_style: 7,
-        innovation_risk: 7
+        innovation_risk: 7  // 追加
       },
       field_interests: {
         'ai_machine_learning': 9,

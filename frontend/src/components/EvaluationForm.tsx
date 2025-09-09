@@ -169,7 +169,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         throw new Error('少なくとも1つの研究分野を選択してください');
       }
 
-      const response = await apiService.evaluateLabs(preferences, selectedFieldInterests);
+      const response = await apiService.evaluateLabs(preferences);
       onResults(response);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '評価処理でエラーが発生しました';
@@ -186,16 +186,17 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
       const demoProfile = await apiService.getDemoProfile();
       setPreferences(demoProfile.evaluation_criteria);
 
-      // デモの分野選択を反映
+      // デモで確実に動作する分野を選択（既存の11分野から）
+      const validDemoFields = ['ai_machine_learning', 'web_design_ui_ux', 'game_development_esports'];
       const demoSelection: FieldSelectionState = {};
       const demoInterests: SelectedFieldInterest[] = [];
 
-      Object.entries(demoProfile.field_interests).forEach(([fieldId, interestLevel], index) => {
+      validDemoFields.forEach((fieldId, index) => {
         demoSelection[fieldId] = true;
         demoInterests.push({
           fieldId,
-          interestLevel: interestLevel as number,
-          experienceLevel: 5,
+          interestLevel: 8 - index,  // 8, 7, 6
+          experienceLevel: 6,
           priority: index + 1
         });
       });
@@ -203,6 +204,11 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
       setFieldSelection(demoSelection);
       setSelectedFieldInterests(demoInterests);
       setTabValue(0);
+
+      console.log('✅ デモデータ設定完了:', {
+        preferences: demoProfile.evaluation_criteria,
+        selectedFields: demoInterests
+      });
     } catch (err) {
       setError('デモデータの読み込みに失敗しました');
     }
