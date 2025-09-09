@@ -67,7 +67,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             # 特殊項目（3項目）
             "interdisciplinary",       # 学際性
             "communication_style",     # コミュニケーション
-            "innovation_risk"          # 革新性・リスク許容度
+
         ]
         
         @property
@@ -154,7 +154,7 @@ else:
                 "flexibility", "publication_opportunity",
                 
                 # 特殊項目（3項目）
-                "interdisciplinary", "communication_style", "innovation_risk"
+                "interdisciplinary", "communication_style"
             ]
             
             # 研究分野（11分野）
@@ -210,7 +210,6 @@ LABORATORY_TEMPLATE = {
         "publication_opportunity": 5.0,
         "interdisciplinary": 5.0,
         "communication_style": 5.0,
-        "innovation_risk": 5.0
     },
     "metadata": {
         "fields": [],

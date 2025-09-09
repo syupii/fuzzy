@@ -81,7 +81,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     publication_opportunity: 5,
     interdisciplinary: 5,
     communication_style: 5,
-    innovation_risk: 5,
   });
 
   // 研究分野の興味の状態

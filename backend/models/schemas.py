@@ -36,10 +36,9 @@ class EvaluationCriteria(BaseModel):
     flexibility: Optional[float] = Field(None, ge=1, le=10, description="柔軟性（1-10）")
     publication_opportunity: Optional[float] = Field(None, ge=1, le=10, description="論文発表機会（1-10）")
     
-    # 特殊項目（3項目）
+    # 特殊項目（2項目）
     interdisciplinary: Optional[float] = Field(None, ge=1, le=10, description="学際性（1-10）")
     communication_style: Optional[float] = Field(None, ge=1, le=10, description="コミュニケーション（1-10）")
-    innovation_risk: Optional[float] = Field(None, ge=1, le=10, description="革新性・リスク許容度（1-10）")
     
     @validator('research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice')
     def validate_required_criteria(cls, v):

@@ -16,7 +16,6 @@ export interface EvaluationPreferences {
   publication_opportunity: number;
   interdisciplinary: number;
   communication_style: number;
-  innovation_risk: number;
 }
 
 export interface StudentProfile {
@@ -239,11 +238,6 @@ export const CRITERIA_INFO = {
     description: '研究室での交流スタイル',
     range: '1(少人数密接) ～ 10(オープン交流)'
   },
-  innovation_risk: {
-    name: '革新性・リスク許容度',
-    description: '新しい手法への挑戦度',
-    range: '1(安全手法) ～ 10(革新手法)'
-  }
 };
 
 // ===== 既存のユーティリティ関数を維持 =====
@@ -388,7 +382,6 @@ class ApiService {
         publication_opportunity: 8.0,
         interdisciplinary: 6.0,
         communication_style: 6.0,
-        innovation_risk: 6.0,
       },
       field_interests: {
         'ai_machine_learning': 8.0,
