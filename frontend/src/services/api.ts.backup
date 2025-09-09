@@ -1,8 +1,7 @@
-// frontend/src/services/api.ts - 互換性保持版
+// frontend/src/services/api.ts - シンプル版
 import axios from 'axios';
 
-// ===== 既存の型定義を維持 =====
-
+// 型定義
 export interface EvaluationPreferences {
   research_intensity: number;
   advisor_style: number;
@@ -37,21 +36,14 @@ export interface Laboratory {
 export interface LabResult {
   lab: Laboratory;
   lab_name?: string;
-  lab_id?: string;
   advisor?: string;
-  professor?: string;
-  research_area?: string;
   overall_score?: number;
-  compatibility_score?: number;
   compatibility?: {
     overall_score: number;
     criterion_scores?: any;
   };
   ranking_position?: number;
   recommendations?: string[];
-  description?: string;
-  specialization?: string;
-  metadata?: any;
 }
 
 export interface EvaluationResponse {
@@ -65,27 +57,17 @@ export interface EvaluationResponse {
     recommendations?: string[];
   };
   metadata?: any;
-  evaluation_id?: string;
-  student_profile?: any;
-  total_labs_evaluated?: number;
-  timestamp?: number;
-  processing_time?: number;
-  algorithm_info?: any;
 }
 
+// 研究分野データ（完全版）
 export interface ResearchField {
   id: string;
   name: string;
   category: string;
-  description?: string;
-  faculty_count?: number;
+  description: string;
+  faculty_count: number;
+  popularity: number;
 }
-
-export interface ResearchFieldInterests {
-  [key: string]: number;
-}
-
-// ===== 既存の研究分野・評価基準定義を維持 =====
 
 export const RESEARCH_FIELDS: ResearchField[] = [
   // テクノロジー・システム分野
@@ -93,36 +75,41 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     id: 'ai_machine_learning',
     name: '人工知能・機械学習',
     category: 'テクノロジー・システム',
-    description: 'データ解析、機械学習、深層学習、自然言語処理など',
-    faculty_count: 7
+    description: 'AI、機械学習、ディープラーニング、自然言語処理の研究',
+    faculty_count: 7,
+    popularity: 95
   },
   {
     id: 'image_video_processing',
     name: '画像・映像処理',
     category: 'テクノロジー・システム',
-    description: 'コンピュータビジョン、画像認識、医用画像工学など',
-    faculty_count: 6
+    description: '画像処理、コンピュータビジョン、医用画像処理の研究',
+    faculty_count: 6,
+    popularity: 85
   },
   {
     id: 'network_security',
-    name: 'ネットワーク・セキュリティ',
+    name: 'コンピュータネットワーク・セキュリティ',
     category: 'テクノロジー・システム',
-    description: 'ネットワーク管理、情報セキュリティ、通信システムなど',
-    faculty_count: 3
+    description: 'ネットワーク技術、情報セキュリティ、暗号化の研究',
+    faculty_count: 3,
+    popularity: 80
   },
   {
     id: 'database_systems',
     name: 'データベース・情報システム',
     category: 'テクノロジー・システム',
-    description: 'データベース技術、経営情報システム、意思決定支援など',
-    faculty_count: 3
+    description: 'データベース技術、情報システム、ビッグデータ処理の研究',
+    faculty_count: 3,
+    popularity: 75
   },
   {
     id: 'embedded_iot',
     name: '組込み・IoT',
     category: 'テクノロジー・システム',
-    description: '組込みシステム、IoT、ユビキタスコンピューティングなど',
-    faculty_count: 2
+    description: '組込みシステム、IoT、ユビキタスコンピューティングの研究',
+    faculty_count: 2,
+    popularity: 70
   },
 
   // クリエイティブ分野
@@ -130,29 +117,33 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     id: 'web_ui_ux',
     name: 'Webデザイン・UI/UX',
     category: 'クリエイティブ',
-    description: 'Webデザイン、UX/UIデザイン、インタフェースデザインなど',
-    faculty_count: 4
+    description: 'Webデザイン、ユーザインタフェース、UX設計の研究',
+    faculty_count: 4,
+    popularity: 80
   },
   {
     id: 'design_visual',
     name: 'デザイン・視覚表現',
     category: 'クリエイティブ',
-    description: '視覚デザイン、グラフィックデザイン、感性工学など',
-    faculty_count: 4
+    description: 'グラフィックデザイン、視覚デザイン、ブランディングの研究',
+    faculty_count: 4,
+    popularity: 75
   },
   {
     id: 'video_animation',
     name: '映像・アニメーション',
     category: 'クリエイティブ',
-    description: '映像制作、アニメーション表現、メディア表現など',
-    faculty_count: 2
+    description: '映像制作、アニメーション表現、メディアアートの研究',
+    faculty_count: 2,
+    popularity: 70
   },
   {
     id: 'computer_music',
     name: 'コンピュータ音楽・サウンドアート',
     category: 'クリエイティブ',
-    description: 'コンピュータ音楽、サウンドアート、音声情報処理など',
-    faculty_count: 2
+    description: 'コンピュータ音楽、サウンドデザイン、音響技術の研究',
+    faculty_count: 2,
+    popularity: 65
   },
 
   // エンターテイメント分野
@@ -160,16 +151,18 @@ export const RESEARCH_FIELDS: ResearchField[] = [
     id: 'game_esports',
     name: 'ゲーム開発・eスポーツ',
     category: 'エンターテイメント',
-    description: 'ゲームプログラミング、eスポーツ、メタバースなど',
-    faculty_count: 2
+    description: 'ゲームプログラミング、eスポーツ、ゲーミフィケーションの研究',
+    faculty_count: 2,
+    popularity: 85
   },
   {
     id: 'vr_ar_media_art',
     name: 'VR/AR・メディアアート',
     category: 'エンターテイメント',
-    description: 'VR/AR技術、3DCG、メディアアート、認知心理学など',
-    faculty_count: 2
-  },
+    description: 'バーチャルリアリティ、拡張現実、メディアアートの研究',
+    faculty_count: 2,
+    popularity: 80
+  }
 ];
 
 export const FIELD_CATEGORIES = [
@@ -178,6 +171,7 @@ export const FIELD_CATEGORIES = [
   'エンターテイメント'
 ];
 
+// 評価基準情報
 export const CRITERIA_INFO = {
   research_intensity: {
     name: '研究強度',
@@ -246,8 +240,11 @@ export const CRITERIA_INFO = {
   }
 };
 
-// ===== 既存のユーティリティ関数を維持 =====
+export interface ResearchFieldInterests {
+  [key: string]: number;
+}
 
+// ユーティリティ関数
 export const fieldUtils = {
   getFieldsByCategory: (category: string): ResearchField[] => {
     return RESEARCH_FIELDS.filter(field => field.category === category);
@@ -262,8 +259,7 @@ export const fieldUtils = {
   }
 };
 
-// ===== APIサービスクラス（修正版） =====
-
+// APIサービスクラス
 class ApiService {
   private baseURL: string;
 
@@ -275,104 +271,51 @@ class ApiService {
   async testConnection(): Promise<boolean> {
     try {
       const response = await axios.get(`${this.baseURL}/health`, { timeout: 5000 });
-      console.log('✅ Backend接続成功:', response.data);
       return response.status === 200;
     } catch (error) {
-      console.error('❌ Backend接続失敗:', error);
+      console.error('接続テスト失敗:', error);
       return false;
     }
   }
 
-  // 研究室評価（修正版 - 既存インターフェース維持）
+  // 研究室評価（シンプル版）
   async evaluateLabs(preferences: EvaluationPreferences): Promise<EvaluationResponse> {
     try {
-      console.log('🚀 研究室評価開始...', preferences);
-
-      // ⭐ 重要: backendが期待する形式で送信（student_profileキーを追加）
-      const requestData = {
-        student_profile: preferences
-      };
-
-      console.log('📤 送信データ:', requestData);
-
-      const response = await axios.post(`${this.baseURL}/api/evaluate`, requestData, {
-        timeout: 10000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
+      const response = await axios.post(`${this.baseURL}/api/evaluate`, {
+        preferences
+      }, {
+        timeout: 10000
       });
 
-      console.log('📥 API応答:', response.data);
-
-      // レスポンスデータの正規化（既存フォーマットに合わせる）
+      // レスポンスデータの正規化
       const data = response.data;
-
-      // lab_resultsをLabResult形式に変換
-      const normalizedLabResults: LabResult[] = (data.lab_results || []).map((item: any) => ({
-        lab: {
-          id: item.lab_id || item.id,
-          name: item.lab_name || item.name,
-          professor: item.professor,
-          research_area: item.research_area,
-          specialization: item.specialization || '',
-          description: item.description || ''
-        },
-        lab_name: item.lab_name || item.name,
-        lab_id: item.lab_id || item.id,
-        advisor: item.professor,
-        professor: item.professor,
-        research_area: item.research_area,
-        overall_score: item.compatibility_score || 0,
-        compatibility_score: item.compatibility_score || 0,
-        compatibility: {
-          overall_score: item.compatibility_score || 0
-        },
-        description: item.description || '',
-        specialization: item.specialization || '',
-        metadata: item.metadata || {}
-      }));
-
       const normalizedResponse: EvaluationResponse = {
-        lab_results: normalizedLabResults,
-        results: normalizedLabResults, // 両方に同じデータを設定
-        summary: {
-          total_labs: data.total_labs_evaluated || normalizedLabResults.length,
-          avg_score: normalizedLabResults.length > 0 ?
-            normalizedLabResults.reduce((sum, lab) => sum + (lab.overall_score || 0), 0) / normalizedLabResults.length : 0,
-          best_match_lab: normalizedLabResults.length > 0 ? normalizedLabResults[0].lab_name : undefined,
-          recommendations: []
+        lab_results: data.lab_results || data.results || [],
+        results: data.lab_results || data.results || [],
+        summary: data.summary || {
+          total_labs: 0,
+          avg_score: 0,
         },
-        metadata: data.metadata,
-        evaluation_id: data.evaluation_id,
-        student_profile: data.student_profile,
-        total_labs_evaluated: data.total_labs_evaluated,
-        timestamp: data.timestamp,
-        processing_time: data.processing_time,
-        algorithm_info: data.algorithm_info
+        metadata: data.metadata
       };
 
-      console.log(`✅ 評価完了: ${normalizedResponse.summary.total_labs}件の研究室`);
       return normalizedResponse;
     } catch (error) {
-      console.error('💥 評価API エラー:', error);
+      console.error('評価API エラー:', error);
       if (axios.isAxiosError(error)) {
         if (error.code === 'ECONNREFUSED') {
           throw new Error('バックエンドサーバーが起動していません。ターミナルで `cd backend && python app.py` を実行してください。');
         } else if (error.response?.status === 404) {
           throw new Error('APIエンドポイントが見つかりません。バックエンドの実装を確認してください。');
         } else if (error.response?.status === 500) {
-          const detail = error.response.data?.detail || '内部エラー';
-          throw new Error(`サーバーエラー: ${detail}`);
-        } else if (error.response?.status === 400) {
-          const detail = error.response.data?.detail || 'リクエストエラー';
-          throw new Error(`リクエストエラー: ${detail}`);
+          throw new Error(`サーバーエラー: ${error.response.data?.detail || '内部エラー'}`);
         }
       }
       throw new Error('研究室評価の処理中にエラーが発生しました');
     }
   }
 
-  // デモプロフィール取得（既存インターフェース維持）
+  // デモプロフィール取得
   async getDemoProfile(): Promise<StudentProfile> {
     return {
       evaluation_criteria: {
@@ -400,8 +343,6 @@ class ApiService {
     };
   }
 }
-
-// ===== エクスポート（既存と同じ） =====
 
 export const apiService = new ApiService();
 
