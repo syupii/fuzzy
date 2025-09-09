@@ -207,7 +207,7 @@ def initialize_system():
             try:
                 evolution_config = EvolutionConfig(
                     population_size=30,
-                    generations=50,
+                    max_generations=50,
                     mutation_rate=0.1,
                     crossover_rate=0.8
                 )

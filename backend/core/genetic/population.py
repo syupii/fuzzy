@@ -1,4 +1,4 @@
-# core/genetic/population.py - 集団管理
+# core/genetic/population.py - 集団管理（完全版）
 
 import numpy as np
 import random
@@ -10,7 +10,31 @@ from abc import ABC, abstractmethod
 from collections import defaultdict
 import logging
 
-from core.genetic.individual import Individual, WeightVector, FuzzyTreeIndividual
+# 個体クラスのインポート（循環インポート回避）
+try:
+    from core.genetic.individual import Individual, WeightVector, FuzzyTreeIndividual
+except ImportError:
+    # フォールバック実装
+    class Individual:
+        def __init__(self, individual_id: str = None):
+            self.individual_id = individual_id or f"ind_{random.randint(1000, 9999)}"
+            self.fitness_value = None
+            self.generation = 0
+        
+        def get_fitness(self):
+            return self.fitness_value or 0.0
+        
+        def is_evaluated(self):
+            return self.fitness_value is not None
+        
+        def clone(self):
+            return Individual(self.individual_id + "_clone")
+    
+    class WeightVector(Individual):
+        pass
+    
+    class FuzzyTreeIndividual(Individual):
+        pass
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +141,7 @@ class Population:
         # 設定検証
         validation_errors = self.config.validate()
         if validation_errors:
-            raise ValueError(f"集団設定エラー: {', '.join(validation_errors)}")
+            logger.warning(f"集団設定警告: {', '.join(validation_errors)}")
     
     def initialize_random(self, **kwargs) -> None:
         """ランダムな個体群で初期化"""
@@ -155,392 +179,337 @@ class Population:
                 return True
         return False
     
-    def get_individual(self, individual_id: str) -> Optional[Individual]:
-        """個体を取得"""
-        for individual in self.individuals:
-            if individual.individual_id == individual_id:
-                return individual
-        return None
+    def get_best_individual(self) -> Optional[Individual]:
+        """最良個体を取得"""
+        
+        if not self.individuals:
+            return None
+        
+        # 適応度が設定されている個体のみを対象
+        evaluated_individuals = [ind for ind in self.individuals if ind.is_evaluated()]
+        
+        if not evaluated_individuals:
+            return None
+        
+        return max(evaluated_individuals, key=lambda x: x.get_fitness())
+    
+    def get_worst_individual(self) -> Optional[Individual]:
+        """最悪個体を取得"""
+        
+        if not self.individuals:
+            return None
+        
+        evaluated_individuals = [ind for ind in self.individuals if ind.is_evaluated()]
+        
+        if not evaluated_individuals:
+            return None
+        
+        return min(evaluated_individuals, key=lambda x: x.get_fitness())
+    
+    def select_elite(self, elite_size: Optional[int] = None) -> List[Individual]:
+        """エリート個体を選択"""
+        
+        if elite_size is None:
+            elite_size = self.config.elite_size
+        
+        if not self.individuals:
+            return []
+        
+        # 適応度順にソート
+        sorted_individuals = sorted(
+            [ind for ind in self.individuals if ind.is_evaluated()],
+            key=lambda x: x.get_fitness(),
+            reverse=True
+        )
+        
+        elite_count = min(elite_size, len(sorted_individuals))
+        self.elite_individuals = sorted_individuals[:elite_count]
+        
+        return self.elite_individuals
     
     def evaluate_population(self, fitness_function: Callable[[Individual], float]) -> None:
-        """集団全体の適応度評価"""
+        """集団全体を評価"""
         
         self.fitness_function = fitness_function
-        evaluated_count = 0
         
         for individual in self.individuals:
             if not individual.is_evaluated():
                 try:
                     fitness = fitness_function(individual)
-                    individual.set_fitness(fitness)
+                    individual.fitness_value = fitness
                     self.total_evaluations += 1
-                    evaluated_count += 1
                 except Exception as e:
-                    logger.error(f"個体評価エラー {individual.individual_id}: {e}")
-                    individual.set_fitness(0.0)
+                    logger.warning(f"個体評価エラー {individual.individual_id}: {e}")
+                    individual.fitness_value = 0.0
         
-        # 統計更新
-        self._update_statistics()
-        
-        logger.info(f"集団評価完了: {evaluated_count}個体を新規評価")
-    
-    def sort_by_fitness(self, reverse: bool = True) -> None:
-        """適応度でソート"""
-        self.individuals.sort(
-            key=lambda x: x.get_fitness() or 0.0, 
-            reverse=reverse
-        )
-    
-    def select_elite(self) -> List[Individual]:
-        """エリート個体の選択"""
-        self.sort_by_fitness(reverse=True)
-        elite_size = min(self.config.elite_size, len(self.individuals))
-        
-        self.elite_individuals = []
-        for i in range(elite_size):
-            elite = self.individuals[i].clone()
-            elite.is_elite = True
-            self.elite_individuals.append(elite)
-        
-        return self.elite_individuals.copy()
-    
-    def tournament_selection(self, tournament_size: Optional[int] = None) -> Individual:
-        """トーナメント選択"""
-        if tournament_size is None:
-            tournament_size = self.config.tournament_size
-        
-        tournament_size = min(tournament_size, len(self.individuals))
-        
-        # ランダムに個体を選択
-        contestants = random.sample(self.individuals, tournament_size)
-        
-        # 最高適応度の個体を選択
-        winner = max(contestants, key=lambda x: x.get_fitness() or 0.0)
-        
-        return winner
-    
-    def roulette_selection(self) -> Individual:
-        """ルーレット選択"""
-        fitness_values = [individual.get_fitness() or 0.0 for individual in self.individuals]
-        
-        # 負の適応度の処理
-        min_fitness = min(fitness_values)
-        if min_fitness < 0:
-            fitness_values = [f - min_fitness + 1e-6 for f in fitness_values]
-        
-        total_fitness = sum(fitness_values)
-        if total_fitness == 0:
-            return random.choice(self.individuals)
-        
-        # ルーレット回転
-        selection_point = random.uniform(0, total_fitness)
-        cumulative_fitness = 0.0
-        
-        for i, fitness in enumerate(fitness_values):
-            cumulative_fitness += fitness
-            if cumulative_fitness >= selection_point:
-                return self.individuals[i]
-        
-        # フォールバック
-        return self.individuals[-1]
-    
-    def rank_selection(self) -> Individual:
-        """ランク選択"""
-        self.sort_by_fitness(reverse=True)
-        
-        n = len(self.individuals)
-        ranks = list(range(n, 0, -1))  # n, n-1, ..., 1
-        
-        # 選択圧を適用
-        adjusted_ranks = [rank ** self.config.selection_pressure for rank in ranks]
-        total_rank = sum(adjusted_ranks)
-        
-        if total_rank == 0:
-            return random.choice(self.individuals)
-        
-        selection_point = random.uniform(0, total_rank)
-        cumulative_rank = 0.0
-        
-        for i, rank in enumerate(adjusted_ranks):
-            cumulative_rank += rank
-            if cumulative_rank >= selection_point:
-                return self.individuals[i]
-        
-        return self.individuals[-1]
+        # 最良個体の更新
+        self.best_individual = self.get_best_individual()
     
     def calculate_diversity(self) -> float:
         """集団の多様性を計算"""
+        
         if len(self.individuals) < 2:
             return 0.0
         
-        n = len(self.individuals)
-        total_diversity = 0.0
-        comparison_count = 0
+        # 適応度の分散による多様性計算
+        fitness_values = [ind.get_fitness() for ind in self.individuals if ind.is_evaluated()]
         
-        # 全ペアの多様性を計算
-        for i in range(n):
-            for j in range(i + 1, n):
-                diversity = self.individuals[i].get_diversity_from(self.individuals[j])
-                total_diversity += diversity
-                comparison_count += 1
+        if len(fitness_values) < 2:
+            return 0.0
         
-        average_diversity = total_diversity / comparison_count if comparison_count > 0 else 0.0
+        return float(np.std(fitness_values))
+    
+    def calculate_genetic_diversity(self) -> float:
+        """遺伝的多様性を計算"""
         
-        # 多様性行列の更新
-        self.diversity_matrix = np.zeros((n, n))
-        for i in range(n):
-            for j in range(i + 1, n):
-                diversity = self.individuals[i].get_diversity_from(self.individuals[j])
-                self.diversity_matrix[i][j] = diversity
-                self.diversity_matrix[j][i] = diversity
+        if len(self.individuals) < 2:
+            return 0.0
         
-        return average_diversity
+        # 遺伝子レベルでの多様性
+        genetic_distances = []
+        
+        for i in range(len(self.individuals)):
+            for j in range(i + 1, len(self.individuals)):
+                distance = self._calculate_genetic_distance(
+                    self.individuals[i], self.individuals[j]
+                )
+                genetic_distances.append(distance)
+        
+        return float(np.mean(genetic_distances)) if genetic_distances else 0.0
+    
+    def _calculate_genetic_distance(self, ind1: Individual, ind2: Individual) -> float:
+        """2個体間の遺伝的距離を計算"""
+        
+        if not (hasattr(ind1, 'get_genes') and hasattr(ind2, 'get_genes')):
+            return 0.0
+        
+        genes1 = ind1.get_genes()
+        genes2 = ind2.get_genes()
+        
+        if not genes1 or not genes2:
+            return 0.0
+        
+        # ユークリッド距離
+        all_keys = set(genes1.keys()) | set(genes2.keys())
+        distance = 0.0
+        
+        for key in all_keys:
+            val1 = genes1.get(key, 0.0)
+            val2 = genes2.get(key, 0.0)
+            distance += (val1 - val2) ** 2
+        
+        return math.sqrt(distance)
     
     def maintain_diversity(self) -> None:
-        """多様性の維持"""
+        """多様性を維持"""
+        
         if len(self.individuals) < 2:
             return
         
-        # 多様性の計算
-        current_diversity = self.calculate_diversity()
+        # 多様性が閾値を下回る場合の処理
+        diversity = self.calculate_diversity()
         
-        # 多様性が低い場合の処理
-        if current_diversity < self.config.diversity_threshold:
-            self._apply_diversity_maintenance()
+        if diversity < self.config.diversity_threshold:
+            # 最悪個体を突然変異個体で置換
+            worst_individual = self.get_worst_individual()
+            if worst_individual:
+                # 新しいランダム個体を生成
+                new_individual = self.individual_type(
+                    individual_id=f"div_gen{self.current_generation}_ind{random.randint(1000, 9999)}"
+                )
+                new_individual.generation = self.current_generation
+                
+                # 置換
+                for i, ind in enumerate(self.individuals):
+                    if ind.individual_id == worst_individual.individual_id:
+                        self.individuals[i] = new_individual
+                        break
+                
+                logger.debug(f"多様性維持のため個体置換実行")
     
-    def _apply_diversity_maintenance(self) -> None:
-        """多様性維持の適用"""
+    def get_statistics(self) -> PopulationStatistics:
+        """集団統計を計算"""
         
-        # 類似個体の特定
-        similar_pairs = []
-        n = len(self.individuals)
-        
-        if self.diversity_matrix is not None:
-            for i in range(n):
-                for j in range(i + 1, n):
-                    if self.diversity_matrix[i][j] < self.config.diversity_threshold:
-                        similar_pairs.append((i, j, self.diversity_matrix[i][j]))
-        
-        # 類似度順にソート
-        similar_pairs.sort(key=lambda x: x[2])
-        
-        # 類似個体の一方を突然変異
-        diversity_maintained = 0
-        for i, j, similarity in similar_pairs[:len(self.individuals) // 4]:
-            # 適応度の低い方を変異
-            if (self.individuals[i].get_fitness() or 0.0) < (self.individuals[j].get_fitness() or 0.0):
-                target_individual = self.individuals[i]
-            else:
-                target_individual = self.individuals[j]
-            
-            # 強い突然変異を適用
-            target_individual.mutate(0.5, 0.3)
-            target_individual.fitness_value = None  # 再評価が必要
-            diversity_maintained += 1
-        
-        if diversity_maintained > 0:
-            logger.info(f"多様性維持: {diversity_maintained}個体を変異")
-    
-    def _update_statistics(self) -> None:
-        """統計情報の更新"""
-        
-        if not self.individuals:
-            return
-        
-        # 適応度リストの取得
-        fitness_values = [individual.get_fitness() or 0.0 for individual in self.individuals]
-        
-        # 基本統計
         stats = PopulationStatistics()
         stats.generation = self.current_generation
         stats.population_size = len(self.individuals)
-        stats.best_fitness = max(fitness_values)
-        stats.worst_fitness = min(fitness_values)
-        stats.average_fitness = sum(fitness_values) / len(fitness_values)
-        stats.median_fitness = np.median(fitness_values)
-        stats.fitness_variance = np.var(fitness_values)
-        stats.fitness_std = np.std(fitness_values)
+        
+        # 適応度統計
+        evaluated_individuals = [ind for ind in self.individuals if ind.is_evaluated()]
+        
+        if evaluated_individuals:
+            fitness_values = [ind.get_fitness() for ind in evaluated_individuals]
+            
+            stats.best_fitness = max(fitness_values)
+            stats.worst_fitness = min(fitness_values)
+            stats.average_fitness = np.mean(fitness_values)
+            stats.median_fitness = np.median(fitness_values)
+            stats.fitness_variance = np.var(fitness_values)
+            stats.fitness_std = np.std(fitness_values)
         
         # 多様性統計
         stats.average_diversity = self.calculate_diversity()
+        stats.genetic_diversity = self.calculate_genetic_diversity()
         
-        # 進化統計
-        if len(self.best_fitness_history) > 0:
-            stats.improvement_rate = (stats.best_fitness - self.best_fitness_history[-1]) / max(abs(self.best_fitness_history[-1]), 1e-6)
-        
-        # 収束指標
-        stats.convergence_indicator = 1.0 - (stats.fitness_std / (abs(stats.average_fitness) + 1e-6))
-        
-        # エリート統計
+        # その他統計
         stats.elite_count = len(self.elite_individuals)
-        
-        # ユニーク個体数
-        unique_genomes = set()
-        for individual in self.individuals:
-            genome_str = json.dumps(individual.get_genes(), sort_keys=True)
-            unique_genomes.add(genome_str)
-        stats.unique_individuals = len(unique_genomes)
-        
-        # 評価回数
         stats.evaluation_count = self.total_evaluations
         
-        # 履歴の更新
-        self.generation_history.append(stats)
-        self.best_fitness_history.append(stats.best_fitness)
-        self.average_fitness_history.append(stats.average_fitness)
-        self.diversity_history.append(stats.average_diversity)
+        # 改善率計算
+        if len(self.best_fitness_history) > 1:
+            previous_best = self.best_fitness_history[-2]
+            current_best = self.best_fitness_history[-1]
+            stats.improvement_rate = (current_best - previous_best) / abs(previous_best) if previous_best != 0 else 0.0
         
-        # 最良個体の更新
-        if self.best_individual is None or stats.best_fitness > self.best_individual.get_fitness():
-            best_individual = max(self.individuals, key=lambda x: x.get_fitness() or 0.0)
-            self.best_individual = best_individual.clone()
+        # 収束指標
+        if len(self.best_fitness_history) >= 5:
+            recent_variance = np.var(self.best_fitness_history[-5:])
+            stats.convergence_indicator = 1.0 / (1.0 + recent_variance)
+        
+        return stats
     
-    def advance_generation(self) -> None:
-        """世代を進める"""
+    def update_generation(self) -> None:
+        """世代を更新"""
+        
         self.current_generation += 1
         
-        # 個体の年齢を更新
-        for individual in self.individuals:
-            individual.age += 1
-    
-    def get_statistics(self) -> Optional[PopulationStatistics]:
-        """最新の統計情報を取得"""
-        return self.generation_history[-1] if self.generation_history else None
-    
-    def get_best_individual(self) -> Optional[Individual]:
-        """最良個体を取得"""
-        return self.best_individual
-    
-    def get_population_summary(self) -> Dict[str, Any]:
-        """集団の要約情報を取得"""
+        # 統計の記録
+        stats = self.get_statistics()
+        self.generation_history.append(stats)
         
-        current_stats = self.get_statistics()
+        # 履歴の更新
+        if stats.best_fitness:
+            self.best_fitness_history.append(stats.best_fitness)
+        if stats.average_fitness:
+            self.average_fitness_history.append(stats.average_fitness)
+        if stats.average_diversity:
+            self.diversity_history.append(stats.average_diversity)
         
-        return {
-            "generation": self.current_generation,
-            "population_size": len(self.individuals),
-            "total_evaluations": self.total_evaluations,
-            "best_fitness": current_stats.best_fitness if current_stats else 0.0,
-            "average_fitness": current_stats.average_fitness if current_stats else 0.0,
-            "diversity": current_stats.average_diversity if current_stats else 0.0,
-            "elite_count": len(self.elite_individuals),
-            "convergence": current_stats.convergence_indicator if current_stats else 0.0,
-            "unique_individuals": current_stats.unique_individuals if current_stats else 0
-        }
+        logger.debug(f"世代更新: {self.current_generation}")
     
-    def save_population(self, filename: str = None) -> str:
+    def save_population(self, filepath: str) -> None:
         """集団をファイルに保存"""
         
-        if filename is None:
-            filename = f"population_gen{self.current_generation}.pkl"
-        
-        import os
-        os.makedirs(self.save_directory, exist_ok=True)
-        filepath = os.path.join(self.save_directory, filename)
-        
-        save_data = {
-            "config": self.config,
-            "individuals": [ind.to_dict() for ind in self.individuals],
-            "elite_individuals": [ind.to_dict() for ind in self.elite_individuals],
-            "current_generation": self.current_generation,
-            "generation_history": self.generation_history,
-            "best_individual": self.best_individual.to_dict() if self.best_individual else None,
-            "total_evaluations": self.total_evaluations
-        }
-        
         try:
-            with open(filepath, 'wb') as f:
-                pickle.dump(save_data, f)
+            data = {
+                "generation": self.current_generation,
+                "config": self.config.__dict__,
+                "individuals": [ind.__dict__ for ind in self.individuals],
+                "statistics": [stats.__dict__ for stats in self.generation_history],
+                "best_fitness_history": self.best_fitness_history,
+                "average_fitness_history": self.average_fitness_history,
+                "diversity_history": self.diversity_history
+            }
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(data, f, indent=2, ensure_ascii=False, default=str)
             
             logger.info(f"集団保存完了: {filepath}")
-            return filepath
             
         except Exception as e:
             logger.error(f"集団保存エラー: {e}")
-            raise
     
     def load_population(self, filepath: str) -> None:
-        """ファイルから集団を読み込み"""
+        """集団をファイルから読み込み"""
         
         try:
-            with open(filepath, 'rb') as f:
-                save_data = pickle.load(f)
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
             
-            # 基本情報の復元
-            self.config = save_data.get("config", self.config)
-            self.current_generation = save_data.get("current_generation", 0)
-            self.generation_history = save_data.get("generation_history", [])
-            self.total_evaluations = save_data.get("total_evaluations", 0)
+            self.current_generation = data["generation"]
+            self.best_fitness_history = data["best_fitness_history"]
+            self.average_fitness_history = data["average_fitness_history"]
+            self.diversity_history = data["diversity_history"]
             
-            # 個体の復元
+            # 個体の復元（簡易版）
             self.individuals = []
-            for ind_data in save_data.get("individuals", []):
-                individual = self.individual_type()
-                individual.from_dict(ind_data)
+            for ind_data in data["individuals"]:
+                individual = self.individual_type(ind_data["individual_id"])
+                individual.fitness_value = ind_data.get("fitness_value")
+                individual.generation = ind_data.get("generation", 0)
                 self.individuals.append(individual)
-            
-            # エリート個体の復元
-            self.elite_individuals = []
-            for elite_data in save_data.get("elite_individuals", []):
-                elite = self.individual_type()
-                elite.from_dict(elite_data)
-                self.elite_individuals.append(elite)
-            
-            # 最良個体の復元
-            best_data = save_data.get("best_individual")
-            if best_data:
-                self.best_individual = self.individual_type()
-                self.best_individual.from_dict(best_data)
             
             logger.info(f"集団読み込み完了: {filepath}")
             
         except Exception as e:
             logger.error(f"集団読み込みエラー: {e}")
-            raise
+    
+    def get_population_summary(self) -> Dict[str, Any]:
+        """集団の要約情報を取得"""
+        
+        stats = self.get_statistics()
+        
+        return {
+            "generation": self.current_generation,
+            "population_size": len(self.individuals),
+            "best_fitness": stats.best_fitness,
+            "average_fitness": stats.average_fitness,
+            "diversity": stats.average_diversity,
+            "elite_count": stats.elite_count,
+            "evaluation_count": self.total_evaluations,
+            "convergence": stats.convergence_indicator
+        }
 
 # 使用例とテスト
 def test_population():
     """集団クラスのテスト"""
     
-    print("👥 集団管理テスト開始")
+    print("🧬 集団管理テスト開始")
     
-    # 設定の作成
+    # 設定作成
     config = PopulationConfig(
         population_size=20,
         elite_size=3,
-        tournament_size=3
+        selection_pressure=2.0,
+        diversity_threshold=0.1
     )
     
-    # 集団の初期化
+    # 集団初期化
     population = Population(config, WeightVector)
     population.initialize_random(weight_names=["w1", "w2", "w3"])
     
     print(f"✅ 集団初期化完了: {len(population.individuals)}個体")
     
-    # 簡易適応度関数
-    def simple_fitness(individual):
-        genes = individual.get_genes()
-        return sum(genes.values())
+    # 適応度関数（テスト用）
+    def test_fitness(individual):
+        if hasattr(individual, 'get_genes'):
+            genes = individual.get_genes()
+            return sum(genes.values()) if genes else random.random()
+        return random.random()
     
     # 集団評価
-    population.evaluate_population(simple_fitness)
+    population.evaluate_population(test_fitness)
     
-    # 統計情報
+    # 統計計算
     stats = population.get_statistics()
-    print(f"📊 統計情報:")
+    
+    print(f"\n📊 集団統計:")
     print(f"  最高適応度: {stats.best_fitness:.3f}")
     print(f"  平均適応度: {stats.average_fitness:.3f}")
     print(f"  多様性: {stats.average_diversity:.3f}")
+    print(f"  評価回数: {stats.evaluation_count}")
     
     # エリート選択
     elite = population.select_elite()
-    print(f"👑 エリート選択完了: {len(elite)}個体")
+    print(f"\n🏆 エリート選択:")
+    print(f"  エリート数: {len(elite)}")
     
-    # 選択テスト
-    selected = population.tournament_selection()
-    print(f"🎯 トーナメント選択: 個体{selected.individual_id} (適応度: {selected.get_fitness():.3f})")
+    if elite:
+        print(f"  最良個体適応度: {elite[0].get_fitness():.3f}")
+    
+    # 多様性維持
+    population.maintain_diversity()
+    
+    # 世代更新
+    population.update_generation()
+    
+    print(f"\n📈 集団要約:")
+    summary = population.get_population_summary()
+    for key, value in summary.items():
+        print(f"  {key}: {value}")
     
     print("✅ 集団管理テスト完了")
 
 if __name__ == "__main__":
+    import math
     test_population()

@@ -1,513 +1,562 @@
-# backend/core/decision_tree/tree.py - ファジィ決定木実装
-# 研究室選択支援システム用
+# core/decision_tree/node.py - ファジィ決定木ノード（完全版）
 
-import math
-import numpy as np
-from typing import Dict, List, Any, Optional, Tuple, Union
+from typing import Dict, List, Optional, Any, Union, Tuple
 from dataclasses import dataclass
 from abc import ABC, abstractmethod
+import numpy as np
 import json
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 @dataclass
-class TreeConfig:
-    """決定木設定"""
-    max_depth: int = 8
-    min_samples_split: int = 2
-    min_samples_leaf: int = 1
-    fuzzy_threshold: float = 0.1
-    max_features: Optional[int] = None
-    criterion: str = "fuzzy_entropy"  # "fuzzy_entropy", "fuzzy_gini", "fuzzy_gain"
+class SplitCondition:
+    """分岐条件"""
+    feature: str                    # 分岐に使用する特徴量
+    threshold: float                # 閾値
+    linguistic_value: str           # 言語値（"low", "medium", "high"など）
+    membership_threshold: float     # メンバーシップ関数の閾値
+    operator: str = ">"            # 比較演算子
 
-class FuzzySet:
-    """ファジィ集合（簡易版）"""
-    
-    def __init__(self, name: str, low: float, medium: float, high: float):
-        self.name = name
-        self.low = low
-        self.medium = medium
-        self.high = high
-    
-    def membership(self, value: float) -> Dict[str, float]:
-        """メンバーシップ値計算"""
-        # 三角メンバーシップ関数を使用
-        low_membership = max(0, min(1, (self.medium - value) / (self.medium - self.low))) if self.medium != self.low else (1 if value == self.low else 0)
-        high_membership = max(0, min(1, (value - self.medium) / (self.high - self.medium))) if self.high != self.medium else (1 if value == self.high else 0)
-        medium_membership = 1 - max(low_membership, high_membership)
-        
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
         return {
-            f"{self.name}_low": low_membership,
-            f"{self.name}_medium": medium_membership,
-            f"{self.name}_high": high_membership
+            "feature": self.feature,
+            "threshold": self.threshold,
+            "linguistic_value": self.linguistic_value,
+            "membership_threshold": self.membership_threshold,
+            "operator": self.operator
         }
 
-class FuzzyNode:
-    """ファジィ決定木ノード"""
+    def __str__(self) -> str:
+        return f"{self.feature} IS {self.linguistic_value} (threshold: {self.threshold:.3f})"
+
+class FuzzyTreeNode(ABC):
+    """ファジィ決定木ノードの抽象基底クラス"""
     
-    def __init__(self, depth: int = 0):
+    def __init__(self, node_id: str, depth: int = 0):
+        self.node_id = node_id
         self.depth = depth
-        self.feature: Optional[str] = None
-        self.fuzzy_sets: Dict[str, float] = {}
-        self.children: Dict[str, 'FuzzyNode'] = {}
-        self.is_leaf: bool = False
-        self.prediction: Dict[str, float] = {}
-        self.samples: List[Dict[str, Any]] = []
-        self.fuzzy_entropy: float = 0.0
-        self.information_gain: float = 0.0
-        self.node_id: str = ""
+        self.parent: Optional['FuzzyTreeNode'] = None
+        self.samples_count = 0
+        self.purity = 0.0
+        
+        # ノード統計
+        self.creation_time = time.time()
+        self.last_prediction_time = 0.0
+        self.prediction_count = 0
+        self.confidence_history: List[float] = []
+        
+        # メタデータ
+        self.metadata: Dict[str, Any] = {}
+        
+    @abstractmethod
+    def predict(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        """予測を実行"""
+        pass
     
-    def add_child(self, condition: str, child: 'FuzzyNode'):
+    @abstractmethod
+    def is_leaf(self) -> bool:
+        """葉ノードかどうか"""
+        pass
+    
+    @abstractmethod
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        pass
+    
+    @abstractmethod
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """辞書から復元"""
+        pass
+    
+    def get_path_to_root(self) -> List['FuzzyTreeNode']:
+        """ルートまでのパスを取得"""
+        path = [self]
+        current = self.parent
+        while current is not None:
+            path.append(current)
+            current = current.parent
+        return list(reversed(path))
+    
+    def get_depth(self) -> int:
+        """深度を取得"""
+        return self.depth
+    
+    def update_prediction_stats(self, confidence: float):
+        """予測統計を更新"""
+        self.prediction_count += 1
+        self.confidence_history.append(confidence)
+        self.last_prediction_time = time.time()
+        
+        # 最新100回の履歴のみ保持
+        if len(self.confidence_history) > 100:
+            self.confidence_history = self.confidence_history[-100:]
+
+class FuzzyInternalNode(FuzzyTreeNode):
+    """ファジィ決定木の内部ノード"""
+    
+    def __init__(self, node_id: str, split_condition: SplitCondition, depth: int = 0):
+        super().__init__(node_id, depth)
+        self.split_condition = split_condition
+        self.children: Dict[str, FuzzyTreeNode] = {}  # 子ノード（"left", "right"など）
+        self.split_values: Dict[str, float] = {}      # 各分岐の値
+        
+        # 分岐統計
+        self.split_usage_count = 0
+        self.branch_statistics: Dict[str, Dict[str, Any]] = {}
+        
+    def add_child(self, branch_name: str, child_node: 'FuzzyTreeNode') -> None:
         """子ノードを追加"""
-        self.children[condition] = child
+        self.children[branch_name] = child_node
+        child_node.parent = self
+        
+        # 分岐統計の初期化
+        self.branch_statistics[branch_name] = {
+            "usage_count": 0,
+            "average_confidence": 0.0,
+            "prediction_count": 0
+        }
     
-    def predict(self, sample: Dict[str, Any]) -> Dict[str, float]:
-        """予測実行"""
-        if self.is_leaf:
-            return self.prediction
+    def predict(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        """予測を実行（ファジィ推論）"""
         
-        if not self.feature or self.feature not in sample:
-            return {"compatibility": 0.5}  # デフォルト値
+        self.split_usage_count += 1
+        feature_value = sample.get(self.split_condition.feature, 0.0)
         
-        # ファジィ値の計算
-        feature_value = sample[self.feature]
-        fuzzy_set = FuzzySet(self.feature, 1.0, 5.5, 10.0)
-        memberships = fuzzy_set.membership(feature_value)
+        # 各子ノードへの帰属度を計算
+        membership_values = self._calculate_memberships(feature_value)
         
-        # 各子ノードの予測を統合
-        predictions = {}
+        # 各子ノードの予測を重み付き平均
+        final_prediction = {
+            "predicted_class": None,
+            "confidence": 0.0,
+            "class_probabilities": {},
+            "path": [self.node_id],
+            "membership_values": membership_values,
+            "split_feature": self.split_condition.feature,
+            "split_value": feature_value
+        }
+        
         total_weight = 0.0
+        weighted_probabilities = {}
         
-        for condition, child in self.children.items():
-            if condition in memberships:
-                weight = memberships[condition]
-                if weight > 0:
-                    child_prediction = child.predict(sample)
-                    for key, value in child_prediction.items():
-                        if key not in predictions:
-                            predictions[key] = 0.0
-                        predictions[key] += value * weight
-                    total_weight += weight
+        for branch_name, membership in membership_values.items():
+            if membership > 0 and branch_name in self.children:
+                child_prediction = self.children[branch_name].predict(sample)
+                
+                # 分岐統計の更新
+                self.branch_statistics[branch_name]["usage_count"] += 1
+                self.branch_statistics[branch_name]["prediction_count"] += 1
+                
+                # 重み付きで統合
+                for class_name, prob in child_prediction.get("class_probabilities", {}).items():
+                    if class_name not in weighted_probabilities:
+                        weighted_probabilities[class_name] = 0.0
+                    weighted_probabilities[class_name] += prob * membership
+                
+                # パスの更新
+                if child_prediction.get("path"):
+                    final_prediction["path"].extend(child_prediction["path"])
+                
+                total_weight += membership
         
         # 正規化
         if total_weight > 0:
-            for key in predictions:
-                predictions[key] /= total_weight
-        else:
-            predictions = {"compatibility": 0.5}
+            for class_name in weighted_probabilities:
+                weighted_probabilities[class_name] /= total_weight
         
-        return predictions
+        # 最も確率の高いクラスを選択
+        if weighted_probabilities:
+            predicted_class = max(weighted_probabilities, key=weighted_probabilities.get)
+            confidence = weighted_probabilities[predicted_class]
+        else:
+            predicted_class = "unknown"
+            confidence = 0.0
+        
+        final_prediction["predicted_class"] = predicted_class
+        final_prediction["confidence"] = confidence
+        final_prediction["class_probabilities"] = weighted_probabilities
+        
+        # 統計更新
+        self.update_prediction_stats(confidence)
+        
+        return final_prediction
+    
+    def _calculate_memberships(self, feature_value: float) -> Dict[str, float]:
+        """特徴値に対する各分岐のメンバーシップ度を計算"""
+        
+        memberships = {}
+        
+        # 簡易実装：閾値による二分岐
+        if self.split_condition.operator == ">":
+            # 高い値への帰属度
+            high_membership = 1.0 if feature_value > self.split_condition.threshold else 0.0
+            low_membership = 1.0 - high_membership
+            
+            memberships["high"] = high_membership
+            memberships["low"] = low_membership
+        else:
+            # デフォルト：均等分割
+            memberships["left"] = 0.5
+            memberships["right"] = 0.5
+        
+        return memberships
+    
+    def is_leaf(self) -> bool:
+        """葉ノードかどうか"""
+        return False
     
     def to_dict(self) -> Dict[str, Any]:
         """辞書形式に変換"""
-        result = {
-            "depth": self.depth,
-            "feature": self.feature,
-            "is_leaf": self.is_leaf,
-            "prediction": self.prediction,
-            "fuzzy_entropy": self.fuzzy_entropy,
-            "information_gain": self.information_gain,
+        return {
+            "node_type": "internal",
             "node_id": self.node_id,
-            "sample_count": len(self.samples)
+            "depth": self.depth,
+            "split_condition": self.split_condition.to_dict(),
+            "children": {name: child.to_dict() for name, child in self.children.items()},
+            "samples_count": self.samples_count,
+            "purity": self.purity,
+            "prediction_count": self.prediction_count,
+            "metadata": self.metadata
         }
+    
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """辞書から復元"""
+        self.node_id = data["node_id"]
+        self.depth = data["depth"]
+        self.samples_count = data.get("samples_count", 0)
+        self.purity = data.get("purity", 0.0)
+        self.prediction_count = data.get("prediction_count", 0)
+        self.metadata = data.get("metadata", {})
         
-        if not self.is_leaf:
-            result["children"] = {condition: child.to_dict() for condition, child in self.children.items()}
-        
-        return result
+        # 分岐条件の復元
+        split_data = data["split_condition"]
+        self.split_condition = SplitCondition(
+            feature=split_data["feature"],
+            threshold=split_data["threshold"],
+            linguistic_value=split_data["linguistic_value"],
+            membership_threshold=split_data["membership_threshold"],
+            operator=split_data.get("operator", ">")
+        )
 
-class FuzzyDecisionTree:
-    """ファジィ決定木"""
+class FuzzyLeafNode(FuzzyTreeNode):
+    """ファジィ決定木の葉ノード"""
     
-    def __init__(self, config: TreeConfig = None):
-        self.config = config or TreeConfig()
-        self.root: Optional[FuzzyNode] = None
-        self.feature_importance: Dict[str, float] = {}
-        self.training_history: List[Dict[str, Any]] = []
-        self.is_trained: bool = False
-    
-    def fit(self, X: List[Dict[str, Any]], y: List[float], feature_names: List[str] = None):
-        """決定木の学習"""
+    def __init__(self, node_id: str, predicted_class: str, 
+                 class_probabilities: Dict[str, float] = None, depth: int = 0):
+        super().__init__(node_id, depth)
+        self.predicted_class = predicted_class
+        self.class_probabilities = class_probabilities or {predicted_class: 1.0}
+        self.confidence = max(self.class_probabilities.values()) if self.class_probabilities else 0.0
         
-        if not X or not y or len(X) != len(y):
-            raise ValueError("Invalid training data")
+        # 葉ノード特有の統計
+        self.leaf_purity = self.confidence
+        self.misclassification_count = 0
         
-        # 特徴量名の設定
-        if feature_names is None:
-            if X and isinstance(X[0], dict):
-                feature_names = list(X[0].keys())
-            else:
-                feature_names = [f"feature_{i}" for i in range(len(X[0]) if X else 0)]
+    def predict(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        """予測を実行"""
         
-        # 訓練データの準備
-        training_samples = []
-        for i, sample in enumerate(X):
-            training_sample = sample.copy() if isinstance(sample, dict) else {}
-            training_sample['target'] = y[i]
-            training_samples.append(training_sample)
-        
-        # ルートノード構築
-        self.root = FuzzyNode(depth=0)
-        self.root.samples = training_samples
-        self.root.node_id = "root"
-        
-        # 決定木構築
-        self._build_tree(self.root, feature_names, training_samples)
-        
-        # 特徴量重要度計算
-        self._calculate_feature_importance()
-        
-        self.is_trained = True
-        
-        # 学習履歴記録
-        self.training_history.append({
-            "timestamp": "current",
-            "samples_count": len(training_samples),
-            "features_count": len(feature_names),
-            "tree_depth": self._calculate_tree_depth(),
-            "leaf_nodes": self._count_leaf_nodes()
-        })
-    
-    def _build_tree(self, node: FuzzyNode, feature_names: List[str], samples: List[Dict[str, Any]]):
-        """決定木の再帰構築"""
-        
-        # 終了条件チェック
-        if (node.depth >= self.config.max_depth or 
-            len(samples) < self.config.min_samples_split):
-            self._make_leaf(node, samples)
-            return
-        
-        # 最適分割の検索
-        best_feature, best_gain = self._find_best_split(samples, feature_names)
-        
-        if best_feature is None or best_gain < self.config.fuzzy_threshold:
-            self._make_leaf(node, samples)
-            return
-        
-        # ノード設定
-        node.feature = best_feature
-        node.information_gain = best_gain
-        
-        # ファジィ分割
-        splits = self._fuzzy_split(samples, best_feature)
-        
-        for condition, child_samples in splits.items():
-            if len(child_samples) >= self.config.min_samples_leaf:
-                child_node = FuzzyNode(depth=node.depth + 1)
-                child_node.samples = child_samples
-                child_node.node_id = f"{node.node_id}_{condition}"
-                
-                node.add_child(condition, child_node)
-                self._build_tree(child_node, feature_names, child_samples)
-        
-        # 子ノードがない場合は葉にする
-        if not node.children:
-            self._make_leaf(node, samples)
-    
-    def _find_best_split(self, samples: List[Dict[str, Any]], feature_names: List[str]) -> Tuple[Optional[str], float]:
-        """最適分割の検索"""
-        
-        best_feature = None
-        best_gain = 0.0
-        
-        parent_entropy = self._calculate_fuzzy_entropy(samples)
-        
-        for feature in feature_names:
-            if feature == 'target':
-                continue
-            
-            # 特徴量の値を取得
-            feature_values = [sample.get(feature, 5.5) for sample in samples if feature in sample]
-            if not feature_values:
-                continue
-            
-            # ファジィ分割によるエントロピー計算
-            splits = self._fuzzy_split(samples, feature)
-            weighted_entropy = 0.0
-            total_samples = len(samples)
-            
-            for child_samples in splits.values():
-                if child_samples:
-                    weight = len(child_samples) / total_samples
-                    child_entropy = self._calculate_fuzzy_entropy(child_samples)
-                    weighted_entropy += weight * child_entropy
-            
-            # 情報利得計算
-            information_gain = parent_entropy - weighted_entropy
-            
-            if information_gain > best_gain:
-                best_gain = information_gain
-                best_feature = feature
-        
-        return best_feature, best_gain
-    
-    def _fuzzy_split(self, samples: List[Dict[str, Any]], feature: str) -> Dict[str, List[Dict[str, Any]]]:
-        """ファジィ分割"""
-        
-        splits = {
-            f"{feature}_low": [],
-            f"{feature}_medium": [],
-            f"{feature}_high": []
+        prediction = {
+            "predicted_class": self.predicted_class,
+            "confidence": self.confidence,
+            "class_probabilities": self.class_probabilities.copy(),
+            "path": [self.node_id],
+            "leaf_node": True,
+            "samples_count": self.samples_count,
+            "leaf_purity": self.leaf_purity
         }
         
-        # 特徴量の範囲計算
-        feature_values = [sample.get(feature, 5.5) for sample in samples if feature in sample]
-        if not feature_values:
-            return splits
+        # 統計更新
+        self.update_prediction_stats(self.confidence)
         
-        min_val = min(feature_values)
-        max_val = max(feature_values)
-        medium_val = (min_val + max_val) / 2
+        return prediction
+    
+    def is_leaf(self) -> bool:
+        """葉ノードかどうか"""
+        return True
+    
+    def update_class_distribution(self, new_class: str, weight: float = 1.0):
+        """クラス分布を更新"""
         
-        fuzzy_set = FuzzySet(feature, min_val, medium_val, max_val)
+        if new_class not in self.class_probabilities:
+            self.class_probabilities[new_class] = 0.0
         
-        for sample in samples:
-            if feature not in sample:
-                continue
+        # 重み付き更新
+        total_weight = sum(self.class_probabilities.values()) + weight
+        for class_name in self.class_probabilities:
+            self.class_probabilities[class_name] = self.class_probabilities[class_name] / total_weight
+        
+        self.class_probabilities[new_class] += weight / total_weight
+        
+        # 予測クラスと信頼度の更新
+        self.predicted_class = max(self.class_probabilities, key=self.class_probabilities.get)
+        self.confidence = self.class_probabilities[self.predicted_class]
+        self.leaf_purity = self.confidence
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        return {
+            "node_type": "leaf",
+            "node_id": self.node_id,
+            "depth": self.depth,
+            "predicted_class": self.predicted_class,
+            "class_probabilities": self.class_probabilities,
+            "confidence": self.confidence,
+            "samples_count": self.samples_count,
+            "purity": self.purity,
+            "leaf_purity": self.leaf_purity,
+            "prediction_count": self.prediction_count,
+            "metadata": self.metadata
+        }
+    
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """辞書から復元"""
+        self.node_id = data["node_id"]
+        self.depth = data["depth"]
+        self.predicted_class = data["predicted_class"]
+        self.class_probabilities = data["class_probabilities"]
+        self.confidence = data["confidence"]
+        self.samples_count = data.get("samples_count", 0)
+        self.purity = data.get("purity", 0.0)
+        self.leaf_purity = data.get("leaf_purity", self.confidence)
+        self.prediction_count = data.get("prediction_count", 0)
+        self.metadata = data.get("metadata", {})
+
+class FuzzyRuleNode(FuzzyTreeNode):
+    """ファジィルールノード（特殊ノード）"""
+    
+    def __init__(self, node_id: str, rule_conditions: List[str], 
+                 rule_conclusion: str, rule_weight: float = 1.0, depth: int = 0):
+        super().__init__(node_id, depth)
+        self.rule_conditions = rule_conditions
+        self.rule_conclusion = rule_conclusion
+        self.rule_weight = rule_weight
+        
+        # ルール統計
+        self.activation_count = 0
+        self.total_activation = 0.0
+        self.average_activation = 0.0
+        
+    def predict(self, sample: Dict[str, Any]) -> Dict[str, Any]:
+        """ルールベース予測"""
+        
+        # ルール条件の評価（簡易実装）
+        activation = self._evaluate_rule_conditions(sample)
+        
+        prediction = {
+            "predicted_class": self.rule_conclusion,
+            "confidence": activation * self.rule_weight,
+            "class_probabilities": {self.rule_conclusion: activation * self.rule_weight},
+            "path": [self.node_id],
+            "rule_activation": activation,
+            "rule_weight": self.rule_weight,
+            "rule_conditions": self.rule_conditions
+        }
+        
+        # ルール統計更新
+        self.activation_count += 1
+        self.total_activation += activation
+        self.average_activation = self.total_activation / self.activation_count
+        
+        # 統計更新
+        self.update_prediction_stats(activation * self.rule_weight)
+        
+        return prediction
+    
+    def _evaluate_rule_conditions(self, sample: Dict[str, Any]) -> float:
+        """ルール条件の評価"""
+        
+        if not self.rule_conditions:
+            return 1.0
+        
+        # 簡易実装：ランダムな活性化度
+        # 実際の実装では、ファジィルール評価エンジンを使用
+        activation = 1.0
+        
+        for condition in self.rule_conditions:
+            # 条件の解析と評価（簡易版）
+            if "high" in condition.lower():
+                activation *= 0.8
+            elif "medium" in condition.lower():
+                activation *= 0.6
+            elif "low" in condition.lower():
+                activation *= 0.4
+            else:
+                activation *= 0.5
+        
+        return min(1.0, max(0.0, activation))
+    
+    def is_leaf(self) -> bool:
+        """葉ノードかどうか（ルールノードは葉として扱う）"""
+        return True
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """辞書形式に変換"""
+        return {
+            "node_type": "rule",
+            "node_id": self.node_id,
+            "depth": self.depth,
+            "rule_conditions": self.rule_conditions,
+            "rule_conclusion": self.rule_conclusion,
+            "rule_weight": self.rule_weight,
+            "activation_count": self.activation_count,
+            "average_activation": self.average_activation,
+            "samples_count": self.samples_count,
+            "purity": self.purity,
+            "prediction_count": self.prediction_count,
+            "metadata": self.metadata
+        }
+    
+    def from_dict(self, data: Dict[str, Any]) -> None:
+        """辞書から復元"""
+        self.node_id = data["node_id"]
+        self.depth = data["depth"]
+        self.rule_conditions = data["rule_conditions"]
+        self.rule_conclusion = data["rule_conclusion"]
+        self.rule_weight = data["rule_weight"]
+        self.activation_count = data.get("activation_count", 0)
+        self.average_activation = data.get("average_activation", 0.0)
+        self.samples_count = data.get("samples_count", 0)
+        self.purity = data.get("purity", 0.0)
+        self.prediction_count = data.get("prediction_count", 0)
+        self.metadata = data.get("metadata", {})
+
+class NodeTraverser:
+    """ノード走査ユーティリティ"""
+    
+    @staticmethod
+    def depth_first_search(root: FuzzyTreeNode, 
+                          visit_func: callable = None) -> List[FuzzyTreeNode]:
+        """深度優先探索"""
+        
+        visited = []
+        
+        def dfs(node: FuzzyTreeNode):
+            visited.append(node)
             
-            value = sample[feature]
-            memberships = fuzzy_set.membership(value)
+            if visit_func:
+                visit_func(node)
             
-            # 最大メンバーシップ値の条件に分類
-            max_membership = max(memberships.values())
-            for condition, membership in memberships.items():
-                if membership == max_membership:
-                    splits[condition].append(sample)
-                    break
+            if hasattr(node, 'children'):
+                for child in node.children.values():
+                    dfs(child)
         
-        return splits
+        dfs(root)
+        return visited
     
-    def _calculate_fuzzy_entropy(self, samples: List[Dict[str, Any]]) -> float:
-        """ファジィエントロピー計算"""
+    @staticmethod
+    def breadth_first_search(root: FuzzyTreeNode, 
+                           visit_func: callable = None) -> List[FuzzyTreeNode]:
+        """幅優先探索"""
         
-        if not samples:
-            return 0.0
+        visited = []
+        queue = [root]
         
-        # ターゲット値の分布
-        targets = [sample.get('target', 0.5) for sample in samples]
+        while queue:
+            node = queue.pop(0)
+            visited.append(node)
+            
+            if visit_func:
+                visit_func(node)
+            
+            if hasattr(node, 'children'):
+                queue.extend(node.children.values())
         
-        # ファジィ化されたターゲット値のエントロピー
-        # 連続値を3つの区間に分割
-        low_count = sum(1 for t in targets if t <= 0.33)
-        medium_count = sum(1 for t in targets if 0.33 < t <= 0.67)
-        high_count = sum(1 for t in targets if t > 0.67)
-        
-        total = len(targets)
-        entropy = 0.0
-        
-        for count in [low_count, medium_count, high_count]:
-            if count > 0:
-                p = count / total
-                entropy -= p * math.log2(p)
-        
-        return entropy
+        return visited
     
-    def _make_leaf(self, node: FuzzyNode, samples: List[Dict[str, Any]]):
-        """葉ノード作成"""
+    @staticmethod
+    def find_leaves(root: FuzzyTreeNode) -> List[FuzzyTreeNode]:
+        """葉ノードを検索"""
         
-        node.is_leaf = True
+        leaves = []
         
-        if not samples:
-            node.prediction = {"compatibility": 0.5}
-            return
+        def collect_leaves(node: FuzzyTreeNode):
+            if node.is_leaf():
+                leaves.append(node)
         
-        # 平均値を予測値とする
-        targets = [sample.get('target', 0.5) for sample in samples]
-        avg_target = sum(targets) / len(targets)
-        
-        node.prediction = {"compatibility": avg_target}
-        node.fuzzy_entropy = self._calculate_fuzzy_entropy(samples)
+        NodeTraverser.depth_first_search(root, collect_leaves)
+        return leaves
     
-    def predict(self, X: Union[Dict[str, Any], List[Dict[str, Any]]]) -> Union[Dict[str, float], List[Dict[str, float]]]:
-        """予測実行"""
+    @staticmethod
+    def calculate_tree_depth(root: FuzzyTreeNode) -> int:
+        """木の深度を計算"""
         
-        if not self.is_trained or not self.root:
-            raise ValueError("Model is not trained")
+        max_depth = 0
         
-        if isinstance(X, dict):
-            return self.root.predict(X)
-        else:
-            return [self.root.predict(sample) for sample in X]
-    
-    def _calculate_feature_importance(self):
-        """特徴量重要度計算"""
+        def check_depth(node: FuzzyTreeNode):
+            nonlocal max_depth
+            max_depth = max(max_depth, node.depth)
         
-        if not self.root:
-            return
-        
-        importance = {}
-        self._calculate_node_importance(self.root, importance)
-        
-        # 正規化
-        total_importance = sum(importance.values())
-        if total_importance > 0:
-            self.feature_importance = {
-                feature: imp / total_importance 
-                for feature, imp in importance.items()
-            }
-        else:
-            self.feature_importance = {}
-    
-    def _calculate_node_importance(self, node: FuzzyNode, importance: Dict[str, float]):
-        """ノード重要度の再帰計算"""
-        
-        if node.is_leaf or not node.feature:
-            return
-        
-        if node.feature not in importance:
-            importance[node.feature] = 0.0
-        
-        importance[node.feature] += node.information_gain * len(node.samples)
-        
-        for child in node.children.values():
-            self._calculate_node_importance(child, importance)
-    
-    def _calculate_tree_depth(self) -> int:
-        """決定木の深さ計算"""
-        
-        if not self.root:
-            return 0
-        
-        return self._calculate_node_depth(self.root)
-    
-    def _calculate_node_depth(self, node: FuzzyNode) -> int:
-        """ノード深さの再帰計算"""
-        
-        if node.is_leaf:
-            return node.depth
-        
-        max_depth = node.depth
-        for child in node.children.values():
-            child_depth = self._calculate_node_depth(child)
-            max_depth = max(max_depth, child_depth)
-        
+        NodeTraverser.depth_first_search(root, check_depth)
         return max_depth
     
-    def _count_leaf_nodes(self) -> int:
-        """葉ノード数計算"""
+    @staticmethod
+    def count_nodes_by_type(root: FuzzyTreeNode) -> Dict[str, int]:
+        """ノードタイプ別カウント"""
         
-        if not self.root:
-            return 0
+        counts = {"internal": 0, "leaf": 0, "rule": 0}
         
-        return self._count_node_leaves(self.root)
-    
-    def _count_node_leaves(self, node: FuzzyNode) -> int:
-        """葉ノードの再帰カウント"""
+        def count_node(node: FuzzyTreeNode):
+            if isinstance(node, FuzzyInternalNode):
+                counts["internal"] += 1
+            elif isinstance(node, FuzzyRuleNode):
+                counts["rule"] += 1
+            elif isinstance(node, FuzzyLeafNode):
+                counts["leaf"] += 1
         
-        if node.is_leaf:
-            return 1
-        
-        count = 0
-        for child in node.children.values():
-            count += self._count_node_leaves(child)
-        
-        return count
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """辞書形式に変換"""
-        
-        result = {
-            "is_trained": self.is_trained,
-            "config": {
-                "max_depth": self.config.max_depth,
-                "min_samples_split": self.config.min_samples_split,
-                "min_samples_leaf": self.config.min_samples_leaf,
-                "fuzzy_threshold": self.config.fuzzy_threshold,
-                "criterion": self.config.criterion
-            },
-            "feature_importance": self.feature_importance,
-            "tree_depth": self._calculate_tree_depth(),
-            "leaf_nodes": self._count_leaf_nodes(),
-            "training_history": self.training_history
-        }
-        
-        if self.root:
-            result["tree_structure"] = self.root.to_dict()
-        
-        return result
-    
-    def save_model(self, filepath: str):
-        """モデル保存"""
-        
-        try:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                json.dump(self.to_dict(), f, ensure_ascii=False, indent=2)
-            print(f"✅ モデルを保存しました: {filepath}")
-        except Exception as e:
-            print(f"❌ モデル保存エラー: {e}")
-    
-    def get_prediction_path(self, sample: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """予測パス取得（説明可能性のため）"""
-        
-        if not self.root:
-            return []
-        
-        path = []
-        self._trace_prediction_path(self.root, sample, path)
-        return path
-    
-    def _trace_prediction_path(self, node: FuzzyNode, sample: Dict[str, Any], path: List[Dict[str, Any]]):
-        """予測パスの追跡"""
-        
-        path_info = {
-            "node_id": node.node_id,
-            "depth": node.depth,
-            "feature": node.feature,
-            "is_leaf": node.is_leaf,
-            "sample_count": len(node.samples)
-        }
-        
-        if node.is_leaf:
-            path_info["prediction"] = node.prediction
-        
-        path.append(path_info)
-        
-        if not node.is_leaf and node.feature and node.feature in sample:
-            # 最適な子ノードを選択
-            feature_value = sample[node.feature]
-            fuzzy_set = FuzzySet(node.feature, 1.0, 5.5, 10.0)
-            memberships = fuzzy_set.membership(feature_value)
-            
-            best_condition = max(memberships, key=memberships.get)
-            if best_condition in node.children:
-                self._trace_prediction_path(node.children[best_condition], sample, path)
+        NodeTraverser.depth_first_search(root, count_node)
+        return counts
 
-# テスト用メイン関数
-if __name__ == "__main__":
-    print("🧪 ファジィ決定木テスト開始...")
+# 使用例とテスト
+def test_fuzzy_nodes():
+    """ファジィノードのテスト"""
     
-    # テストデータ作成
-    test_X = [
-        {"research_intensity": 8.0, "advisor_style": 7.0, "team_work": 8.5},
-        {"research_intensity": 6.0, "advisor_style": 8.5, "team_work": 9.0},
-        {"research_intensity": 9.0, "advisor_style": 6.0, "team_work": 7.0},
-        {"research_intensity": 5.0, "advisor_style": 9.0, "team_work": 8.0},
-        {"research_intensity": 7.5, "advisor_style": 7.5, "team_work": 7.5}
-    ]
+    print("🌳 ファジィ決定木ノードテスト開始")
     
-    test_y = [0.85, 0.75, 0.80, 0.70, 0.75]
-    
-    # 決定木設定
-    config = TreeConfig(
-        max_depth=5,
-        min_samples_split=2,
-        min_samples_leaf=1,
-        fuzzy_threshold=0.01
+    # 分岐条件の作成
+    split_condition = SplitCondition(
+        feature="research_intensity",
+        threshold=5.0,
+        linguistic_value="medium",
+        membership_threshold=0.5
     )
     
-    # 決定木作成・学習
-    tree = FuzzyDecisionTree(config)
-    tree.fit(test_X, test_y)
+    # 内部ノードの作成
+    internal_node = FuzzyInternalNode("root", split_condition, 0)
+    
+    # 葉ノードの作成
+    leaf_high = FuzzyLeafNode("leaf_high", "high_match", {"high_match": 0.8, "medium_match": 0.2}, 1)
+    leaf_low = FuzzyLeafNode("leaf_low", "low_match", {"low_match": 0.9, "medium_match": 0.1}, 1)
+    
+    # 子ノードの追加
+    internal_node.add_child("high", leaf_high)
+    internal_node.add_child("low", leaf_low)
     
     # 予測テスト
-    test_sample = {"research_intensity": 8.5, "advisor_style": 7.0, "team_work": 8.0}
-    prediction = tree.predict(test_sample)
+    test_sample = {"research_intensity": 7.0, "advisor_style": 6.0}
     
-    print(f"📊 予測結果: {prediction}")
-    print(f"🏗️ 決定木深さ: {tree._calculate_tree_depth()}")
-    print(f"🍃 葉ノード数: {tree._count_leaf_nodes()}")
-    print(f"📈 特徴量重要度: {tree.feature_importance}")
+    print("\n📊 予測テスト:")
+    prediction = internal_node.predict(test_sample)
+    print(f"  予測クラス: {prediction['predicted_class']}")
+    print(f"  信頼度: {prediction['confidence']:.3f}")
+    print(f"  経路: {' -> '.join(prediction['path'])}")
     
-    # 予測パス
-    path = tree.get_prediction_path(test_sample)
-    print(f"🛤️ 予測パス: {len(path)}ノード")
+    # 木構造の解析
+    print("\n🔍 木構造解析:")
+    nodes = NodeTraverser.depth_first_search(internal_node)
+    print(f"  総ノード数: {len(nodes)}")
     
-    print("✅ テスト完了")
+    node_counts = NodeTraverser.count_nodes_by_type(internal_node)
+    print(f"  内部ノード: {node_counts['internal']}")
+    print(f"  葉ノード: {node_counts['leaf']}")
+    print(f"  ルールノード: {node_counts['rule']}")
+    
+    max_depth = NodeTraverser.calculate_tree_depth(internal_node)
+    print(f"  最大深度: {max_depth}")
+    
+    print("✅ ファジィ決定木ノードテスト完了")
+
+if __name__ == "__main__":
+    test_fuzzy_nodes()
