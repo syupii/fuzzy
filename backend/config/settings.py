@@ -1,4 +1,4 @@
-# config/settings.py - システム設定管理（修正版）
+# config/settings.py - 拡張された研究分野設定
 
 import os
 from typing import Dict, List, Any, Optional
@@ -67,7 +67,7 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             # 特殊項目（3項目）
             "interdisciplinary",       # 学際性
             "communication_style",     # コミュニケーション
-
+            "innovation_risk"          # 革新性・リスク許容度
         ]
         
         @property
@@ -75,31 +75,46 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             """コア機能（基本5項目）"""
             return self.evaluation_criteria[:5]
         
-        # 研究分野（11分野）
+        # 拡張された研究分野（20分野）
         research_fields: List[str] = [
-            # テクノロジー・システム分野（5分野）
-            "ai_machine_learning",        # 人工知能・機械学習
-            "image_video_processing",     # 画像・映像処理
-            "network_security",           # ネットワーク・セキュリティ
-            "database_information_systems", # データベース・情報システム
-            "embedded_iot",               # 組込み・IoT
+            # テクノロジー・システム分野（12分野）
+            "ai_machine_learning",            # 人工知能・機械学習
+            "image_video_processing",         # 画像・映像処理
+            "network_security",               # ネットワーク・セキュリティ
+            "database_information_systems",   # データベース・情報システム
+            "embedded_iot",                   # 組込み・IoT
+            "education_linguistics",          # 教育・言語学
+            "natural_science_mathematics",    # 自然科学・数理
+            "medical_informatics",            # 医療情報・ヘルスケア
+            "tourism_regional_systems",       # 観光情報・地域システム
+            "business_information_systems",   # 経営情報・意思決定支援
+            "audio_sound_processing",         # 音声・音響情報処理
+            "system_operations_ethics",       # システム運用・情報倫理
             
             # クリエイティブ分野（4分野）
-            "web_design_ui_ux",          # Webデザイン・UI/UX
-            "design_visual_expression",  # デザイン・視覚表現
-            "video_animation",           # 映像・アニメーション
-            "computer_music_sound_art",  # コンピュータ音楽・サウンドアート
+            "web_design_ui_ux",              # Webデザイン・UI/UX
+            "design_visual_expression",      # デザイン・視覚表現
+            "video_animation",               # 映像・アニメーション
+            "computer_music_sound_art",      # コンピュータ音楽・サウンドアート
             
             # エンターテイメント分野（2分野）
-            "game_development_esports",  # ゲーム開発・eスポーツ
-            "vr_ar_media_art"           # VR/AR・メディアアート
+            "game_development_esports",      # ゲーム開発・eスポーツ
+            "vr_ar_media_art",              # VR/AR・メディアアート
+            
+            # 人文・社会・体育分野（2分野）
+            "philosophy_humanities",         # 哲学・人文・環境行動学
+            "sports_exercise_science"        # スポーツ・体育科学
         ]
         
-        # 分野カテゴリ
+        # 拡張された分野カテゴリ
         field_categories: Dict[str, List[str]] = {
             "テクノロジー・システム": [
                 "ai_machine_learning", "image_video_processing", 
-                "network_security", "database_information_systems", "embedded_iot"
+                "network_security", "database_information_systems", "embedded_iot",
+                "education_linguistics", "natural_science_mathematics", 
+                "medical_informatics", "tourism_regional_systems", 
+                "business_information_systems", "audio_sound_processing", 
+                "system_operations_ethics"
             ],
             "クリエイティブ": [
                 "web_design_ui_ux", "design_visual_expression",
@@ -107,7 +122,102 @@ if PYDANTIC_SETTINGS_AVAILABLE:
             ],
             "エンターテイメント": [
                 "game_development_esports", "vr_ar_media_art"
+            ],
+            "人文・社会・体育": [
+                "philosophy_humanities", "sports_exercise_science"
             ]
+        }
+        
+        # 詳細な研究分野情報
+        research_fields_detail: Dict[str, Dict[str, Any]] = {
+            # テクノロジー・システム分野
+            "ai_machine_learning": {
+                "name": "人工知能・機械学習",
+                "description": "データ解析、機械学習、深層学習、自然言語処理など",
+                "faculty": [
+                    {"name": "伊藤雅彦", "specialties": ["情報可視化", "ユーザインタフェース", "データ工学"]},
+                    {"name": "内山敏雄", "specialties": ["データ解析", "機械学習", "レコメンド", "テキストマイニング"]},
+                    {"name": "小野亮太", "specialties": ["人工知能", "情報工学", "マルチエージェントシステム", "情報推薦"]},
+                    {"name": "齋藤健司", "specialties": ["人工知能", "教育システム", "仮想環境"]},
+                    {"name": "谷口文武", "specialties": ["機械学習", "パターン認識"]},
+                    {"name": "辻準平", "specialties": ["社会シミュレーション", "マルチエージェントシステム", "IoT"]},
+                    {"name": "山北貴典", "specialties": ["データベース技術"]}
+                ],
+                "faculty_count": 7,
+                "keywords": ["AI", "機械学習", "データ分析", "深層学習"]
+            },
+            "image_video_processing": {
+                "name": "画像・映像処理",
+                "description": "コンピュータビジョン、画像認識、医用画像工学など",
+                "faculty": [
+                    {"name": "森圭佑", "specialties": ["情報計測", "音声・画像情報処理", "医用情報処理", "ゲームプログラミング"]},
+                    {"name": "向田茂", "specialties": ["画像処理", "顔学", "認知心理学", "VR/AR", "3DCG"]},
+                    {"name": "高井奈美", "specialties": ["コンピュータグラフィックス", "画像処理", "Webデザイン"]},
+                    {"name": "藤原孝行", "specialties": ["コンピュータビジョン", "コンピュータグラフィックス"]},
+                    {"name": "越野一博", "specialties": ["医用画像工学", "数理統計学", "人工知能画像解析処理"]},
+                    {"name": "上杉正人", "specialties": ["医療情報システム開発", "医療言語処理", "画像処理"]}
+                ],
+                "faculty_count": 6,
+                "keywords": ["画像処理", "コンピュータビジョン", "CG", "映像解析"]
+            },
+            "education_linguistics": {
+                "name": "教育・言語学",
+                "description": "日本語教育、多言語教育、教育システム、語学教育など",
+                "faculty": [
+                    {"name": "飯嶋美知子", "specialties": ["日本語教育学", "日中対照言語学"]},
+                    {"name": "金銀珠", "specialties": ["日韓対照言語学", "日本語教育", "韓国語教育", "複言語教育"]},
+                    {"name": "田中英夫", "specialties": ["国際経営論", "国際関係論", "中国語教育"]},
+                    {"name": "齋藤一", "specialties": ["観光情報学", "教育工学"]},
+                    {"name": "近澤潤", "specialties": ["発想法", "デザイン思考", "イノベーション教育"]}
+                ],
+                "faculty_count": 5,
+                "keywords": ["日本語教育", "多言語", "教育システム", "語学"]
+            },
+            "natural_science_mathematics": {
+                "name": "自然科学・数理",
+                "description": "宇宙科学、地球科学、統計解析、数値計算、気象現象など",
+                "faculty": [
+                    {"name": "柿並義宏", "specialties": ["宇宙科学", "地球惑星科学", "大気科学", "動物行動学"]},
+                    {"name": "甫喜本司", "specialties": ["データ解析法", "統計数理", "時間的・空間的な現象の予測方法"]},
+                    {"name": "松井伸也", "specialties": ["非線形現象の解析", "流体現象", "気象現象", "反応拡散系"]},
+                    {"name": "新井山亮", "specialties": ["社会情報工学", "光・波動電子工学", "数値解析"]},
+                    {"name": "佐々木洋平", "specialties": ["地球流体力学", "惑星科学", "応用数学", "数値計算"]},
+                    {"name": "湯村翼", "specialties": ["地球惑星科学", "ヒューマンコンピュータインタラクション"]}
+                ],
+                "faculty_count": 6,
+                "keywords": ["宇宙科学", "地球科学", "統計解析", "数値計算"]
+            },
+            "medical_informatics": {
+                "name": "医療情報・ヘルスケア",
+                "description": "医用画像工学、医療情報システム、医療データ解析など",
+                "faculty": [
+                    {"name": "越野一博", "specialties": ["医用画像工学", "数理統計学", "人工知能画像解析処理"]},
+                    {"name": "上杉正人", "specialties": ["医療情報システム開発", "医療言語処理", "画像処理"]}
+                ],
+                "faculty_count": 2,
+                "keywords": ["医療IT", "医用画像", "ヘルスケア", "医療データ"]
+            },
+            "philosophy_humanities": {
+                "name": "哲学・人文・環境行動学",
+                "description": "哲学、倫理学、芸術学、環境行動学、地域コミュニティなど",
+                "faculty": [
+                    {"name": "三浦洋", "specialties": ["哲学", "倫理学", "芸術学"]},
+                    {"name": "隼田尚彦", "specialties": ["環境行動学", "地域コミュニティ", "建築計画学"]}
+                ],
+                "faculty_count": 2,
+                "keywords": ["哲学", "倫理学", "環境行動", "地域研究"]
+            },
+            "sports_exercise_science": {
+                "name": "スポーツ・体育科学",
+                "description": "スポーツバイオメカニクス、トレーニング科学、体育実践など",
+                "faculty": [
+                    {"name": "綿谷貴志", "specialties": ["スポーツバイオメカニクス", "トレーニング科学"]},
+                    {"name": "織田哲", "specialties": ["体育"]}
+                ],
+                "faculty_count": 2,
+                "keywords": ["スポーツ科学", "バイオメカニクス", "体育", "運動解析"]
+            }
+            # 他の分野の詳細も同様に定義...
         }
         
         class Config:
@@ -145,32 +255,43 @@ else:
             
             # 評価基準（13項目）
             self.evaluation_criteria = [
-                # 基本項目（5項目）
                 "research_intensity", "advisor_style", "team_work", 
                 "workload", "theory_practice",
-                
-                # 拡張項目（5項目）
                 "research_field_match", "skill_development", "lab_atmosphere",
                 "flexibility", "publication_opportunity",
-                
-                # 特殊項目（3項目）
-                "interdisciplinary", "communication_style"
+                "interdisciplinary", "communication_style", "innovation_risk"
             ]
             
-            # 研究分野（11分野）
+            # 拡張された研究分野（20分野）
             self.research_fields = [
+                # テクノロジー・システム分野
                 "ai_machine_learning", "image_video_processing", 
                 "network_security", "database_information_systems", "embedded_iot",
+                "education_linguistics", "natural_science_mathematics", 
+                "medical_informatics", "tourism_regional_systems", 
+                "business_information_systems", "audio_sound_processing", 
+                "system_operations_ethics",
+                
+                # クリエイティブ分野
                 "web_design_ui_ux", "design_visual_expression",
                 "video_animation", "computer_music_sound_art",
-                "game_development_esports", "vr_ar_media_art"
+                
+                # エンターテイメント分野
+                "game_development_esports", "vr_ar_media_art",
+                
+                # 人文・社会・体育分野
+                "philosophy_humanities", "sports_exercise_science"
             ]
             
             # 分野カテゴリ
             self.field_categories = {
                 "テクノロジー・システム": [
                     "ai_machine_learning", "image_video_processing", 
-                    "network_security", "database_information_systems", "embedded_iot"
+                    "network_security", "database_information_systems", "embedded_iot",
+                    "education_linguistics", "natural_science_mathematics", 
+                    "medical_informatics", "tourism_regional_systems", 
+                    "business_information_systems", "audio_sound_processing", 
+                    "system_operations_ethics"
                 ],
                 "クリエイティブ": [
                     "web_design_ui_ux", "design_visual_expression",
@@ -178,18 +299,20 @@ else:
                 ],
                 "エンターテイメント": [
                     "game_development_esports", "vr_ar_media_art"
+                ],
+                "人文・社会・体育": [
+                    "philosophy_humanities", "sports_exercise_science"
                 ]
             }
         
         @property
-        def core_features(self) -> List[str]:
-            """コア機能（基本5項目）"""
+        def core_features(self):
             return self.evaluation_criteria[:5]
 
 # シングルトンパターンでインスタンス作成
 settings = Settings()
 
-# 研究室データテンプレート
+# 研究室データテンプレート（拡張版）
 LABORATORY_TEMPLATE = {
     "basic_info": {
         "id": "",
@@ -210,69 +333,14 @@ LABORATORY_TEMPLATE = {
         "publication_opportunity": 5.0,
         "interdisciplinary": 5.0,
         "communication_style": 5.0,
+        "innovation_risk": 5.0
     },
+    "research_fields": [],  # 複数の分野に対応
     "metadata": {
-        "fields": [],
-        "publications": 0,
-        "funding": "中",
-        "equipment": "",
-        "graduate_employment": ""
+        "faculty_count": 1,
+        "student_count": 0,
+        "recent_publications": 0,
+        "funding_level": "中",
+        "equipment_rating": 5
     }
 }
-
-def validate_settings() -> List[str]:
-    """設定値の検証"""
-    errors = []
-    
-    try:
-        # 基本設定の検証
-        if settings.port < 1 or settings.port > 65535:
-            errors.append("ポート番号が無効です")
-        
-        if settings.ga_population_size < 2:
-            errors.append("遺伝的アルゴリズムの集団サイズが小さすぎます")
-        
-        if len(settings.evaluation_criteria) != 13:
-            errors.append(f"評価基準数が13個ではありません（現在: {len(settings.evaluation_criteria)}個）")
-        
-        if len(settings.research_fields) != 11:
-            errors.append(f"研究分野数が11個ではありません（現在: {len(settings.research_fields)}個）")
-        
-    except Exception as e:
-        errors.append(f"設定検証中にエラー: {str(e)}")
-    
-    return errors
-
-def get_settings_info() -> Dict[str, Any]:
-    """設定情報の取得"""
-    return {
-        "pydantic_available": PYDANTIC_SETTINGS_AVAILABLE,
-        "app_name": settings.app_name,
-        "version": settings.api_version,
-        "environment": settings.environment,
-        "evaluation_criteria_count": len(settings.evaluation_criteria),
-        "research_fields_count": len(settings.research_fields),
-        "genetic_algorithm": {
-            "population_size": settings.ga_population_size,
-            "generations": settings.ga_generations,
-            "mutation_rate": settings.ga_mutation_rate,
-            "crossover_rate": settings.ga_crossover_rate
-        }
-    }
-
-if __name__ == "__main__":
-    # 設定テスト
-    print("🔧 設定テスト開始")
-    
-    errors = validate_settings()
-    if errors:
-        print("❌ 設定エラー:")
-        for error in errors:
-            print(f"  - {error}")
-    else:
-        print("✅ 設定検証完了")
-    
-    info = get_settings_info()
-    print(f"📊 設定情報: {info}")
-    
-    print("✅ 設定テスト完了")

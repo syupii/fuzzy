@@ -1,8 +1,6 @@
-// frontend/src/services/api.ts - 互換性保持版
-import axios from 'axios';
+// frontend/src/services/api.ts - 完全な型定義修正版
 
-// ===== 既存の型定義を維持 =====
-
+// 基本型定義
 export interface EvaluationPreferences {
   research_intensity: number;
   advisor_style: number;
@@ -16,41 +14,93 @@ export interface EvaluationPreferences {
   publication_opportunity: number;
   interdisciplinary: number;
   communication_style: number;
-}
-
-export interface StudentProfile {
-  evaluation_criteria: EvaluationPreferences;
-  field_interests: { [key: string]: number };
-  student_id?: string;
+  innovation_risk?: number;
 }
 
 export interface Laboratory {
   id: string;
   name: string;
   professor: string;
-  research_area: string;
-  specialization: string;
+  research_area?: string;
+  specialization?: string;
   description?: string;
 }
 
+// 完全なLabResult型定義（すべての必要なプロパティを含む）
 export interface LabResult {
-  lab: Laboratory;
-  lab_name?: string;
+  // 基本情報
   lab_id?: string;
+  lab_name?: string;
   advisor?: string;
   professor?: string;
+
+  // 研究分野情報
   research_area?: string;
+  research_fields?: string[];
+  specialization?: string;
+  description?: string;
+
+  // スコア関連
   overall_score?: number;
   compatibility_score?: number;
+  field_match?: number;
+
+  // 詳細評価
   compatibility?: {
     overall_score: number;
-    criterion_scores?: any;
+    criterion_scores?: { [key: string]: any };
   };
-  ranking_position?: number;
+
+  // 推奨情報
+  strengths?: string[];
+  considerations?: string[];
   recommendations?: string[];
-  description?: string;
-  specialization?: string;
+
+  // ランキング・メタデータ
+  ranking_position?: number;
   metadata?: any;
+
+  // 後方互換性のためのlab参照
+  lab?: Laboratory;
+}
+
+export interface Faculty {
+  name: string;
+  specialties: string[];
+}
+
+export interface ResearchField {
+  id: string;
+  name: string;
+  category: string;
+  description?: string;
+  faculty: Faculty[];
+  faculty_count: number;
+  keywords: string[];
+}
+
+// フィールド選択状態（チェックボックス用）
+export interface FieldSelectionState {
+  [fieldId: string]: boolean;
+}
+
+// 選択された分野の詳細評価
+export interface SelectedFieldInterest {
+  fieldId: string;
+  interestLevel: number;    // 1-10
+  experienceLevel: number;  // 1-10
+  priority: number;         // 1から順位
+}
+
+export interface ResearchFieldInterests {
+  [key: string]: number;
+}
+
+export interface StudentProfile {
+  evaluation_criteria: EvaluationPreferences;
+  field_interests: ResearchFieldInterests;
+  selected_fields?: SelectedFieldInterest[];
+  student_id?: string;
 }
 
 export interface EvaluationResponse {
@@ -72,111 +122,285 @@ export interface EvaluationResponse {
   algorithm_info?: any;
 }
 
-export interface ResearchField {
-  id: string;
-  name: string;
-  category: string;
-  description?: string;
-  faculty_count?: number;
-}
-
-export interface ResearchFieldInterests {
-  [key: string]: number;
-}
-
-// ===== 既存の研究分野・評価基準定義を維持 =====
-
+// 完全な研究分野定義（20分野）
 export const RESEARCH_FIELDS: ResearchField[] = [
-  // テクノロジー・システム分野
+  // ===============================
+  // テクノロジー・システム分野（12分野）
+  // ===============================
   {
     id: 'ai_machine_learning',
     name: '人工知能・機械学習',
     category: 'テクノロジー・システム',
     description: 'データ解析、機械学習、深層学習、自然言語処理など',
-    faculty_count: 7
+    faculty: [
+      { name: '伊藤雅彦', specialties: ['情報可視化', 'ユーザインタフェース', 'データ工学'] },
+      { name: '内山敏雄', specialties: ['データ解析', '機械学習', 'レコメンド', 'テキストマイニング'] },
+      { name: '小野亮太', specialties: ['人工知能', '情報工学', 'マルチエージェントシステム', '情報推薦'] },
+      { name: '齋藤健司', specialties: ['人工知能', '教育システム', '仮想環境'] },
+      { name: '谷口文武', specialties: ['機械学習', 'パターン認識'] },
+      { name: '辻準平', specialties: ['社会シミュレーション', 'マルチエージェントシステム', 'IoT'] },
+      { name: '山北貴典', specialties: ['データベース技術'] }
+    ],
+    faculty_count: 7,
+    keywords: ['AI', '機械学習', 'データ分析', '深層学習']
   },
   {
     id: 'image_video_processing',
     name: '画像・映像処理',
     category: 'テクノロジー・システム',
     description: 'コンピュータビジョン、画像認識、医用画像工学など',
-    faculty_count: 6
+    faculty: [
+      { name: '森圭佑', specialties: ['情報計測', '音声・画像情報処理', '医用情報処理', 'ゲームプログラミング'] },
+      { name: '向田茂', specialties: ['画像処理', '顔学', '認知心理学', 'VR/AR', '3DCG'] },
+      { name: '高井奈美', specialties: ['コンピュータグラフィックス', '画像処理', 'Webデザイン'] },
+      { name: '藤原孝行', specialties: ['コンピュータビジョン', 'コンピュータグラフィックス'] },
+      { name: '越野一博', specialties: ['医用画像工学', '数理統計学', '人工知能画像解析処理'] },
+      { name: '上杉正人', specialties: ['医療情報システム開発', '医療言語処理', '画像処理'] }
+    ],
+    faculty_count: 6,
+    keywords: ['画像処理', 'コンピュータビジョン', 'CG', '映像解析']
   },
   {
     id: 'network_security',
     name: 'ネットワーク・セキュリティ',
     category: 'テクノロジー・システム',
     description: 'ネットワーク管理、情報セキュリティ、通信システムなど',
-    faculty_count: 3
+    faculty: [
+      { name: '尾崎宏和', specialties: ['コンピュータネットワーク', '通信システム', '信頼性'] },
+      { name: '中島潤', specialties: ['情報通信ネットワーク', '情報セキュリティ', 'ITマネジメント'] },
+      { name: '佐々木洋平', specialties: ['地球流体力学', '惑星科学', '計算機ネットワーク管理運用', 'セキュリティ'] }
+    ],
+    faculty_count: 3,
+    keywords: ['ネットワーク', 'セキュリティ', '通信システム', '暗号化']
   },
   {
-    id: 'database_systems',
+    id: 'database_information_systems',
     name: 'データベース・情報システム',
     category: 'テクノロジー・システム',
     description: 'データベース技術、経営情報システム、意思決定支援など',
-    faculty_count: 3
+    faculty: [
+      { name: '山北貴典', specialties: ['データベース技術'] },
+      { name: '坂田圭司', specialties: ['経営情報システム', '教育システム'] },
+      { name: '向原強', specialties: ['オペレーションズ・リサーチ', '意思決定支援システム', '経営情報システム'] }
+    ],
+    faculty_count: 3,
+    keywords: ['データベース', '情報システム', 'SQL', 'データ管理']
   },
   {
     id: 'embedded_iot',
     name: '組込み・IoT',
     category: 'テクノロジー・システム',
     description: '組込みシステム、IoT、ユビキタスコンピューティングなど',
-    faculty_count: 2
+    faculty: [
+      { name: '田鎖次郎', specialties: ['組込みシステム工学', '情報倫理'] },
+      { name: '湯村翼', specialties: ['ユビキタスコンピューティング', 'ヒューマンコンピュータインタラクション', '地球惑星科学'] }
+    ],
+    faculty_count: 2,
+    keywords: ['組込み', 'IoT', 'センサー', 'マイコン']
+  },
+  {
+    id: 'education_linguistics',
+    name: '教育・言語学',
+    category: 'テクノロジー・システム',
+    description: '日本語教育、多言語教育、教育システム、語学教育など',
+    faculty: [
+      { name: '飯嶋美知子', specialties: ['日本語教育学', '日中対照言語学'] },
+      { name: '金銀珠', specialties: ['日韓対照言語学', '日本語教育', '韓国語教育', '複言語教育'] },
+      { name: '田中英夫', specialties: ['国際経営論', '国際関係論', '中国語教育'] },
+      { name: '齋藤一', specialties: ['観光情報学', '教育工学'] },
+      { name: '近澤潤', specialties: ['発想法', 'デザイン思考', 'イノベーション教育'] }
+    ],
+    faculty_count: 5,
+    keywords: ['日本語教育', '多言語', '教育システム', '語学']
+  },
+  {
+    id: 'natural_science_mathematics',
+    name: '自然科学・数理',
+    category: 'テクノロジー・システム',
+    description: '宇宙科学、地球科学、統計解析、数値計算、気象現象など',
+    faculty: [
+      { name: '柿並義宏', specialties: ['宇宙科学', '地球惑星科学', '大気科学', '動物行動学'] },
+      { name: '甫喜本司', specialties: ['データ解析法', '統計数理', '時間的・空間的な現象の予測方法'] },
+      { name: '松井伸也', specialties: ['非線形現象の解析', '流体現象', '気象現象', '反応拡散系'] },
+      { name: '新井山亮', specialties: ['社会情報工学', '光・波動電子工学', '数値解析'] },
+      { name: '佐々木洋平', specialties: ['地球流体力学', '惑星科学', '応用数学', '数値計算'] },
+      { name: '湯村翼', specialties: ['地球惑星科学', 'ヒューマンコンピュータインタラクション'] }
+    ],
+    faculty_count: 6,
+    keywords: ['宇宙科学', '地球科学', '統計解析', '数値計算']
+  },
+  {
+    id: 'medical_informatics',
+    name: '医療情報・ヘルスケア',
+    category: 'テクノロジー・システム',
+    description: '医用画像工学、医療情報システム、医療データ解析など',
+    faculty: [
+      { name: '越野一博', specialties: ['医用画像工学', '数理統計学', '人工知能画像解析処理'] },
+      { name: '上杉正人', specialties: ['医療情報システム開発', '医療言語処理', '画像処理'] }
+    ],
+    faculty_count: 2,
+    keywords: ['医療IT', '医用画像', 'ヘルスケア', '医療データ']
+  },
+  {
+    id: 'tourism_regional_systems',
+    name: '観光情報・地域システム',
+    category: 'テクノロジー・システム',
+    description: '観光情報学、地域情報システム、観光データ分析など',
+    faculty: [
+      { name: '齋藤一', specialties: ['観光情報学', '教育工学'] },
+      { name: '小野亮太', specialties: ['人工知能', '情報工学', '観光情報'] }
+    ],
+    faculty_count: 2,
+    keywords: ['観光情報', '地域システム', '観光データ', '地域活性化']
+  },
+  {
+    id: 'business_information_systems',
+    name: '経営情報・意思決定支援',
+    category: 'テクノロジー・システム',
+    description: '経営情報システム、意思決定支援、経営データ分析など',
+    faculty: [
+      { name: '坂田圭司', specialties: ['経営情報システム', '教育システム'] },
+      { name: '向原強', specialties: ['オペレーションズ・リサーチ', '意思決定支援システム', '経営情報システム'] },
+      { name: '田中英夫', specialties: ['国際経営論', '国際関係論'] }
+    ],
+    faculty_count: 3,
+    keywords: ['経営情報', '意思決定', 'OR', '経営データ分析']
+  },
+  {
+    id: 'audio_sound_processing',
+    name: '音声・音響情報処理',
+    category: 'テクノロジー・システム',
+    description: '音声情報処理、音響技術、システム運用など',
+    faculty: [
+      { name: '廣奥透', specialties: ['音声情報処理', 'ソフトウェア開発', 'コンピュータシステム運用'] },
+      { name: '森圭佑', specialties: ['情報計測', '音声・画像情報処理', '医用情報処理'] }
+    ],
+    faculty_count: 2,
+    keywords: ['音声処理', '音響技術', 'システム運用', '音声認識']
   },
 
-  // クリエイティブ分野
+  // ===============================
+  // クリエイティブ分野（4分野）
+  // ===============================
   {
-    id: 'web_ui_ux',
+    id: 'web_design_ui_ux',
     name: 'Webデザイン・UI/UX',
     category: 'クリエイティブ',
     description: 'Webデザイン、UX/UIデザイン、インタフェースデザインなど',
-    faculty_count: 4
+    faculty: [
+      { name: '杉沢愛美', specialties: ['Webデザイン', 'グラフィックデザイン', 'UX・UIデザイン', 'ブランディングデザイン'] },
+      { name: '坂本牧葉', specialties: ['視覚デザイン', 'インタフェースデザイン', '感性工学', 'イラストレーション'] },
+      { name: '高井奈美', specialties: ['コンピュータグラフィックス', '画像処理', 'Webデザイン'] },
+      { name: '安田光孝', specialties: ['UX/UIデザイン', 'コンテンツプロデュース', 'アントレプレナーシップ教育'] }
+    ],
+    faculty_count: 4,
+    keywords: ['Webデザイン', 'UX/UI', 'ブランディング', 'インタフェース']
   },
   {
-    id: 'design_visual',
+    id: 'design_visual_expression',
     name: 'デザイン・視覚表現',
     category: 'クリエイティブ',
     description: '視覚デザイン、グラフィックデザイン、感性工学など',
-    faculty_count: 4
+    faculty: [
+      { name: '坂本牧葉', specialties: ['視覚デザイン', 'インタフェースデザイン', '感性工学', 'イラストレーション'] },
+      { name: '大嶋宏一', specialties: ['映像表現', 'アニメーション表現', 'メディア表現', '視覚芸術'] },
+      { name: 'Marty M. ITO', specialties: ['イラストレーション', 'ローブロアート', 'アートマネジメント'] },
+      { name: '安田光孝', specialties: ['UX/UIデザイン', 'コンテンツプロデュース', 'デザイン思考'] }
+    ],
+    faculty_count: 4,
+    keywords: ['視覚デザイン', 'グラフィック', 'イラスト', 'アート']
   },
   {
     id: 'video_animation',
     name: '映像・アニメーション',
     category: 'クリエイティブ',
     description: '映像制作、アニメーション表現、メディア表現など',
-    faculty_count: 2
+    faculty: [
+      { name: '大嶋宏一', specialties: ['映像表現', 'アニメーション表現', 'メディア表現', '視覚芸術'] },
+      { name: '島田映二', specialties: ['映像制作', '映像表現'] }
+    ],
+    faculty_count: 2,
+    keywords: ['映像制作', 'アニメーション', 'メディア表現', '動画編集']
   },
   {
-    id: 'computer_music',
+    id: 'computer_music_sound_art',
     name: 'コンピュータ音楽・サウンドアート',
     category: 'クリエイティブ',
-    description: 'コンピュータ音楽、サウンドアート、音声情報処理など',
-    faculty_count: 2
+    description: 'コンピュータ音楽、サウンドアート、音響技術など',
+    faculty: [
+      { name: '平山遙香', specialties: ['コンピュータ音楽', 'サウンドアート', '現代音楽'] },
+      { name: '廣奥透', specialties: ['音声情報処理', 'ソフトウェア開発', 'コンピュータシステム運用'] }
+    ],
+    faculty_count: 2,
+    keywords: ['コンピュータ音楽', 'サウンドアート', 'DTM', '音響技術']
   },
 
-  // エンターテイメント分野
+  // ===============================
+  // エンターテイメント分野（2分野）
+  // ===============================
   {
-    id: 'game_esports',
+    id: 'game_development_esports',
     name: 'ゲーム開発・eスポーツ',
     category: 'エンターテイメント',
     description: 'ゲームプログラミング、eスポーツ、メタバースなど',
-    faculty_count: 2
+    faculty: [
+      { name: '森川悟', specialties: ['ゲームプログラミング'] },
+      { name: '川原勝', specialties: ['eスポーツ', 'メタバース', '教育学'] }
+    ],
+    faculty_count: 2,
+    keywords: ['ゲーム開発', 'eスポーツ', 'メタバース', 'Unity']
   },
   {
     id: 'vr_ar_media_art',
     name: 'VR/AR・メディアアート',
     category: 'エンターテイメント',
     description: 'VR/AR技術、3DCG、メディアアート、認知心理学など',
-    faculty_count: 2
+    faculty: [
+      { name: '向田茂', specialties: ['画像処理', '顔学', '認知心理学', 'VR/AR', '3DCG', 'メディアアート'] },
+      { name: '隼田尚彦', specialties: ['環境行動学', '地域コミュニティ', 'インターフェイス', 'メディアアート'] }
+    ],
+    faculty_count: 2,
+    keywords: ['VR', 'AR', 'メディアアート', '3DCG']
   },
+
+  // ===============================
+  // 人文・社会・体育分野（2分野）
+  // ===============================
+  {
+    id: 'philosophy_humanities',
+    name: '哲学・人文・環境行動学',
+    category: '人文・社会・体育',
+    description: '哲学、倫理学、芸術学、環境行動学、地域コミュニティなど',
+    faculty: [
+      { name: '三浦洋', specialties: ['哲学', '倫理学', '芸術学'] },
+      { name: '隼田尚彦', specialties: ['環境行動学', '地域コミュニティ', '建築計画学'] }
+    ],
+    faculty_count: 2,
+    keywords: ['哲学', '倫理学', '環境行動', '地域研究']
+  },
+  {
+    id: 'sports_exercise_science',
+    name: 'スポーツ・体育科学',
+    category: '人文・社会・体育',
+    description: 'スポーツバイオメカニクス、トレーニング科学、体育実践など',
+    faculty: [
+      { name: '綿谷貴志', specialties: ['スポーツバイオメカニクス', 'トレーニング科学'] },
+      { name: '織田哲', specialties: ['体育'] }
+    ],
+    faculty_count: 2,
+    keywords: ['スポーツ科学', 'バイオメカニクス', '体育', '運動解析']
+  }
 ];
 
+// 分野カテゴリ（拡張版）
 export const FIELD_CATEGORIES = [
   'テクノロジー・システム',
   'クリエイティブ',
-  'エンターテイメント'
+  'エンターテイメント',
+  '人文・社会・体育'
 ];
 
+// 評価基準情報（13項目・innovation_risk追加）
 export const CRITERIA_INFO = {
   research_intensity: {
     name: '研究強度',
@@ -238,167 +462,147 @@ export const CRITERIA_INFO = {
     description: '研究室での交流スタイル',
     range: '1(少人数密接) ～ 10(オープン交流)'
   },
+  innovation_risk: {
+    name: '革新性・リスク許容度',
+    description: '新しい手法への挑戦度',
+    range: '1(安全手法) ～ 10(革新手法)'
+  }
 };
 
-// ===== 既存のユーティリティ関数を維持 =====
-
+// フィールドユーティリティ関数
 export const fieldUtils = {
+  // カテゴリ別の分野取得
   getFieldsByCategory: (category: string): ResearchField[] => {
     return RESEARCH_FIELDS.filter(field => field.category === category);
   },
 
-  getFieldById: (id: string): ResearchField | undefined => {
-    return RESEARCH_FIELDS.find(field => field.id === id);
+  // 分野IDから詳細情報取得
+  getFieldById: (fieldId: string): ResearchField | undefined => {
+    return RESEARCH_FIELDS.find(field => field.id === fieldId);
   },
 
-  getAllCategories: (): string[] => {
-    return FIELD_CATEGORIES;
+  // 教員名をカンマ区切りで取得
+  getFacultyNames: (fieldId: string): string => {
+    const field = fieldUtils.getFieldById(fieldId);
+    return field ? field.faculty.map(f => f.name).join('、') : '';
+  },
+
+  // キーワード検索
+  searchByKeyword: (keyword: string): ResearchField[] => {
+    const lowerKeyword = keyword.toLowerCase();
+    return RESEARCH_FIELDS.filter(field =>
+      field.keywords.some(k => k.toLowerCase().includes(lowerKeyword)) ||
+      field.name.toLowerCase().includes(lowerKeyword) ||
+      field.description?.toLowerCase().includes(lowerKeyword)
+    );
+  },
+
+  // 教員名検索
+  searchByFaculty: (facultyName: string): ResearchField[] => {
+    return RESEARCH_FIELDS.filter(field =>
+      field.faculty.some(f => f.name.includes(facultyName))
+    );
   }
 };
 
-// ===== APIサービスクラス（修正版） =====
-
+// APIサービス
 class ApiService {
-  private baseURL: string;
+  private baseURL = 'http://localhost:8000';
 
-  constructor() {
-    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-  }
-
-  // 接続テスト
-  async testConnection(): Promise<boolean> {
+  async evaluateLabs(preferences: EvaluationPreferences, selectedFields?: SelectedFieldInterest[]): Promise<EvaluationResponse> {
     try {
-      const response = await axios.get(`${this.baseURL}/health`, { timeout: 5000 });
-      console.log('✅ Backend接続成功:', response.data);
-      return response.status === 200;
-    } catch (error) {
-      console.error('❌ Backend接続失敗:', error);
-      return false;
-    }
-  }
-
-  // 研究室評価（修正版 - 既存インターフェース維持）
-  async evaluateLabs(preferences: EvaluationPreferences): Promise<EvaluationResponse> {
-    try {
-      console.log('🚀 研究室評価開始...', preferences);
-
-      // ⭐ 重要: backendが期待する形式で送信（student_profileキーを追加）
       const requestData = {
-        student_profile: preferences
+        evaluation_criteria: preferences,
+        selected_fields: selectedFields || []
       };
 
-      console.log('📤 送信データ:', requestData);
-
-      const response = await axios.post(`${this.baseURL}/api/evaluate`, requestData, {
-        timeout: 10000,
+      const response = await fetch(`${this.baseURL}/api/evaluate`, {
+        method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
-        }
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestData)
       });
 
-      console.log('📥 API応答:', response.data);
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
 
-      // レスポンスデータの正規化（既存フォーマットに合わせる）
-      const data = response.data;
+      const data = await response.json();
 
-      // lab_resultsをLabResult形式に変換
-      const normalizedLabResults: LabResult[] = (data.lab_results || []).map((item: any) => ({
+      // レスポンスデータを正規化
+      const normalizedResults: LabResult[] = (data.lab_results || data.results || []).map((item: any, index: number) => ({
+        lab_id: item.lab_id || item.id,
+        lab_name: item.lab_name || item.name || `研究室${index + 1}`,
+        advisor: item.advisor || item.professor,
+        overall_score: item.compatibility_score || item.overall_score || 0,
+        compatibility_score: item.compatibility_score || item.overall_score || 0,
+        field_match: item.field_match || 0,
+        research_fields: item.research_fields || [],
+        specialization: item.specialization || '',
+        description: item.description || '詳細情報はありません',
+        strengths: item.strengths || [],
+        considerations: item.considerations || [],
+        recommendations: item.recommendations || [],
+        compatibility: item.compatibility || {
+          overall_score: item.compatibility_score || item.overall_score || 0,
+          criterion_scores: item.criterion_scores || {}
+        },
+        metadata: item.metadata || {},
+        // 後方互換性
         lab: {
-          id: item.lab_id || item.id,
-          name: item.lab_name || item.name,
-          professor: item.professor,
-          research_area: item.research_area,
+          id: item.lab_id || item.id || `lab_${index}`,
+          name: item.lab_name || item.name || `研究室${index + 1}`,
+          professor: item.advisor || item.professor || '指導教員情報なし',
+          research_area: item.research_area || '',
           specialization: item.specialization || '',
           description: item.description || ''
-        },
-        lab_name: item.lab_name || item.name,
-        lab_id: item.lab_id || item.id,
-        advisor: item.professor,
-        professor: item.professor,
-        research_area: item.research_area,
-        overall_score: item.compatibility_score || 0,
-        compatibility_score: item.compatibility_score || 0,
-        compatibility: {
-          overall_score: item.compatibility_score || 0
-        },
-        description: item.description || '',
-        specialization: item.specialization || '',
-        metadata: item.metadata || {}
+        }
       }));
 
-      const normalizedResponse: EvaluationResponse = {
-        lab_results: normalizedLabResults,
-        results: normalizedLabResults, // 両方に同じデータを設定
+      return {
+        lab_results: normalizedResults,
+        results: normalizedResults,
         summary: {
-          total_labs: data.total_labs_evaluated || normalizedLabResults.length,
-          avg_score: normalizedLabResults.length > 0 ?
-            normalizedLabResults.reduce((sum, lab) => sum + (lab.overall_score || 0), 0) / normalizedLabResults.length : 0,
-          best_match_lab: normalizedLabResults.length > 0 ? normalizedLabResults[0].lab_name : undefined,
-          recommendations: []
+          total_labs: data.total_labs || normalizedResults.length,
+          avg_score: data.avg_score || (normalizedResults.length > 0 ?
+            normalizedResults.reduce((sum, lab) => sum + (lab.overall_score || 0), 0) / normalizedResults.length : 0),
+          best_match_lab: normalizedResults.length > 0 ? normalizedResults[0].lab_name : undefined,
+          recommendations: data.recommendations || []
         },
-        metadata: data.metadata,
-        evaluation_id: data.evaluation_id,
-        student_profile: data.student_profile,
-        total_labs_evaluated: data.total_labs_evaluated,
-        timestamp: data.timestamp,
-        processing_time: data.processing_time,
-        algorithm_info: data.algorithm_info
+        metadata: data.metadata || {}
       };
 
-      console.log(`✅ 評価完了: ${normalizedResponse.summary.total_labs}件の研究室`);
-      return normalizedResponse;
     } catch (error) {
-      console.error('💥 評価API エラー:', error);
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNREFUSED') {
-          throw new Error('バックエンドサーバーが起動していません。ターミナルで `cd backend && python app.py` を実行してください。');
-        } else if (error.response?.status === 404) {
-          throw new Error('APIエンドポイントが見つかりません。バックエンドの実装を確認してください。');
-        } else if (error.response?.status === 500) {
-          const detail = error.response.data?.detail || '内部エラー';
-          throw new Error(`サーバーエラー: ${detail}`);
-        } else if (error.response?.status === 400) {
-          const detail = error.response.data?.detail || 'リクエストエラー';
-          throw new Error(`リクエストエラー: ${detail}`);
-        }
-      }
-      throw new Error('研究室評価の処理中にエラーが発生しました');
+      console.error('Lab evaluation failed:', error);
+      throw error;
     }
   }
 
-  // デモプロフィール取得（既存インターフェース維持）
   async getDemoProfile(): Promise<StudentProfile> {
     return {
       evaluation_criteria: {
-        research_intensity: 7.0,
-        advisor_style: 6.0,
-        team_work: 7.0,
-        workload: 6.0,
-        theory_practice: 7.0,
-        research_field_match: 8.0,
-        skill_development: 7.0,
-        lab_atmosphere: 7.0,
-        flexibility: 7.0,
-        publication_opportunity: 8.0,
-        interdisciplinary: 6.0,
-        communication_style: 6.0,
+        research_intensity: 7,
+        advisor_style: 6,
+        team_work: 7,
+        workload: 6,
+        theory_practice: 7,
+        research_field_match: 8,
+        skill_development: 7,
+        lab_atmosphere: 8,
+        flexibility: 7,
+        publication_opportunity: 6,
+        interdisciplinary: 6,
+        communication_style: 7,
+        innovation_risk: 7
       },
       field_interests: {
-        'ai_machine_learning': 8.0,
-        'image_video_processing': 6.0,
-        'web_ui_ux': 7.0,
-        'game_esports': 5.0,
-        'vr_ar_media_art': 6.0,
+        'ai_machine_learning': 9,
+        'web_design_ui_ux': 7,
+        'game_development_esports': 6
       }
     };
   }
 }
 
-// ===== エクスポート（既存と同じ） =====
-
 export const apiService = new ApiService();
-
-// 接続テスト関数
-export const testApiConnection = async (): Promise<boolean> => {
-  return await apiService.testConnection();
-};
