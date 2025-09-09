@@ -1,5 +1,4 @@
-// frontend/src/components/ResultsList.tsx - 修正版
-
+// frontend/src/components/ResultsList.tsx - 型安全版
 import React, { useState } from 'react';
 import {
   Box,
@@ -7,400 +6,353 @@ import {
   CardContent,
   Typography,
   Chip,
+  LinearProgress,
   Grid,
-  Tabs,
-  Tab,
   List,
   ListItem,
   ListItemIcon,
   ListItemText,
-  LinearProgress,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Paper,
-  Alert
+  Collapse,
+  IconButton,
+  Alert,
+  Divider
 } from '@mui/material';
 import {
   ExpandMore,
+  ExpandLess,
   StarRate,
-  Science,
-  School,
-  TrendingUp,
   Assessment,
-  Person
+  School,
+  Psychology,
+  Engineering
 } from '@mui/icons-material';
-import { EvaluationResponse, LabResult } from '../services/api';
+import { LabResult, EvaluationResponse } from '../services/api';
 
-interface ResultsListProps {
-  data: EvaluationResponse;
+interface Props {
+  evaluationResponse: EvaluationResponse;
 }
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
+export const ResultsList: React.FC<Props> = ({ evaluationResponse }) => {
+  const [expandedItems, setExpandedItems] = useState<Set<number>>(new Set());
 
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      {...other}
-    >
-      {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
-    </div>
-  );
-}
-
-const ResultsList: React.FC<ResultsListProps> = ({ data }) => {
-  const [tabValue, setTabValue] = useState(0);
-  const [expandedAccordion, setExpandedAccordion] = useState<string | false>(false);
-
-  // 安全なデータアクセス
-  const results = data.results || data.lab_results || [];
-  const summary = data.summary || {
-    total_labs: results.length,
-    avg_score: 0,
-    recommendations: []
+  const handleExpandClick = (index: number) => {
+    setExpandedItems(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(index)) {
+        newSet.delete(index);
+      } else {
+        newSet.add(index);
+      }
+      return newSet;
+    });
   };
 
-  // スコア色の取得
-  const getScoreColor = (score: number) => {
+  // スコアに基づく色の決定
+  const getScoreColor = (score: number): 'success' | 'warning' | 'error' => {
     if (score >= 0.8) return 'success';
     if (score >= 0.6) return 'warning';
     return 'error';
   };
 
-  // スコア値を正規化（0-1の範囲に）
-  const normalizeScore = (score: number | undefined): number => {
-    if (!score) return 0;
-    // スコアが0-1の範囲でない場合の処理
-    if (score > 1) return score / 100; // パーセンテージの場合
-    return score;
+  // 研究分野の色決定
+  const getFieldColor = (field: string): 'primary' | 'secondary' | 'default' => {
+    if (field.includes('AI') || field.includes('機械学習') || field.includes('画像')) return 'primary';
+    if (field.includes('Web') || field.includes('デザイン') || field.includes('UI')) return 'secondary';
+    return 'default';
   };
 
-  // 研究室名の取得（複数のフォールバック）
-  const getLabName = (labResult: LabResult, index: number): string => {
-    return labResult.lab_name ||
-      (labResult.lab && labResult.lab.name) ||
-      `研究室 ${index + 1}`;
+  // カテゴリアイコンの取得
+  const getCategoryIcon = (researchArea: string) => {
+    if (researchArea?.includes('人工知能') || researchArea?.includes('機械学習')) {
+      return <Psychology color="primary" />;
+    }
+    if (researchArea?.includes('Web') || researchArea?.includes('デザイン')) {
+      return <Engineering color="secondary" />;
+    }
+    return <School color="action" />;
   };
 
-  // 指導教員名の取得（複数のフォールバック）
-  const getAdvisorName = (labResult: LabResult): string => {
-    return labResult.advisor ||
-      (labResult.lab && labResult.lab.professor) ||
-      '指導教員情報なし';
-  };
+  const { lab_results = [], summary } = evaluationResponse;
 
-  // 総合スコアの取得（複数のフォールバック）
-  const getOverallScore = (labResult: LabResult): number => {
-    return normalizeScore(
-      labResult.compatibility_score ||
-      labResult.overall_score ||
-      (labResult.compatibility && labResult.compatibility.overall_score) ||
-      0
-    );
-  };
-
-  // 研究室説明の取得
-  const getDescription = (labResult: LabResult): string => {
-    return labResult.description ||
-      (labResult.lab && labResult.lab.description) ||
-      labResult.specialization ||
-      '詳細情報はありません';
-  };
-
-  // アコーディオン展開ハンドラー
-  const handleAccordionChange = (panel: string) => (
-    event: React.SyntheticEvent,
-    isExpanded: boolean
-  ) => {
-    setExpandedAccordion(isExpanded ? panel : false);
-  };
-
-  // 研究室カード描画関数
-  const renderLabCard = (labResult: LabResult, index: number) => {
-    const labName = getLabName(labResult, index);
-    const advisorName = getAdvisorName(labResult);
-    const overallScore = getOverallScore(labResult);
-    const description = getDescription(labResult);
-
+  if (!lab_results || lab_results.length === 0) {
     return (
-      <Card key={index} sx={{ mb: 2 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography variant="h6" component="h3" gutterBottom>
-                #{index + 1} {labName}
-              </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center', mt: 1 }}>
-                <Person sx={{ mr: 1, color: 'text.secondary' }} />
-                <Typography variant="subtitle1" color="text.secondary">
-                  {advisorName}
-                </Typography>
-              </Box>
-
-              {/* 研究分野表示 */}
-              {labResult.research_fields && labResult.research_fields.length > 0 && (
-                <Box sx={{ mt: 1 }}>
-                  {labResult.research_fields.slice(0, 3).map((field, fieldIndex) => (
-                    <Chip
-                      key={fieldIndex}
-                      label={field}
-                      size="small"
-                      variant="outlined"
-                      sx={{ mr: 1, mb: 1 }}
-                    />
-                  ))}
-                </Box>
-              )}
-            </Box>
-
-            <Chip
-              label={`${(overallScore * 100).toFixed(1)}%`}
-              color={getScoreColor(overallScore) as any}
-              sx={{
-                fontSize: '1.1em',
-                fontWeight: 'bold',
-                height: 40,
-                minWidth: 80,
-                '& .MuiChip-label': {
-                  fontSize: '1.1em',
-                  fontWeight: 'bold'
-                }
-              }}
-            />
-          </Box>
-
-          <Typography variant="body2" paragraph sx={{ color: 'text.secondary' }}>
-            {description}
-          </Typography>
-
-          {/* 強み・考慮点の表示 */}
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            {labResult.strengths && labResult.strengths.length > 0 && (
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" color="success.main" gutterBottom>
-                  強み:
-                </Typography>
-                <List dense>
-                  {labResult.strengths.slice(0, 2).map((strength, idx) => (
-                    <ListItem key={idx} sx={{ py: 0 }}>
-                      <ListItemIcon sx={{ minWidth: 24 }}>
-                        <StarRate color="success" fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={strength}
-                        primaryTypographyProps={{ variant: 'body2' }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Grid>
-            )}
-
-            {labResult.considerations && labResult.considerations.length > 0 && (
-              <Grid item xs={12} md={6}>
-                <Typography variant="subtitle2" color="warning.main" gutterBottom>
-                  考慮点:
-                </Typography>
-                <List dense>
-                  {labResult.considerations.slice(0, 2).map((consideration, idx) => (
-                    <ListItem key={idx} sx={{ py: 0 }}>
-                      <ListItemIcon sx={{ minWidth: 24 }}>
-                        <Assessment color="warning" fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={consideration}
-                        primaryTypographyProps={{ variant: 'body2' }}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Grid>
-            )}
-          </Grid>
-
-          {/* 詳細スコア（アコーディオン形式） */}
-          {labResult.compatibility && labResult.compatibility.criterion_scores && (
-            <Accordion
-              expanded={expandedAccordion === `lab-${index}`}
-              onChange={handleAccordionChange(`lab-${index}`)}
-            >
-              <AccordionSummary expandIcon={<ExpandMore />}>
-                <Typography variant="subtitle2">詳細評価スコア</Typography>
-              </AccordionSummary>
-              <AccordionDetails>
-                <Grid container spacing={2}>
-                  {Object.entries(labResult.compatibility.criterion_scores).map(([criterion, scoreData]: [string, any], scoreIndex: number) => {
-                    const score = normalizeScore(scoreData.score || scoreData.similarity || scoreData);
-                    const displayName = criterion.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-
-                    return (
-                      <Grid item xs={12} sm={6} md={4} key={scoreIndex}>
-                        <Box sx={{ mb: 1 }}>
-                          <Typography variant="caption" display="block" gutterBottom>
-                            {displayName}: {(score * 100).toFixed(0)}%
-                          </Typography>
-                          <LinearProgress
-                            variant="determinate"
-                            value={score * 100}
-                            color={getScoreColor(score) as any}
-                            sx={{ height: 6, borderRadius: 3 }}
-                          />
-                        </Box>
-                      </Grid>
-                    );
-                  })}
-                </Grid>
-              </AccordionDetails>
-            </Accordion>
-          )}
-        </CardContent>
-      </Card>
-    );
-  };
-
-  // 結果が空の場合
-  if (!results || results.length === 0) {
-    return (
-      <Paper sx={{ p: 4, textAlign: 'center' }}>
-        <Assessment sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-        <Typography variant="h6" gutterBottom>
-          評価結果がありません
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          評価を実行して研究室のマッチング結果を確認してください
-        </Typography>
-      </Paper>
+      <Alert severity="info">
+        評価結果がありません。評価を実行してください。
+      </Alert>
     );
   }
 
   return (
     <Box sx={{ width: '100%' }}>
-      <Tabs
-        value={tabValue}
-        onChange={(_, newValue) => setTabValue(newValue)}
-        variant="fullWidth"
-        sx={{ borderBottom: 1, borderColor: 'divider' }}
-      >
-        <Tab
-          label={`研究室一覧 (${results.length})`}
-          icon={<School />}
-          iconPosition="start"
-        />
-        <Tab
-          label="評価サマリー"
-          icon={<Assessment />}
-          iconPosition="start"
-        />
-      </Tabs>
-
-      <TabPanel value={tabValue} index={0}>
-        <Box sx={{ mb: 3 }}>
+      {/* サマリー情報 */}
+      <Card sx={{ mb: 3, bgcolor: 'primary.50' }}>
+        <CardContent>
           <Typography variant="h5" gutterBottom>
-            研究室マッチング結果
+            📊 評価結果サマリー
           </Typography>
-          <Typography variant="body2" color="text.secondary">
-            適合度の高い順に表示しています（{results.length}件の研究室）
-          </Typography>
-        </Box>
+          <Grid container spacing={2}>
+            <Grid item xs={6} md={3}>
+              <Typography variant="h6" color="primary">
+                {summary.total_labs}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                研究室総数
+              </Typography>
+            </Grid>
+            <Grid item xs={6} md={3}>
+              <Typography variant="h6" color="primary">
+                {(summary.avg_score * 100).toFixed(1)}%
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                平均適合度
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="h6" color="success.main">
+                {summary.best_match_lab || '未設定'}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                最高適合研究室
+              </Typography>
+            </Grid>
+          </Grid>
+        </CardContent>
+      </Card>
 
-        {results.map((lab: LabResult, index: number) => renderLabCard(lab, index))}
-      </TabPanel>
-
-      <TabPanel value={tabValue} index={1}>
-        <Typography variant="h5" gutterBottom>
-          評価サマリー
+      {/* 研究室結果一覧 */}
+      <Box>
+        <Typography variant="h5" gutterBottom sx={{ mb: 3 }}>
+          🏆 研究室ランキング
         </Typography>
 
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <School sx={{ fontSize: 48, color: 'primary.main', mb: 1 }} />
-                <Typography variant="h4" color="primary">
-                  {summary.total_labs || results.length}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  評価対象研究室数
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
+        {lab_results.map((labResult: LabResult, index: number) => {
+          const isExpanded = expandedItems.has(index);
+          const score = labResult.overall_score || labResult.compatibility_score || 0;
+          const scoreColor = getScoreColor(score);
 
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <TrendingUp sx={{ fontSize: 48, color: 'success.main', mb: 1 }} />
-                <Typography variant="h4" color="success.main">
-                  {((summary.avg_score || 0) * 100).toFixed(1)}%
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  平均適合度
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center' }}>
-                <StarRate sx={{ fontSize: 48, color: 'warning.main', mb: 1 }} />
-                <Typography variant="h4" color="warning.main">
-                  {summary.best_match_lab || (results[0] ? getLabName(results[0], 0) : '−')}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  最高適合研究室
-                </Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-
-        {/* 推奨事項 */}
-        {summary.recommendations && summary.recommendations.length > 0 && (
-          <Box>
-            <Typography variant="h6" gutterBottom>
-              推奨事項
-            </Typography>
-            <Card>
+          return (
+            <Card key={`lab-${index}`} sx={{ mb: 2, position: 'relative' }}>
               <CardContent>
-                <List>
-                  {summary.recommendations.map((rec: string, index: number) => (
-                    <ListItem key={index}>
-                      <ListItemIcon>
-                        <StarRate color="primary" />
-                      </ListItemIcon>
-                      <ListItemText primary={rec} />
-                    </ListItem>
-                  ))}
-                </List>
-              </CardContent>
-            </Card>
-          </Box>
-        )}
+                {/* ランキング表示 */}
+                <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
+                  <Chip
+                    label={`#${index + 1}`}
+                    color={index < 3 ? 'primary' : 'default'}
+                    size="small"
+                  />
+                </Box>
 
-        {/* 分野分析（もし利用可能な場合） */}
-        {summary.field_analysis && (
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h6" gutterBottom>
-              分野別分析
-            </Typography>
-            <Card>
-              <CardContent>
-                <Typography variant="body2">
-                  {JSON.stringify(summary.field_analysis, null, 2)}
-                </Typography>
+                {/* 基本情報 */}
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={1}>
+                    {getCategoryIcon(labResult.research_area || '')}
+                  </Grid>
+                  <Grid item xs={8}>
+                    <Typography variant="h6" gutterBottom>
+                      {labResult.lab_name || labResult.lab?.name || '研究室名未設定'}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {labResult.professor || labResult.advisor || '教授名未設定'} - {labResult.research_area || '分野未設定'}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={2}>
+                    <Box sx={{ textAlign: 'center' }}>
+                      <Typography variant="h5" color={`${scoreColor}.main`}>
+                        {(score * 100).toFixed(0)}%
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        適合度
+                      </Typography>
+                    </Box>
+                  </Grid>
+                </Grid>
+
+                {/* スコアバー */}
+                <Box sx={{ mt: 2, mb: 2 }}>
+                  <LinearProgress
+                    variant="determinate"
+                    value={score * 100}
+                    color={scoreColor}
+                    sx={{ height: 8, borderRadius: 4 }}
+                  />
+                </Box>
+
+                {/* 研究分野表示（型安全版） */}
+                {labResult.research_fields && labResult.research_fields.length > 0 && (
+                  <Box sx={{ mt: 1 }}>
+                    {labResult.research_fields.slice(0, 3).map((field: string, fieldIndex: number) => (
+                      <Chip
+                        key={fieldIndex}
+                        label={field}
+                        size="small"
+                        color={getFieldColor(field)}
+                        sx={{ mr: 1, mb: 1 }}
+                      />
+                    ))}
+                    {labResult.research_fields.length > 3 && (
+                      <Chip
+                        label={`+${labResult.research_fields.length - 3}個`}
+                        size="small"
+                        variant="outlined"
+                        sx={{ mr: 1, mb: 1 }}
+                      />
+                    )}
+                  </Box>
+                )}
+
+                {/* 専門分野 */}
+                {labResult.specialization && (
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    専門: {labResult.specialization}
+                  </Typography>
+                )}
+
+                {/* 展開/縮小ボタン */}
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+                  <IconButton
+                    onClick={() => handleExpandClick(index)}
+                    size="small"
+                  >
+                    {isExpanded ? <ExpandLess /> : <ExpandMore />}
+                    <Typography variant="caption" sx={{ ml: 1 }}>
+                      {isExpanded ? '詳細を閉じる' : '詳細を見る'}
+                    </Typography>
+                  </IconButton>
+                </Box>
+
+                {/* 詳細情報（展開時） */}
+                <Collapse in={isExpanded} timeout="auto" unmountOnExit>
+                  <Divider sx={{ my: 2 }} />
+
+                  {/* 説明文 */}
+                  {labResult.description && (
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        📝 研究室について:
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {labResult.description}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {/* 強み・考慮点の表示（型安全版） */}
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    {labResult.strengths && labResult.strengths.length > 0 && (
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="subtitle2" color="success.main" gutterBottom>
+                          ✨ 強み:
+                        </Typography>
+                        <List dense>
+                          {labResult.strengths.slice(0, 2).map((strength: string, idx: number) => (
+                            <ListItem key={idx} sx={{ py: 0 }}>
+                              <ListItemIcon sx={{ minWidth: 24 }}>
+                                <StarRate color="success" fontSize="small" />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={strength}
+                                primaryTypographyProps={{ variant: 'body2' }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      </Grid>
+                    )}
+
+                    {labResult.considerations && labResult.considerations.length > 0 && (
+                      <Grid item xs={12} md={6}>
+                        <Typography variant="subtitle2" color="warning.main" gutterBottom>
+                          ⚠️ 考慮点:
+                        </Typography>
+                        <List dense>
+                          {labResult.considerations.slice(0, 2).map((consideration: string, idx: number) => (
+                            <ListItem key={idx} sx={{ py: 0 }}>
+                              <ListItemIcon sx={{ minWidth: 24 }}>
+                                <Assessment color="warning" fontSize="small" />
+                              </ListItemIcon>
+                              <ListItemText
+                                primary={consideration}
+                                primaryTypographyProps={{ variant: 'body2' }}
+                              />
+                            </ListItem>
+                          ))}
+                        </List>
+                      </Grid>
+                    )}
+                  </Grid>
+
+                  {/* 推薦理由 */}
+                  {labResult.recommendations && labResult.recommendations.length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        💡 推薦理由:
+                      </Typography>
+                      <List dense>
+                        {labResult.recommendations.slice(0, 3).map((recommendation: string, idx: number) => (
+                          <ListItem key={idx} sx={{ py: 0 }}>
+                            <ListItemText
+                              primary={`• ${recommendation}`}
+                              primaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }}
+                            />
+                          </ListItem>
+                        ))}
+                      </List>
+                    </Box>
+                  )}
+
+                  {/* メタデータ情報 */}
+                  {labResult.metadata && (
+                    <Box sx={{ mt: 2, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+                      <Typography variant="subtitle2" gutterBottom>
+                        📊 追加情報:
+                      </Typography>
+                      <Grid container spacing={1}>
+                        {labResult.metadata.student_capacity && (
+                          <Grid item xs={6}>
+                            <Typography variant="caption">
+                              定員: {labResult.metadata.student_capacity}名
+                            </Typography>
+                          </Grid>
+                        )}
+                        {labResult.metadata.equipment_level && (
+                          <Grid item xs={6}>
+                            <Typography variant="caption">
+                              設備レベル: {labResult.metadata.equipment_level}/10
+                            </Typography>
+                          </Grid>
+                        )}
+                        {labResult.metadata.funding_level && (
+                          <Grid item xs={6}>
+                            <Typography variant="caption">
+                              資金レベル: {labResult.metadata.funding_level}
+                            </Typography>
+                          </Grid>
+                        )}
+                        {labResult.metadata.faculty_type && (
+                          <Grid item xs={6}>
+                            <Typography variant="caption">
+                              学部: {labResult.metadata.faculty_type}
+                            </Typography>
+                          </Grid>
+                        )}
+                      </Grid>
+                    </Box>
+                  )}
+                </Collapse>
               </CardContent>
             </Card>
-          </Box>
-        )}
-      </TabPanel>
+          );
+        })}
+      </Box>
+
+      {/* フッター情報 */}
+      <Card sx={{ mt: 3, bgcolor: 'grey.50' }}>
+        <CardContent>
+          <Typography variant="body2" color="text.secondary" align="center">
+            💡 より詳しい情報については、各研究室のWebサイトを確認するか、直接お問い合わせください。
+          </Typography>
+        </CardContent>
+      </Card>
     </Box>
   );
 };
