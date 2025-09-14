@@ -74,7 +74,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  // 評価基準の状態（innovation_riskを含む）
+  // 評価基準の状態
   const [preferences, setPreferences] = useState<EvaluationPreferences>({
     research_intensity: 5,
     advisor_style: 5,
@@ -91,7 +91,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     innovation_risk: 5,
   });
 
-  // ★ 重要: この2つのstateを正しく定義
+  // 研究分野選択の状態
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [fieldInterests, setFieldInterests] = useState<ResearchFieldInterests>({});
 
@@ -103,7 +103,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     }));
   };
 
-  // 研究分野選択ハンドラー（チェックボックス用）
+  // 研究分野選択ハンドラー
   const handleFieldToggle = (fieldId: string) => {
     setSelectedFields(prev => {
       const newSet = new Set(prev);
@@ -128,11 +128,52 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
   };
 
   // 研究分野興味度変更ハンドラー
-  const handleFieldInterestChange = (field: string, value: number) => {
+  const handleFieldInterestChange = (fieldId: string, value: number) => {
     setFieldInterests(prev => ({
       ...prev,
-      [field]: value
+      [fieldId]: value
     }));
+  };
+
+  // デモデータ読み込み
+  const handleLoadDemo = async () => {
+    try {
+      // デモ用の設定を読み込み
+      const demoPreferences: EvaluationPreferences = {
+        research_intensity: 7,
+        advisor_style: 6,
+        team_work: 8,
+        workload: 6,
+        theory_practice: 7,
+        research_field_match: 9,
+        skill_development: 8,
+        lab_atmosphere: 7,
+        flexibility: 6,
+        publication_opportunity: 8,
+        interdisciplinary: 7,
+        communication_style: 6,
+        innovation_risk: 7,
+      };
+
+      setPreferences(demoPreferences);
+
+      // デモ用研究分野選択
+      const demoFields = ['ai_ml', 'image_processing', 'web_design'];
+      const demoSelectedFields = new Set(demoFields);
+      const demoFieldInterests: ResearchFieldInterests = {
+        'ai_ml': 9,
+        'image_processing': 7,
+        'web_design': 6
+      };
+
+      setSelectedFields(demoSelectedFields);
+      setFieldInterests(demoFieldInterests);
+
+      setTabValue(0);
+      setError('');
+    } catch (err) {
+      setError('デモデータの読み込みに失敗しました');
+    }
   };
 
   // 評価実行
@@ -149,41 +190,28 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
           : 0;
       });
 
-      // APIには統合された興味度データを送信
-      const response = await apiService.evaluateLabs(preferences);
+      // バックエンドが期待する形式に合わせて統合プロファイルを作成
+      const studentProfile = {
+        ...preferences,
+        field_interests: allFieldInterests
+      };
+
+      // バックエンドが期待する形式でデータを送信
+      const evaluationData = {
+        student_profile: studentProfile
+      };
+
+      console.log('🚀 送信データ:', evaluationData);
+
+      const response = await apiService.evaluateLabs(evaluationData);
       onResults(response);
+      setTabValue(2); // 結果確認タブに移動
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '評価処理でエラーが発生しました';
       setError(errorMessage);
       onError(errorMessage);
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  // デモデータ読み込み
-  const handleLoadDemo = async () => {
-    try {
-      const demoProfile = await apiService.getDemoProfile();
-      setPreferences(demoProfile.evaluation_criteria);
-
-      // デモの研究分野選択と興味度を設定
-      const demoSelectedFields = new Set<string>();
-      const demoFieldInterests: ResearchFieldInterests = {};
-
-      Object.entries(demoProfile.field_interests).forEach(([field, interest]) => {
-        if (interest > 0) {
-          demoSelectedFields.add(field);
-          demoFieldInterests[field] = interest;
-        }
-      });
-
-      setSelectedFields(demoSelectedFields);
-      setFieldInterests(demoFieldInterests);
-
-      setTabValue(0);
-    } catch (err) {
-      setError('デモデータの読み込みに失敗しました');
     }
   };
 
@@ -207,20 +235,19 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
               <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                 {info.description}
               </Typography>
-              <Box sx={{ px: 2 }}>
-                <Slider
-                  value={preferences[key as keyof EvaluationPreferences]}
-                  onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferences, value as number)}
-                  min={1}
-                  max={10}
-                  step={1}
-                  marks
-                  valueLabelDisplay="on"
-                />
-              </Box>
-              <Typography variant="caption" color="text.secondary">
+              <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
                 {info.range}
               </Typography>
+              <Slider
+                value={preferences[key as keyof EvaluationPreferences]}
+                onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferences, value as number)}
+                min={1}
+                max={10}
+                step={1}
+                marks
+                valueLabelDisplay="on"
+                sx={{ mt: 1 }}
+              />
             </Card>
           </Grid>
         ))}
@@ -228,155 +255,122 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     </Box>
   );
 
-  // 研究分野興味コンポーネント（2段階入力版）
+  // 研究分野選択コンポーネント
   const renderFieldInterests = () => {
-    const selectedCount = selectedFields.size;
+    // カテゴリアイコンマップ
+    const categoryIcons: { [key: string]: React.ReactNode } = {
+      'テクノロジー・システム': <Science color="primary" />,
+      'クリエイティブ': <Palette color="secondary" />,
+      'エンターテイメント': <SportsEsports color="error" />,
+      '人文・社会・体育': <Psychology color="warning" />
+    };
 
     return (
       <Box>
         <Typography variant="h6" gutterBottom>
-          研究分野選択・興味度設定
+          研究分野選択
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-          まず興味のある分野をチェックし、次に各分野への興味度を詳細設定してください
-        </Typography>
-
-        <Alert severity="info" sx={{ mb: 3 }}>
-          選択済み分野: {selectedCount}件
-          {selectedCount === 0 && " - 最低1つ以上の分野を選択してください"}
-        </Alert>
-
-        {/* Step 1: 分野選択 */}
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          ステップ1: 興味のある分野を選択
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          興味のある分野を選択し、興味の度合いを設定してください（複数選択可能）
         </Typography>
 
-        {FIELD_CATEGORIES.map((category) => {
-          const fields = fieldUtils.getFieldsByCategory(category);
-          const categorySelectedCount = fields.filter(field => selectedFields.has(field.id)).length;
+        {FIELD_CATEGORIES.map(category => {
+          const fieldsInCategory = fieldUtils.getFieldsByCategory(category);
 
           return (
-            <Accordion key={category} defaultExpanded={category === 'テクノロジー・システム'}>
+            <Accordion key={category} defaultExpanded>
               <AccordionSummary expandIcon={<ExpandMore />}>
-                <Typography variant="h6">
-                  {category === 'テクノロジー・システム' && <Science sx={{ mr: 1 }} />}
-                  {category === 'クリエイティブ' && <Palette sx={{ mr: 1 }} />}
-                  {category === 'エンターテイメント' && <SportsEsports sx={{ mr: 1 }} />}
-                  {category} ({fields.length}分野)
-                  {categorySelectedCount > 0 && (
-                    <Chip
-                      label={`${categorySelectedCount}選択中`}
-                      size="small"
-                      color="primary"
-                      sx={{ ml: 2 }}
-                    />
-                  )}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  {categoryIcons[category]}
+                  <Typography variant="subtitle1">
+                    {category} ({fieldsInCategory.length}分野)
+                  </Typography>
+                </Box>
               </AccordionSummary>
               <AccordionDetails>
                 <Grid container spacing={2}>
-                  {fields.map((field) => {
-                    const isSelected = selectedFields.has(field.id);
-
-                    return (
-                      <Grid item xs={12} md={6} key={field.id}>
-                        <Card
-                          variant="outlined"
-                          sx={{
-                            p: 2,
-                            cursor: 'pointer',
-                            backgroundColor: isSelected ? 'primary.50' : 'background.paper',
-                            border: isSelected ? 2 : 1,
-                            borderColor: isSelected ? 'primary.main' : 'divider',
-                            '&:hover': {
-                              backgroundColor: isSelected ? 'primary.100' : 'grey.50'
-                            }
-                          }}
-                          onClick={() => handleFieldToggle(field.id)}
-                        >
+                  {fieldsInCategory.map(field => (
+                    <Grid item xs={12} key={field.id}>
+                      <Card
+                        variant="outlined"
+                        sx={{
+                          p: 2,
+                          bgcolor: selectedFields.has(field.id) ? 'primary.50' : 'transparent',
+                          border: selectedFields.has(field.id) ? 2 : 1,
+                          borderColor: selectedFields.has(field.id) ? 'primary.main' : 'divider'
+                        }}
+                      >
+                        <Box sx={{ mb: 2 }}>
                           <FormControlLabel
                             control={
                               <Checkbox
-                                checked={isSelected}
+                                checked={selectedFields.has(field.id)}
                                 onChange={() => handleFieldToggle(field.id)}
                                 color="primary"
                               />
                             }
                             label={
                               <Box>
-                                <Typography variant="subtitle1" gutterBottom>
+                                <Typography variant="subtitle2">
                                   {field.name}
                                 </Typography>
-                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                <Typography variant="body2" color="text.secondary">
                                   {field.description}
                                 </Typography>
-                                <Chip
-                                  label={`教員数: ${field.faculty_count}名`}
-                                  size="small"
-                                  variant="outlined"
-                                />
+                                <Typography variant="caption" color="text.secondary">
+                                  教員数: {field.faculty_count}名
+                                </Typography>
                               </Box>
                             }
-                            sx={{ alignItems: 'flex-start', width: '100%' }}
                           />
-                        </Card>
-                      </Grid>
-                    );
-                  })}
+                        </Box>
+
+                        {selectedFields.has(field.id) && (
+                          <Box sx={{ mt: 2, pl: 4 }}>
+                            <Typography variant="body2" gutterBottom>
+                              興味度: {fieldInterests[field.id] || 5}/10
+                            </Typography>
+                            <Slider
+                              value={fieldInterests[field.id] || 5}
+                              onChange={(_, value) => handleFieldInterestChange(field.id, value as number)}
+                              min={1}
+                              max={10}
+                              step={1}
+                              marks
+                              valueLabelDisplay="on"
+                              size="small"
+                            />
+                          </Box>
+                        )}
+                      </Card>
+                    </Grid>
+                  ))}
                 </Grid>
               </AccordionDetails>
             </Accordion>
           );
         })}
 
-        {/* Step 2: 興味度詳細設定 */}
-        {selectedCount > 0 && (
-          <Box sx={{ mt: 4 }}>
-            <Typography variant="h6" sx={{ mb: 2 }}>
-              ステップ2: 選択した分野の興味度を詳細設定
+        {selectedFields.size > 0 && (
+          <Box sx={{ mt: 3, p: 2, bgcolor: 'grey.50', borderRadius: 1 }}>
+            <Typography variant="subtitle2" gutterBottom>
+              選択中の分野 ({selectedFields.size}分野):
             </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-              選択した各分野への興味度を1-10で設定してください
-            </Typography>
-
-            <Grid container spacing={3}>
-              {Array.from(selectedFields).map((fieldId) => {
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {Array.from(selectedFields).map(fieldId => {
                 const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
-                if (!field) return null;
-
-                return (
-                  <Grid item xs={12} md={6} key={fieldId}>
-                    <Card variant="outlined" sx={{ p: 3 }}>
-                      <Typography variant="subtitle1" gutterBottom>
-                        {field.name}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                        {field.description}
-                      </Typography>
-                      <Chip
-                        label={`教員数: ${field.faculty_count}名`}
-                        size="small"
-                        sx={{ mb: 2 }}
-                      />
-                      <Box sx={{ px: 2 }}>
-                        <Slider
-                          value={fieldInterests[fieldId] || 5}
-                          onChange={(_, value) => handleFieldInterestChange(fieldId, value as number)}
-                          min={1}
-                          max={10}
-                          step={1}
-                          marks
-                          valueLabelDisplay="on"
-                        />
-                      </Box>
-                      <Typography variant="caption" color="text.secondary">
-                        1(少し興味あり) ～ 10(非常に興味あり)
-                      </Typography>
-                    </Card>
-                  </Grid>
-                );
+                const interest = fieldInterests[fieldId] || 5;
+                return field ? (
+                  <Chip
+                    key={fieldId}
+                    label={`${field.name} (${interest}/10)`}
+                    size="small"
+                    color="primary"
+                    variant="outlined"
+                  />
+                ) : null;
               })}
-            </Grid>
+            </Box>
           </Box>
         )}
       </Box>
@@ -385,7 +379,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
 
   // 評価実行コンポーネント
   const renderEvaluationExecute = () => {
-    // ★ selectedFields は正しく定義されているので使用可能
     const selectedFieldsCount = selectedFields.size;
 
     return (
@@ -426,14 +419,12 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
                 <strong>選択した分野と興味度:</strong>
               </Typography>
               <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-                {Array.from(selectedFields).map((fieldId) => {
-                  // ★ 型を明示的にstring指定
-                  const fieldIdStr = fieldId as string;
-                  const field = RESEARCH_FIELDS.find(f => f.id === fieldIdStr);
-                  const interest = fieldInterests[fieldIdStr] || 5;
+                {Array.from(selectedFields).map(fieldId => {
+                  const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
+                  const interest = fieldInterests[fieldId] || 5;
                   return field ? (
                     <Chip
-                      key={fieldIdStr}
+                      key={fieldId}
                       label={`${field.name} (${interest}/10)`}
                       size="small"
                       color="primary"
