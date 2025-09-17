@@ -1,228 +1,216 @@
-# services/lab_matching.py - 研究室マッチングサービス
+# services/lab_matching.py - 完全13項目対応版
 
-import numpy as np
 import logging
+import time
 from typing import Dict, List, Any, Optional, Tuple
-from dataclasses import dataclass
 from datetime import datetime
-import json
+import numpy as np
+from dataclasses import dataclass
 
 from models.schemas import (
-    StudentProfile, Laboratory, LabResult, CompatibilityScore,
-    EvaluationResponse, ResearchFieldEnum
+    StudentProfile, Laboratory, EvaluationResponse,
+    LabResult, CompatibilityScore
 )
-from core.fuzzy.inference import FuzzyInferenceEngine, SimpleFuzzyInferenceEngine
-from core.genetic.evolution import EvolutionEngine, EvolutionConfig
-from core.genetic.individual import WeightVector
-from core.decision_tree.tree import FuzzyDecisionTree
-from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 @dataclass
 class MatchingConfig:
-    """マッチング設定"""
-    # 重み設定
-    basic_criteria_weight: float = 0.6      # 基本5項目の重み
-    extended_criteria_weight: float = 0.3   # 拡張5項目の重み
-    special_criteria_weight: float = 0.1    # 特殊3項目の重み
-    field_match_bonus: float = 0.2          # 分野適合ボーナス
+    """マッチング設定（13項目完全対応）"""
     
-    # 閾値設定
-    min_compatibility_threshold: float = 0.3
-    high_compatibility_threshold: float = 0.7
-    confidence_threshold: float = 0.5
-    
-    # ランキング設定
+    # 基本設定
     max_recommendations: int = 10
-    diversity_factor: float = 0.1
-    
-    # 最適化設定
     enable_genetic_optimization: bool = True
-    optimization_samples: int = 50
-    
-    # その他
     use_fuzzy_inference: bool = True
     enable_explanation: bool = True
+    
+    # 13項目完全対応設定
+    complete_criteria_mode: bool = True  # 13項目完全使用
+    criteria_weights_auto_adjust: bool = True  # 重み自動調整
+    field_bonus_enabled: bool = True  # 分野ボーナス有効
+    
+    # 閾値設定
+    high_compatibility_threshold: float = 0.8
+    medium_compatibility_threshold: float = 0.6
+    confidence_threshold: float = 0.7
+    
+    # パフォーマンス設定
+    parallel_evaluation: bool = False
+    cache_results: bool = True
 
 class LabMatchingService:
-    """研究室マッチングサービス"""
+    """研究室マッチングサービス（完全13項目対応版）"""
     
-    def __init__(self, config: MatchingConfig = None):
-        self.config = config or MatchingConfig()
+    # 完全13項目評価基準
+    COMPLETE_CRITERIA = [
+        # 基本項目（5項目）
+        "research_intensity", "advisor_style", "team_work", "workload", "theory_practice",
+        # 拡張項目（5項目）  
+        "research_field_match", "skill_development", "lab_atmosphere", "flexibility", "publication_opportunity",
+        # 特殊項目（3項目）
+        "interdisciplinary", "communication_style", "innovation_risk"
+    ]
+    
+    # 基準別デフォルト重み（13項目完全対応）
+    DEFAULT_WEIGHTS = {
+        # 基本項目：高重み
+        "research_intensity": 1.2,
+        "advisor_style": 1.1,
+        "team_work": 1.0,
+        "workload": 1.0,
+        "theory_practice": 1.1,
         
-        # 推論エンジンの初期化
-        try:
-            self.fuzzy_engine = FuzzyInferenceEngine()
-            self.fallback_engine = SimpleFuzzyInferenceEngine()
-            logger.info("ファジィ推論エンジン初期化完了")
-        except Exception as e:
-            logger.warning(f"ファジィ推論エンジン初期化失敗: {e}")
-            self.fuzzy_engine = None
-            self.fallback_engine = SimpleFuzzyInferenceEngine()
+        # 拡張項目：中〜高重み
+        "research_field_match": 1.4,  # 最重要
+        "skill_development": 0.9,
+        "lab_atmosphere": 0.8,
+        "flexibility": 0.8,
+        "publication_opportunity": 1.0,
         
-        # 遺伝的最適化エンジン
-        self.genetic_engine: Optional[EvolutionEngine] = None
-        self.optimized_weights: Optional[WeightVector] = None
-        
-        # 研究室データ
-        self.laboratories: List[Laboratory] = []
-        self.lab_cache: Dict[str, Laboratory] = {}
-        
-        # マッチング履歴
-        self.matching_history: List[Dict[str, Any]] = []
+        # 特殊項目：調整重み
+        "interdisciplinary": 0.7,
+        "communication_style": 0.8,
+        "innovation_risk": 0.9
+    }
+    
+    # 基準名の日本語マッピング
+    CRITERIA_NAMES = {
+        "research_intensity": "研究強度",
+        "advisor_style": "指導スタイル",
+        "team_work": "チームワーク",
+        "workload": "ワークロード",
+        "theory_practice": "理論・実践バランス",
+        "research_field_match": "研究分野適合性",
+        "skill_development": "スキル開発",
+        "lab_atmosphere": "研究室雰囲気",
+        "flexibility": "柔軟性",
+        "publication_opportunity": "論文発表機会",
+        "interdisciplinary": "学際性",
+        "communication_style": "コミュニケーション",
+        "innovation_risk": "革新性・リスク許容度"
+    }
+    
+    def __init__(self, config: MatchingConfig):
+        self.config = config
+        self.fuzzy_engine = None
+        self.genetic_optimizer = None
+        self.optimized_weights = None
         
         # 統計情報
         self.total_evaluations = 0
         self.successful_matches = 0
+        self.average_processing_time = 0.0
         
-        # 研究室データの初期化
-        self._initialize_laboratory_data()
+        # 結果キャッシュ
+        self.result_cache = {}
+        
+        # 13項目完全対応の初期化
+        self._initialize_complete_criteria_system()
+        
+        logger.info("研究室マッチングサービス初期化完了（13項目完全対応）")
     
-    def _initialize_laboratory_data(self):
-        """研究室データの初期化"""
+    def _initialize_complete_criteria_system(self):
+        """13項目完全対応システムの初期化"""
         
         try:
-            # 設定から研究室データを読み込み
-            self.laboratories = self._create_sample_laboratories()
+            # ファジィ推論エンジンの初期化（13項目対応）
+            if self.config.use_fuzzy_inference:
+                from core.fuzzy.inference import CompleteFuzzyInferenceEngine
+                self.fuzzy_engine = CompleteFuzzyInferenceEngine(
+                    criteria=self.COMPLETE_CRITERIA,
+                    weights=self.DEFAULT_WEIGHTS
+                )
             
-            # キャッシュの構築
-            self.lab_cache = {lab.lab_id: lab for lab in self.laboratories}
+            # 遺伝的最適化器の初期化（13項目対応）
+            if self.config.enable_genetic_optimization:
+                from core.genetic.evolution import CompleteGeneticOptimizer
+                self.genetic_optimizer = CompleteGeneticOptimizer(
+                    criteria_count=len(self.COMPLETE_CRITERIA),
+                    population_size=50,
+                    generations=20
+                )
             
-            logger.info(f"研究室データ初期化完了: {len(self.laboratories)}研究室")
+            logger.info(f"13項目完全対応システム初期化完了: {len(self.COMPLETE_CRITERIA)}基準")
             
-        except Exception as e:
-            logger.error(f"研究室データ初期化エラー: {e}")
-            self.laboratories = []
-            self.lab_cache = {}
+        except ImportError as e:
+            logger.warning(f"一部モジュールが利用できません: {e}")
+            # フォールバックエンジンを使用
+            self._initialize_fallback_engine()
     
-    def _create_sample_laboratories(self) -> List[Laboratory]:
-        """サンプル研究室データの作成"""
+    def _initialize_fallback_engine(self):
+        """フォールバックエンジンの初期化（13項目対応）"""
         
-        from models.schemas import Faculty, EvaluationCriteria
+        class FallbackEngine:
+            def __init__(self, criteria, weights):
+                self.criteria = criteria
+                self.weights = weights
+            
+            def evaluate_compatibility(self, student_profile: Dict, lab_profile: Dict) -> float:
+                """フォールバック適合度計算（13項目）"""
+                total_weighted_score = 0.0
+                total_weights = 0.0
+                
+                for criterion in self.criteria:
+                    if criterion in student_profile and criterion in lab_profile:
+                        student_val = float(student_profile[criterion])
+                        lab_val = float(lab_profile[criterion])
+                        
+                        # 類似度計算
+                        diff = abs(student_val - lab_val)
+                        similarity = max(0.0, 1.0 - diff / 9.0)
+                        
+                        # 重み適用
+                        weight = self.weights.get(criterion, 1.0)
+                        total_weighted_score += similarity * weight
+                        total_weights += weight
+                
+                return total_weighted_score / total_weights if total_weights > 0 else 0.5
         
-        laboratories = []
-        
-        # AI・機械学習分野の研究室例
-        ai_labs = [
-            {
-                "lab_id": "ai_itoh_lab",
-                "faculty": Faculty(
-                    name="伊藤雅彦",
-                    name_en="Masahiko ITOH",
-                    specialties=["情報可視化", "ユーザインタフェース", "データ工学"]
-                ),
-                "research_field": ResearchFieldEnum.AI_MACHINE_LEARNING,
-                "characteristics": EvaluationCriteria(
-                    research_intensity=7.5,
-                    advisor_style=7.0,
-                    team_work=8.0,
-                    workload=7.0,
-                    theory_practice=6.5,
-                    research_field_match=9.0,
-                    skill_development=8.5,
-                    lab_atmosphere=8.0,
-                    flexibility=7.5,
-                    publication_opportunity=7.0,
-                    interdisciplinary=6.0,
-                    communication_style=8.0,
-                    innovation_risk=6.5
-                ),
-                "description": "情報可視化とユーザインタフェースに特化した研究室"
-            },
-            {
-                "lab_id": "ai_uchiyama_lab",
-                "faculty": Faculty(
-                    name="内山敏雄",
-                    name_en="Toshio UCHIYAMA",
-                    specialties=["データ解析", "機械学習", "レコメンド", "テキストマイニング"]
-                ),
-                "research_field": ResearchFieldEnum.AI_MACHINE_LEARNING,
-                "characteristics": EvaluationCriteria(
-                    research_intensity=8.5,
-                    advisor_style=6.5,
-                    team_work=7.0,
-                    workload=8.0,
-                    theory_practice=8.0,
-                    research_field_match=9.5,
-                    skill_development=9.0,
-                    lab_atmosphere=7.5,
-                    flexibility=6.5,
-                    publication_opportunity=8.5,
-                    interdisciplinary=7.0,
-                    communication_style=7.0,
-                    innovation_risk=8.0
-                ),
-                "description": "機械学習とデータマイニングの実践的研究"
-            }
-        ]
-        
-        # 画像・映像処理分野の研究室例
-        image_labs = [
-            {
-                "lab_id": "img_mori_lab",
-                "faculty": Faculty(
-                    name="森圭佑",
-                    name_en="Keisuke MORI",
-                    specialties=["情報計測", "音声・画像情報処理", "医用情報処理"]
-                ),
-                "research_field": ResearchFieldEnum.IMAGE_VIDEO_PROCESSING,
-                "characteristics": EvaluationCriteria(
-                    research_intensity=8.0,
-                    advisor_style=7.5,
-                    team_work=6.5,
-                    workload=7.5,
-                    theory_practice=7.5,
-                    research_field_match=8.5,
-                    skill_development=8.0,
-                    lab_atmosphere=7.0,
-                    flexibility=7.0,
-                    publication_opportunity=7.5,
-                    interdisciplinary=8.5,
-                    communication_style=7.0,
-                    innovation_risk=7.5
-                ),
-                "description": "医用画像処理と信号処理の研究"
-            }
-        ]
-        
-        # 研究室オブジェクトの作成
-        for lab_data in ai_labs + image_labs:
-            lab = Laboratory(**lab_data)
-            laboratories.append(lab)
-        
-        return laboratories
+        self.fuzzy_engine = FallbackEngine(self.COMPLETE_CRITERIA, self.DEFAULT_WEIGHTS)
+        logger.info("フォールバックエンジン初期化完了（13項目対応）")
     
-    def evaluate_student_lab_compatibility(self, student_profile: StudentProfile,
-                                         target_laboratories: Optional[List[Laboratory]] = None) -> EvaluationResponse:
-        """学生と研究室群の適合性評価"""
+    def evaluate_student_lab_compatibility(self, 
+                                         student_profile: StudentProfile,
+                                         laboratories: List[Laboratory]) -> EvaluationResponse:
+        """学生と研究室群の適合性評価（13項目完全対応）"""
         
         start_time = datetime.now()
-        evaluation_id = f"eval_{int(start_time.timestamp())}"
+        evaluation_id = f"eval_{int(time.time())}_{student_profile.student_id}"
         
-        # 対象研究室の設定
-        if target_laboratories is None:
-            target_laboratories = self.laboratories
+        logger.info(f"適合性評価開始: {evaluation_id}, 対象研究室数: {len(laboratories)}")
         
-        if not target_laboratories:
-            raise ValueError("評価対象の研究室がありません")
+        # 入力データの完全性チェック
+        completeness_info = self._check_criteria_completeness(student_profile)
+        logger.info(f"入力データ完全性: {completeness_info['completeness_ratio']:.1%}")
         
-        logger.info(f"適合性評価開始: 学生{student_profile.student_id}, 研究室{len(target_laboratories)}件")
-        
-        # 各研究室との適合性評価
         lab_results = []
         
-        for lab in target_laboratories:
+        for lab in laboratories:
             try:
-                compatibility_score = self._calculate_compatibility(student_profile, lab)
-                reasons, concerns = self._generate_explanations(student_profile, lab, compatibility_score)
+                # 個別研究室との適合性評価（13項目完全）
+                compatibility_score = self._calculate_complete_compatibility(
+                    student_profile, lab
+                )
+                
+                # 詳細説明生成
+                explanations = self._generate_complete_explanations(
+                    student_profile, lab, compatibility_score
+                )
+                
+                # 推薦レベル決定
+                recommendation_level = self._determine_recommendation_level(
+                    compatibility_score.overall_score
+                )
                 
                 lab_result = LabResult(
                     laboratory=lab,
                     compatibility_score=compatibility_score,
-                    ranking=0,  # 後で設定
-                    reasons=reasons,
-                    concerns=concerns
+                    ranking=0,  # 後でソート時に設定
+                    recommendation_reasons=explanations["reasons"],
+                    concerns=explanations["concerns"],
+                    detailed_analysis=explanations["detailed_analysis"],
+                    recommendation_level=recommendation_level,
+                    evaluation_timestamp=start_time
                 )
                 
                 lab_results.append(lab_result)
@@ -232,7 +220,7 @@ class LabMatchingService:
                 logger.warning(f"研究室{lab.lab_id}の評価でエラー: {e}")
                 continue
         
-        # ランキングの設定
+        # ランキング設定
         lab_results.sort(key=lambda x: x.compatibility_score.overall_score, reverse=True)
         for i, result in enumerate(lab_results):
             result.ranking = i + 1
@@ -252,23 +240,33 @@ class LabMatchingService:
         }
         
         # 推薦信頼度の計算
-        recommendation_confidence = self._calculate_recommendation_confidence(lab_results)
+        recommendation_confidence = self._calculate_recommendation_confidence(
+            lab_results, completeness_info
+        )
         
-        # 評価レスポンスの構築
+        # レスポンス構築
         response = EvaluationResponse(
             student_profile=student_profile,
             lab_results=lab_results,
             processing_time=processing_time,
-            algorithm_version="v1.0.0",
-            total_labs_evaluated=len(target_laboratories),
+            algorithm_version="v2.0.0-complete-13-criteria",
+            total_labs_evaluated=len(laboratories),
             score_distribution=score_distribution,
             recommendation_confidence=recommendation_confidence,
             evaluation_id=evaluation_id,
-            timestamp=start_time
+            timestamp=start_time,
+            metadata={
+                "criteria_completeness": completeness_info,
+                "evaluation_method": "complete_13_criteria_weighted",
+                "weights_used": self.DEFAULT_WEIGHTS,
+                "features_enabled": {
+                    "complete_criteria": True,
+                    "weighted_calculation": True,
+                    "field_bonus": self.config.field_bonus_enabled,
+                    "genetic_optimization": self.config.enable_genetic_optimization
+                }
+            }
         )
-        
-        # マッチング履歴に記録
-        self._record_matching_history(student_profile, response)
         
         if lab_results:
             self.successful_matches += 1
@@ -277,43 +275,66 @@ class LabMatchingService:
         
         return response
     
-    def _calculate_compatibility(self, student_profile: StudentProfile, 
-                               laboratory: Laboratory) -> CompatibilityScore:
-        """適合性スコアの計算"""
+    def _check_criteria_completeness(self, student_profile: StudentProfile) -> Dict[str, Any]:
+        """評価基準の完全性チェック（13項目）"""
         
-        # ファジィ推論を使用
-        if self.config.use_fuzzy_inference and self.fuzzy_engine:
-            try:
-                inference_result = self.fuzzy_engine.infer_lab_compatibility(
-                    student_profile, laboratory
-                )
-                overall_score = inference_result.output_value
-                confidence = inference_result.confidence
-            except Exception as e:
-                logger.warning(f"ファジィ推論エラー: {e}")
-                # フォールバック
-                inference_result = self.fallback_engine.infer_lab_compatibility(
-                    student_profile, laboratory
-                )
-                overall_score = inference_result.output_value
-                confidence = inference_result.confidence
+        criteria_dict = student_profile.evaluation_criteria.dict()
+        
+        # 各グループの完全性チェック
+        basic_criteria = self.COMPLETE_CRITERIA[:5]
+        extended_criteria = self.COMPLETE_CRITERIA[5:10]
+        special_criteria = self.COMPLETE_CRITERIA[10:13]
+        
+        basic_complete = sum(1 for c in basic_criteria if criteria_dict.get(c) is not None)
+        extended_complete = sum(1 for c in extended_criteria if criteria_dict.get(c) is not None)
+        special_complete = sum(1 for c in special_criteria if criteria_dict.get(c) is not None)
+        
+        total_complete = basic_complete + extended_complete + special_complete
+        
+        return {
+            "total_criteria": len(self.COMPLETE_CRITERIA),
+            "completed_criteria": total_complete,
+            "completeness_ratio": total_complete / len(self.COMPLETE_CRITERIA),
+            "group_completeness": {
+                "basic": basic_complete / len(basic_criteria),
+                "extended": extended_complete / len(extended_criteria),
+                "special": special_complete / len(special_criteria)
+            },
+            "missing_criteria": [
+                c for c in self.COMPLETE_CRITERIA 
+                if criteria_dict.get(c) is None
+            ]
+        }
+    
+    def _calculate_complete_compatibility(self, 
+                                        student_profile: StudentProfile,
+                                        laboratory: Laboratory) -> CompatibilityScore:
+        """完全13項目適合性スコア計算"""
+        
+        # ファジィ推論による評価
+        if self.fuzzy_engine:
+            student_dict = student_profile.evaluation_criteria.dict()
+            lab_dict = laboratory.characteristics.dict()
+            
+            overall_score = self.fuzzy_engine.evaluate_compatibility(student_dict, lab_dict)
+            confidence = min(1.0, overall_score + 0.1)  # 信頼度調整
         else:
-            # 簡易計算
-            inference_result = self.fallback_engine.infer_lab_compatibility(
-                student_profile, laboratory
-            )
-            overall_score = inference_result.output_value
-            confidence = inference_result.confidence
+            overall_score = 0.5
+            confidence = 0.5
         
-        # 各基準の適合性スコア計算
-        criteria_scores = self._calculate_criteria_scores(student_profile, laboratory)
+        # 各基準の詳細スコア計算
+        criteria_scores = self._calculate_detailed_criteria_scores(
+            student_profile, laboratory
+        )
         
         # 分野適合性スコア
-        field_match_score = self._calculate_field_match_score(student_profile, laboratory)
+        field_match_score = self._calculate_field_match_score(
+            student_profile, laboratory
+        )
         
-        # 最適化された重みが利用可能な場合は適用
-        if self.optimized_weights:
-            overall_score = self._apply_optimized_weights(
+        # 遺伝的最適化による調整（利用可能な場合）
+        if self.genetic_optimizer and self.optimized_weights:
+            overall_score = self._apply_genetic_optimization(
                 criteria_scores, field_match_score, self.optimized_weights
             )
         
@@ -321,146 +342,156 @@ class LabMatchingService:
             overall_score=min(1.0, max(0.0, overall_score)),
             criteria_scores=criteria_scores,
             field_match_score=field_match_score,
-            confidence=confidence
+            confidence=confidence,
+            metadata={
+                "evaluation_method": "complete_13_criteria",
+                "criteria_used": len([c for c, score in criteria_scores.items() if score is not None]),
+                "weights_applied": True,
+                "field_bonus_applied": field_match_score > 0
+            }
         )
     
-    def _calculate_criteria_scores(self, student_profile: StudentProfile,
-                                 laboratory: Laboratory) -> Dict[str, float]:
-        """各評価基準の適合性スコア計算"""
+    def _calculate_detailed_criteria_scores(self, 
+                                          student_profile: StudentProfile,
+                                          laboratory: Laboratory) -> Dict[str, Optional[float]]:
+        """詳細基準スコア計算（13項目完全対応）"""
         
         student_criteria = student_profile.evaluation_criteria.dict()
         lab_criteria = laboratory.characteristics.dict()
         
         criteria_scores = {}
         
-        for criterion, student_value in student_criteria.items():
-            if student_value is not None:
-                lab_value = lab_criteria.get(criterion, 5.0)  # デフォルト値
+        for criterion in self.COMPLETE_CRITERIA:
+            student_value = student_criteria.get(criterion)
+            lab_value = lab_criteria.get(criterion)
+            
+            if student_value is not None and lab_value is not None:
+                # 差分ベースの適合性計算
+                diff = abs(float(student_value) - float(lab_value))
+                max_diff = 9.0  # 最大差分（1-10の範囲）
                 
-                if lab_value is not None:
-                    # 差分ベースの適合性計算
-                    diff = abs(student_value - lab_value)
-                    max_diff = 9.0  # 最大差分（1-10の範囲）
-                    
-                    # 近似性スコア（差が小さいほど高スコア）
-                    similarity_score = max(0.0, 1.0 - diff / max_diff)
-                    
-                    # 基準別の重み調整
-                    weight = self._get_criterion_weight(criterion)
-                    criteria_scores[criterion] = similarity_score * weight
-                else:
-                    criteria_scores[criterion] = 0.5  # 不明な場合は中間値
+                # 基本類似度スコア
+                similarity_score = max(0.0, 1.0 - diff / max_diff)
+                
+                # 基準別重み適用
+                weight = self.DEFAULT_WEIGHTS.get(criterion, 1.0)
+                weighted_score = similarity_score * weight
+                
+                # 正規化（重みによる調整を考慮）
+                normalized_score = min(1.0, weighted_score)
+                
+                criteria_scores[criterion] = normalized_score
             else:
-                criteria_scores[criterion] = 0.5
+                criteria_scores[criterion] = None  # データ不足
         
         return criteria_scores
     
-    def _get_criterion_weight(self, criterion: str) -> float:
-        """基準別重みの取得"""
-        
-        basic_criteria = [
-            "research_intensity", "advisor_style", "team_work", 
-            "workload", "theory_practice"
-        ]
-        
-        extended_criteria = [
-            "research_field_match", "skill_development", "lab_atmosphere",
-            "flexibility", "publication_opportunity"
-        ]
-        
-        special_criteria = [
-            "interdisciplinary", "communication_style", "innovation_risk"
-        ]
-        
-        if criterion in basic_criteria:
-            return self.config.basic_criteria_weight / len(basic_criteria)
-        elif criterion in extended_criteria:
-            return self.config.extended_criteria_weight / len(extended_criteria)
-        elif criterion in special_criteria:
-            return self.config.special_criteria_weight / len(special_criteria)
-        else:
-            return 0.1  # その他
-    
-    def _calculate_field_match_score(self, student_profile: StudentProfile,
+    def _calculate_field_match_score(self, 
+                                   student_profile: StudentProfile,
                                    laboratory: Laboratory) -> float:
-        """分野適合性スコアの計算"""
+        """研究分野適合性スコア計算"""
         
-        lab_field = laboratory.research_field.value
+        if not self.config.field_bonus_enabled:
+            return 0.0
         
-        # 学生の分野興味から適合度を計算
-        best_match_score = 0.0
+        # 学生の分野興味と研究室分野の照合
+        student_interests = {
+            interest.research_field.value: interest.interest_level 
+            for interest in student_profile.field_interests
+        }
         
-        for interest in student_profile.field_interests:
-            if interest.field.value == lab_field:
-                # 興味レベルと優先順位を考慮
-                interest_score = interest.interest_level / 10.0  # 0-1に正規化
-                priority_bonus = max(0, (len(student_profile.field_interests) - interest.priority + 1) / len(student_profile.field_interests))
+        lab_fields = [field.value for field in laboratory.research_fields]
+        
+        if not student_interests or not lab_fields:
+            return 0.0
+        
+        # 最高マッチスコアを計算
+        max_match_score = 0.0
+        
+        for lab_field in lab_fields:
+            if lab_field in student_interests:
+                interest_level = student_interests[lab_field]
+                normalized_interest = interest_level / 10.0
                 
-                field_score = interest_score * (1 + priority_bonus * 0.2)
-                best_match_score = max(best_match_score, field_score)
+                # research_field_match基準による重み調整
+                field_weight = student_profile.evaluation_criteria.research_field_match or 5.0
+                field_weight_normalized = field_weight / 10.0
+                
+                match_score = normalized_interest * field_weight_normalized
+                max_match_score = max(max_match_score, match_score)
         
-        return min(1.0, best_match_score)
+        return min(1.0, max_match_score)
     
-    def _apply_optimized_weights(self, criteria_scores: Dict[str, float],
-                               field_match_score: float, 
-                               weights: WeightVector) -> float:
-        """最適化された重みの適用"""
+    def _apply_genetic_optimization(self, 
+                                  criteria_scores: Dict[str, Optional[float]],
+                                  field_match_score: float,
+                                  optimized_weights: List[float]) -> float:
+        """遺伝的最適化による総合スコア計算"""
         
-        weight_genes = weights.get_genes()
-        total_score = 0.0
-        total_weight = 0.0
+        if len(optimized_weights) < len(self.COMPLETE_CRITERIA):
+            return 0.5  # 重み不足の場合
         
-        # 各基準スコアに重みを適用
-        for criterion, score in criteria_scores.items():
-            weight = weight_genes.get(criterion, 0.1)
-            total_score += score * weight
-            total_weight += weight
+        weighted_sum = 0.0
+        total_weights = 0.0
         
-        # 分野適合性ボーナス
-        field_weight = weight_genes.get("research_field_match", self.config.field_match_bonus)
-        total_score += field_match_score * field_weight
-        total_weight += field_weight
+        for i, criterion in enumerate(self.COMPLETE_CRITERIA):
+            score = criteria_scores.get(criterion)
+            if score is not None:
+                weight = optimized_weights[i]
+                weighted_sum += score * weight
+                total_weights += weight
         
-        return total_score / total_weight if total_weight > 0 else 0.0
+        base_score = weighted_sum / total_weights if total_weights > 0 else 0.5
+        
+        # 分野ボーナス追加
+        final_score = min(1.0, base_score + field_match_score * 0.1)
+        
+        return final_score
     
-    def _generate_explanations(self, student_profile: StudentProfile,
-                             laboratory: Laboratory, 
-                             compatibility_score: CompatibilityScore) -> Tuple[List[str], List[str]]:
-        """推薦理由と懸念点の生成"""
+    def _generate_complete_explanations(self, 
+                                      student_profile: StudentProfile,
+                                      laboratory: Laboratory,
+                                      compatibility_score: CompatibilityScore) -> Dict[str, Any]:
+        """包括的説明生成（13項目対応）"""
         
         reasons = []
         concerns = []
+        detailed_analysis = {}
         
         if not self.config.enable_explanation:
-            return reasons, concerns
+            return {"reasons": reasons, "concerns": concerns, "detailed_analysis": detailed_analysis}
         
-        # 高スコア基準の特定
+        criteria_scores = compatibility_score.criteria_scores
+        
+        # 高スコア基準（推薦理由）
         high_score_criteria = [
-            criterion for criterion, score in compatibility_score.criteria_scores.items()
-            if score > 0.7
+            (criterion, score) for criterion, score in criteria_scores.items()
+            if score is not None and score > 0.7
         ]
+        high_score_criteria.sort(key=lambda x: x[1], reverse=True)
         
-        # 低スコア基準の特定
+        # 低スコア基準（懸念点）
         low_score_criteria = [
-            criterion for criterion, score in compatibility_score.criteria_scores.items()
-            if score < 0.4
+            (criterion, score) for criterion, score in criteria_scores.items()
+            if score is not None and score < 0.4
         ]
+        low_score_criteria.sort(key=lambda x: x[1])
         
-        # 推薦理由の生成
+        # 推薦理由生成
         if compatibility_score.field_match_score > 0.7:
             reasons.append("研究分野の興味と非常によく一致しています")
         
         if len(high_score_criteria) >= 3:
-            criteria_names = self._translate_criteria_names(high_score_criteria[:3])
-            reasons.append(f"{', '.join(criteria_names)}において高い適合性があります")
+            top_criteria = [self.CRITERIA_NAMES[c] for c, _ in high_score_criteria[:3]]
+            reasons.append(f"{', '.join(top_criteria)}において高い適合性があります")
         
         if compatibility_score.overall_score > self.config.high_compatibility_threshold:
             reasons.append("総合的な適合度が非常に高い研究室です")
         
-        # 懸念点の生成
+        # 懸念点生成
         if len(low_score_criteria) >= 2:
-            criteria_names = self._translate_criteria_names(low_score_criteria[:2])
-            concerns.append(f"{', '.join(criteria_names)}において適合性が低い可能性があります")
+            concern_criteria = [self.CRITERIA_NAMES[c] for c, _ in low_score_criteria[:2]]
+            concerns.append(f"{', '.join(concern_criteria)}において適合性が低い可能性があります")
         
         if compatibility_score.field_match_score < 0.3:
             concerns.append("研究分野の適合性が低い可能性があります")
@@ -468,238 +499,118 @@ class LabMatchingService:
         if compatibility_score.confidence < self.config.confidence_threshold:
             concerns.append("適合性の判定信頼度がやや低めです")
         
-        return reasons, concerns
-    
-    def _translate_criteria_names(self, criteria: List[str]) -> List[str]:
-        """基準名の日本語変換"""
-        
-        translation_map = {
-            "research_intensity": "研究強度",
-            "advisor_style": "指導スタイル",
-            "team_work": "チームワーク",
-            "workload": "作業負荷",
-            "theory_practice": "理論・実践バランス",
-            "research_field_match": "研究分野適合性",
-            "skill_development": "スキル開発",
-            "lab_atmosphere": "研究室雰囲気",
-            "flexibility": "柔軟性",
-            "publication_opportunity": "論文発表機会",
-            "interdisciplinary": "学際性",
-            "communication_style": "コミュニケーション",
-            "innovation_risk": "革新性・リスク許容度"
+        # 詳細分析
+        detailed_analysis = {
+            "criteria_analysis": {
+                criterion: {
+                    "score": score,
+                    "category": "high" if score and score > 0.7 else "low" if score and score < 0.4 else "medium",
+                    "weight": self.DEFAULT_WEIGHTS.get(criterion, 1.0),
+                    "importance": "critical" if criterion in self.COMPLETE_CRITERIA[:5] else "extended"
+                }
+                for criterion, score in criteria_scores.items()
+                if score is not None
+            },
+            "field_analysis": {
+                "field_match_score": compatibility_score.field_match_score,
+                "field_bonus_applied": compatibility_score.field_match_score > 0
+            },
+            "score_breakdown": {
+                "base_compatibility": sum(s for s in criteria_scores.values() if s) / len([s for s in criteria_scores.values() if s]),
+                "field_bonus": compatibility_score.field_match_score,
+                "final_score": compatibility_score.overall_score
+            }
         }
         
-        return [translation_map.get(criterion, criterion) for criterion in criteria]
+        return {
+            "reasons": reasons,
+            "concerns": concerns,
+            "detailed_analysis": detailed_analysis
+        }
     
-    def _calculate_recommendation_confidence(self, lab_results: List[LabResult]) -> float:
-        """推薦信頼度の計算"""
+    def _determine_recommendation_level(self, overall_score: float) -> str:
+        """推薦レベル決定"""
+        
+        if overall_score >= 0.85:
+            return "強く推薦"
+        elif overall_score >= 0.7:
+            return "推薦"
+        elif overall_score >= 0.5:
+            return "検討可能"
+        else:
+            return "要慎重検討"
+    
+    def _calculate_recommendation_confidence(self, 
+                                           lab_results: List[LabResult],
+                                           completeness_info: Dict[str, Any]) -> float:
+        """推薦信頼度計算"""
         
         if not lab_results:
             return 0.0
         
-        # トップ結果の信頼度
-        top_confidence = lab_results[0].compatibility_score.confidence
-        
-        # スコア分布の分散（低いほど信頼度高）
+        # スコア分散による信頼度
         scores = [result.compatibility_score.overall_score for result in lab_results]
-        score_std = float(np.std(scores)) if len(scores) > 1 else 0.0
+        score_variance = np.var(scores) if len(scores) > 1 else 0.0
+        variance_factor = min(1.0, 1.0 - score_variance)
         
-        # 分散が小さく、トップの信頼度が高いほど全体信頼度高
-        distribution_confidence = max(0.0, 1.0 - score_std * 2)
+        # データ完全性による信頼度
+        completeness_factor = completeness_info["completeness_ratio"]
         
-        return (top_confidence + distribution_confidence) / 2
+        # 最高スコアによる信頼度
+        max_score = max(scores) if scores else 0.0
+        score_factor = max_score
+        
+        # 総合信頼度
+        confidence = (variance_factor * 0.3 + completeness_factor * 0.4 + score_factor * 0.3)
+        
+        return min(1.0, max(0.0, confidence))
     
-    def _record_matching_history(self, student_profile: StudentProfile,
-                               response: EvaluationResponse):
-        """マッチング履歴の記録"""
+    def optimize_weights(self, training_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """重み最適化（13項目対応）"""
         
-        history_record = {
-            "timestamp": response.timestamp.isoformat(),
-            "student_id": student_profile.student_id,
-            "evaluation_id": response.evaluation_id,
-            "total_labs_evaluated": response.total_labs_evaluated,
-            "top_match_score": response.lab_results[0].compatibility_score.overall_score if response.lab_results else 0.0,
-            "processing_time": response.processing_time,
-            "recommendation_confidence": response.recommendation_confidence
-        }
+        if not self.genetic_optimizer:
+            return {"success": False, "message": "遺伝的最適化器が利用できません"}
         
-        self.matching_history.append(history_record)
-        
-        # 履歴サイズ制限
-        if len(self.matching_history) > 1000:
-            self.matching_history = self.matching_history[-500:]
-    
-    def optimize_weights(self, sample_data: List[Tuple[StudentProfile, Laboratory, float]],
-                        evolution_config: Optional[EvolutionConfig] = None) -> WeightVector:
-        """遺伝的アルゴリズムによる重み最適化"""
-        
-        if not self.config.enable_genetic_optimization:
-            logger.info("遺伝的最適化は無効化されています")
-            return None
-        
-        if not sample_data:
-            logger.warning("最適化用サンプルデータがありません")
-            return None
-        
-        logger.info(f"重み最適化開始: {len(sample_data)}サンプル")
-        
-        # 進化設定
-        if evolution_config is None:
-            evolution_config = EvolutionConfig(
-                population_size=20,
-                max_generations=30,
-                crossover_rate=0.8,
-                mutation_rate=0.1,
-                verbose=True
-            )
-        
-        # 進化エンジンの初期化
-        from core.genetic.evolution import EvolutionEngine
-        self.genetic_engine = EvolutionEngine(evolution_config, WeightVector)
-        
-        # 重み名の設定
-        weight_names = list(sample_data[0][0].evaluation_criteria.dict().keys())
-        weight_names.append("research_field_match")
-        
-        self.genetic_engine.initialize_population(weight_names=weight_names)
-        
-        # 適応度関数の定義
-        def fitness_function(individual: WeightVector) -> float:
-            total_error = 0.0
-            
-            for student, lab, target_score in sample_data:
-                try:
-                    # 予測スコアの計算
-                    criteria_scores = self._calculate_criteria_scores(student, lab)
-                    field_match_score = self._calculate_field_match_score(student, lab)
-                    predicted_score = self._apply_optimized_weights(
-                        criteria_scores, field_match_score, individual
-                    )
-                    
-                    # 誤差の計算
-                    error = abs(predicted_score - target_score)
-                    total_error += error
-                    
-                except Exception as e:
-                    logger.warning(f"個体評価エラー: {e}")
-                    total_error += 1.0  # ペナルティ
-            
-            # 適応度（誤差が小さいほど高い）
-            average_error = total_error / len(sample_data)
-            fitness = max(0.0, 1.0 - average_error)
-            
-            return fitness
-        
-        # 進化実行
         try:
-            evolution_result = self.genetic_engine.evolve(fitness_function)
+            logger.info(f"重み最適化開始: {len(training_data)}件のデータ")
             
-            if evolution_result.success:
-                self.optimized_weights = evolution_result.best_individual
-                logger.info(f"重み最適化完了: 適応度{evolution_result.best_fitness:.6f}")
-                
-                # 最適化された重みをログ出力
-                optimized_genes = self.optimized_weights.get_genes()
-                logger.info(f"最適化重み: {optimized_genes}")
-                
-                return self.optimized_weights
-            else:
-                logger.warning("重み最適化が収束しませんでした")
-                return None
-                
+            # 遺伝的アルゴリズムによる最適化実行
+            optimization_result = self.genetic_optimizer.optimize(
+                training_data, 
+                criteria=self.COMPLETE_CRITERIA
+            )
+            
+            self.optimized_weights = optimization_result["best_weights"]
+            
+            logger.info(f"重み最適化完了: 適応度={optimization_result['best_fitness']:.3f}")
+            
+            return {
+                "success": True,
+                "optimized_weights": self.optimized_weights,
+                "optimization_fitness": optimization_result["best_fitness"],
+                "generations_completed": optimization_result["generations"],
+                "criteria_optimized": len(self.COMPLETE_CRITERIA)
+            }
+            
         except Exception as e:
             logger.error(f"重み最適化エラー: {e}")
-            return None
+            return {"success": False, "message": str(e)}
     
-    def get_service_statistics(self) -> Dict[str, Any]:
-        """サービス統計情報の取得"""
+    def get_statistics(self) -> Dict[str, Any]:
+        """統計情報取得"""
         
         return {
             "total_evaluations": self.total_evaluations,
             "successful_matches": self.successful_matches,
-            "success_rate": self.successful_matches / max(self.total_evaluations, 1),
-            "available_laboratories": len(self.laboratories),
-            "matching_history_size": len(self.matching_history),
-            "optimization_enabled": self.config.enable_genetic_optimization,
-            "optimized_weights_available": self.optimized_weights is not None,
-            "fuzzy_inference_available": self.fuzzy_engine is not None
+            "success_rate": self.successful_matches / max(1, self.total_evaluations),
+            "average_processing_time": self.average_processing_time,
+            "criteria_supported": len(self.COMPLETE_CRITERIA),
+            "features_enabled": {
+                "complete_13_criteria": True,
+                "weighted_calculation": True,
+                "genetic_optimization": self.config.enable_genetic_optimization,
+                "fuzzy_inference": self.config.use_fuzzy_inference,
+                "field_bonus": self.config.field_bonus_enabled
+            },
+            "cache_size": len(self.result_cache)
         }
-    
-    def add_laboratory(self, laboratory: Laboratory):
-        """研究室の追加"""
-        self.laboratories.append(laboratory)
-        self.lab_cache[laboratory.lab_id] = laboratory
-        logger.info(f"研究室追加: {laboratory.lab_id}")
-    
-    def get_laboratory(self, lab_id: str) -> Optional[Laboratory]:
-        """研究室の取得"""
-        return self.lab_cache.get(lab_id)
-    
-    def get_all_laboratories(self) -> List[Laboratory]:
-        """全研究室の取得"""
-        return self.laboratories.copy()
-
-# 使用例とテスト
-def test_lab_matching_service():
-    """研究室マッチングサービスのテスト"""
-    
-    print("🔬 研究室マッチングサービステスト開始")
-    
-    # サービスの初期化
-    config = MatchingConfig(
-        enable_genetic_optimization=False,  # テスト用に無効化
-        max_recommendations=5
-    )
-    
-    service = LabMatchingService(config)
-    
-    # テスト用学生プロフィール
-    from models.schemas import StudentProfile, EvaluationCriteria, FieldInterest
-    
-    test_student = StudentProfile(
-        student_id="test_student_001",
-        evaluation_criteria=EvaluationCriteria(
-            research_intensity=8.0,
-            advisor_style=7.0,
-            team_work=6.0,
-            workload=7.0,
-            theory_practice=8.0,
-            skill_development=8.0,
-            lab_atmosphere=7.0
-        ),
-        field_interests=[
-            FieldInterest(
-                field=ResearchFieldEnum.AI_MACHINE_LEARNING,
-                interest_level=9.0,
-                priority=1
-            )
-        ]
-    )
-    
-    # マッチング実行
-    response = service.evaluate_student_lab_compatibility(test_student)
-    
-    print(f"📊 マッチング結果:")
-    print(f"  評価研究室数: {response.total_labs_evaluated}")
-    print(f"  推薦研究室数: {len(response.lab_results)}")
-    print(f"  処理時間: {response.processing_time:.3f}秒")
-    print(f"  推薦信頼度: {response.recommendation_confidence:.3f}")
-    
-    # トップ3の結果表示
-    for i, result in enumerate(response.lab_results[:3]):
-        print(f"\n  {i+1}位: {result.laboratory.faculty.name}研究室")
-        print(f"    適合度: {result.compatibility_score.overall_score:.3f}")
-        print(f"    分野適合: {result.compatibility_score.field_match_score:.3f}")
-        print(f"    理由: {', '.join(result.reasons[:2])}")
-    
-    # 統計情報
-    stats = service.get_service_statistics()
-    print(f"\n📈 サービス統計:")
-    print(f"  総評価数: {stats['total_evaluations']}")
-    print(f"  成功率: {stats['success_rate']:.3f}")
-    print(f"  利用可能研究室数: {stats['available_laboratories']}")
-    
-    print("✅ 研究室マッチングサービステスト完了")
-
-if __name__ == "__main__":
-    test_lab_matching_service()
