@@ -1,100 +1,26 @@
-#!/usr/bin/env python3
-"""
-遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム
-接続問題修正版 FastAPI メインアプリケーション - app.py
-"""
+# backend/app.py - 遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム（完全版）
 
-import os
-import sys
-import time
 import json
-import math
-import random
+import os
+import time
 import traceback
-import logging
+import random
+import math
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
+from typing import Dict, List, Any, Optional, Tuple
+from dataclasses import dataclass
 
-# 基本ライブラリ（エラーハンドリング付き）
-try:
-    import numpy as np
-    HAS_NUMPY = True
-except ImportError:
-    HAS_NUMPY = False
-    print("⚠️ numpy が利用できません。基本機能で代替します。")
+# FastAPI関連
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+import uvicorn
 
-# FastAPI関連（エラーハンドリング付き）
-try:
-    from fastapi import FastAPI, HTTPException, Request, Response
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse
-    from pydantic import BaseModel, Field
-    import uvicorn
-    HAS_FASTAPI = True
-    print("✅ FastAPI モジュール正常にロード")
-except ImportError as e:
-    print(f"❌ FastAPI インポートエラー: {e}")
-    print("💡 解決方法: pip install fastapi uvicorn")
-    HAS_FASTAPI = False
-    sys.exit(1)
+# ===== システム設定 =====
 
-# プロジェクトルート設定
-project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
-
-# ログ設定
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
-# システム状態管理（強化版）
-system_state = {
-    "initialized": False,
-    "lab_data": [],
-    "evaluation_count": 0,
-    "last_updated": None,
-    "database_version": "3.0.0",
-    "server_start_time": datetime.now(),
-    "api_calls": 0,
-    "error_count": 0,
-    "startup_errors": []
-}
-
-# 完全な18分野対応の研究分野データ
-RESEARCH_FIELDS_DATA = [
-    # テクノロジー・システム分野（12分野）
-    {"id": "ai_ml", "name": "人工知能・機械学習", "category": "テクノロジー・システム", "faculty_count": 7},
-    {"id": "image_processing", "name": "画像・映像処理", "category": "テクノロジー・システム", "faculty_count": 6},
-    {"id": "network_security", "name": "ネットワーク・セキュリティ", "category": "テクノロジー・システム", "faculty_count": 3},
-    {"id": "database_systems", "name": "データベース・情報システム", "category": "テクノロジー・システム", "faculty_count": 3},
-    {"id": "embedded_iot", "name": "組込み・IoT", "category": "テクノロジー・システム", "faculty_count": 2},
-    {"id": "education_linguistics", "name": "教育・言語学", "category": "テクノロジー・システム", "faculty_count": 5},
-    {"id": "natural_science_math", "name": "自然科学・数理", "category": "テクノロジー・システム", "faculty_count": 6},
-    {"id": "medical_healthcare", "name": "医療情報・ヘルスケア", "category": "テクノロジー・システム", "faculty_count": 2},
-    {"id": "tourism_regional", "name": "観光情報・地域システム", "category": "テクノロジー・システム", "faculty_count": 2},
-    {"id": "business_decision", "name": "経営情報・意思決定支援", "category": "テクノロジー・システム", "faculty_count": 3},
-    {"id": "audio_processing", "name": "音声・音響情報処理", "category": "テクノロジー・システム", "faculty_count": 2},
-    {"id": "system_ethics", "name": "システム運用・情報倫理", "category": "テクノロジー・システム", "faculty_count": 3},
-    
-    # クリエイティブ分野（4分野）
-    {"id": "web_ui_ux", "name": "Webデザイン・UI/UX", "category": "クリエイティブ", "faculty_count": 4},
-    {"id": "design_visual", "name": "デザイン・視覚表現", "category": "クリエイティブ", "faculty_count": 4},
-    {"id": "video_animation", "name": "映像・アニメーション", "category": "クリエイティブ", "faculty_count": 2},
-    {"id": "computer_music", "name": "コンピュータ音楽・サウンドアート", "category": "クリエイティブ", "faculty_count": 2},
-    
-    # エンターテイメント分野（2分野）
-    {"id": "game_esports", "name": "ゲーム開発・eスポーツ", "category": "エンターテイメント", "faculty_count": 2},
-    {"id": "vr_ar_media", "name": "VR/AR・メディアアート", "category": "エンターテイメント", "faculty_count": 2},
-    
-    # 人文・社会・体育分野（2分野）
-    {"id": "philosophy_humanities", "name": "哲学・人文・環境行動学", "category": "人文・社会・体育", "faculty_count": 2},
-    {"id": "sports_science", "name": "スポーツ・体育科学", "category": "人文・社会・体育", "faculty_count": 2},
-]
-
-# 完全な13項目評価基準
+# 13項目完全評価基準
 COMPLETE_EVALUATION_CRITERIA = [
     # 基本項目（5項目）
     "research_intensity", "advisor_style", "team_work", "workload", "theory_practice",
@@ -104,267 +30,540 @@ COMPLETE_EVALUATION_CRITERIA = [
     "interdisciplinary", "communication_style", "innovation_risk"
 ]
 
-# 基準別デフォルト重み（13項目完全対応）
+# 基準別重要度重み（13項目完全対応）
 DEFAULT_CRITERIA_WEIGHTS = {
-    # 基本項目：標準〜高重み
-    "research_intensity": 1.2,
-    "advisor_style": 1.1,
-    "team_work": 1.0,
+    # 基本項目：高重要度
+    "research_intensity": 1.3,
+    "advisor_style": 1.2,
+    "team_work": 1.1,
     "workload": 1.0,
     "theory_practice": 1.1,
-    
-    # 拡張項目：中〜高重み
+    # 拡張項目：中〜高重要度
     "research_field_match": 1.4,  # 最重要
-    "skill_development": 0.9,
-    "lab_atmosphere": 0.8,
-    "flexibility": 0.8,
-    "publication_opportunity": 1.0,
-    
-    # 特殊項目：調整重み
-    "interdisciplinary": 0.7,
-    "communication_style": 0.8,
-    "innovation_risk": 0.9
+    "skill_development": 1.1,
+    "lab_atmosphere": 1.0,
+    "flexibility": 0.9,
+    "publication_opportunity": 1.2,
+    # 特殊項目：可変重要度
+    "interdisciplinary": 0.8,
+    "communication_style": 0.9,
+    "innovation_risk": 1.0
 }
 
-# Pydantic モデル定義
-class StudentProfile(BaseModel):
-    """学生プロフィール（13項目完全対応）"""
-    # 基本項目
-    research_intensity: float = Field(ge=1, le=10, description="研究強度 (1-10)")
-    advisor_style: float = Field(ge=1, le=10, description="指導スタイル (1-10)")
-    team_work: float = Field(ge=1, le=10, description="チームワーク (1-10)")
-    workload: float = Field(ge=1, le=10, description="ワークロード (1-10)")
-    theory_practice: float = Field(ge=1, le=10, description="理論・実践バランス (1-10)")
+# ===== モジュール可用性チェック =====
+try:
+    from config.settings import Settings
+    settings = Settings()
+    SETTINGS_AVAILABLE = True
+except ImportError:
+    SETTINGS_AVAILABLE = False
+    print("⚠️ 設定モジュールが利用できません - デフォルト設定を使用")
     
-    # 拡張項目
-    research_field_match: float = Field(ge=1, le=10, description="研究分野適合性 (1-10)")
-    skill_development: float = Field(ge=1, le=10, description="スキル開発 (1-10)")
-    lab_atmosphere: float = Field(ge=1, le=10, description="研究室雰囲気 (1-10)")
-    flexibility: float = Field(ge=1, le=10, description="柔軟性 (1-10)")
-    publication_opportunity: float = Field(ge=1, le=10, description="論文発表機会 (1-10)")
+    # デフォルト設定
+    @dataclass
+    class DefaultSettings:
+        host: str = "0.0.0.0"
+        port: int = 8000
+        debug: bool = True
+        core_features: List[str] = None
+        
+        def __post_init__(self):
+            if self.core_features is None:
+                self.core_features = COMPLETE_EVALUATION_CRITERIA[:5]  # 基本項目のみ
     
-    # 特殊項目
-    interdisciplinary: float = Field(ge=1, le=10, description="学際性 (1-10)")
-    communication_style: float = Field(ge=1, le=10, description="コミュニケーション (1-10)")
-    innovation_risk: float = Field(ge=1, le=10, description="革新性・リスク許容度 (1-10)")
-    
-    # メタデータ
-    student_id: Optional[str] = None
-    timestamp: Optional[str] = None
-    preferred_fields: List[str] = []
+    settings = DefaultSettings()
 
-class LabData(BaseModel):
-    """研究室データ（13項目完全対応）"""
-    id: str
-    name: str
-    advisor: str
-    description: str
-    field_category: str
-    research_fields: List[str]
-    
-    # 13項目の研究室特性値
-    research_intensity: float = Field(ge=1, le=10)
-    advisor_style: float = Field(ge=1, le=10)
-    team_work: float = Field(ge=1, le=10)
-    workload: float = Field(ge=1, le=10)
-    theory_practice: float = Field(ge=1, le=10)
-    research_field_match: float = Field(ge=1, le=10)
-    skill_development: float = Field(ge=1, le=10)
-    lab_atmosphere: float = Field(ge=1, le=10)
-    flexibility: float = Field(ge=1, le=10)
-    publication_opportunity: float = Field(ge=1, le=10)
-    interdisciplinary: float = Field(ge=1, le=10)
-    communication_style: float = Field(ge=1, le=10)
-    innovation_risk: float = Field(ge=1, le=10)
-    
-    # メタデータ
-    faculty_count: int = 1
-    graduate_employment: Optional[str] = None
-    equipment: Optional[str] = None
-    funding_level: Optional[str] = None
+try:
+    from core.fuzzy.inference import SimpleFuzzyInferenceEngine
+    FUZZY_AVAILABLE = True
+except ImportError:
+    FUZZY_AVAILABLE = False
+    print("⚠️ ファジィ推論モジュールが利用できません")
 
-class MatchingResult(BaseModel):
-    """マッチング結果"""
-    lab_id: str
-    lab_name: str
-    compatibility_score: float
-    detailed_scores: Dict[str, float]
-    explanation: str
-    recommendation_level: str
-    field_match: bool
-    timestamp: str
+try:
+    from core.genetic.evolution import EvolutionEngine, EvolutionConfig
+    GENETIC_AVAILABLE = True
+    print("✅ 遺伝的アルゴリズムモジュールを読み込み完了")
+except ImportError as e:
+    GENETIC_AVAILABLE = False
+    print(f"❌ 遺伝的アルゴリズムモジュールが利用できません: {e}")
 
-class OptimizationRequest(BaseModel):
-    """最適化リクエスト"""
-    student_profile: StudentProfile
-    population_size: int = Field(default=30, ge=10, le=100)
-    generations: int = Field(default=20, ge=5, le=50)
-    mutation_rate: float = Field(default=0.1, ge=0.01, le=0.5)
-    crossover_rate: float = Field(default=0.8, ge=0.1, le=1.0)
-    custom_weights: Optional[Dict[str, float]] = None
+try:
+    from core.decision_tree.tree import EnhancedFuzzyDecisionTree, TreeConfig
+    DECISION_TREE_AVAILABLE = True
+except ImportError:
+    DECISION_TREE_AVAILABLE = False
+    print("⚠️ 決定木モジュールが利用できません")
 
-# 拡張された研究室データ（18分野対応・13項目完全対応）
-EXTENDED_LAB_DATA = [
-    # AI・機械学習分野
-    {
-        "id": "ai_lab_01", "name": "知的システム研究室", "advisor": "伊藤雅彦教授", 
-        "description": "情報可視化、ユーザインタフェース、データ工学の研究",
-        "field_category": "テクノロジー・システム", "research_fields": ["人工知能・機械学習"],
-        # 13項目の基準値（1-10スケール）
-        "research_intensity": 8.5, "advisor_style": 7.0, "team_work": 8.0, "workload": 8.0, "theory_practice": 6.0,
-        "research_field_match": 9.0, "skill_development": 8.5, "lab_atmosphere": 7.5, "flexibility": 6.5, 
-        "publication_opportunity": 8.0, "interdisciplinary": 7.0, "communication_style": 8.0, "innovation_risk": 8.5,
-        "faculty_count": 1, "graduate_employment": "大手IT企業、研究機関", "equipment": "高性能GPU、可視化システム"
-    },
-    {
-        "id": "ai_lab_02", "name": "機械学習・データ解析研究室", "advisor": "内山敏雄教授", 
-        "description": "データ解析、機械学習、レコメンド、テキストマイニング",
-        "field_category": "テクノロジー・システム", "research_fields": ["人工知能・機械学習"],
-        # 13項目の基準値
-        "research_intensity": 9.0, "advisor_style": 6.5, "team_work": 7.5, "workload": 8.5, "theory_practice": 7.0,
-        "research_field_match": 9.5, "skill_development": 9.0, "lab_atmosphere": 8.0, "flexibility": 7.0, 
-        "publication_opportunity": 8.5, "interdisciplinary": 8.0, "communication_style": 7.5, "innovation_risk": 8.0,
-        "faculty_count": 1, "graduate_employment": "データサイエンティスト、AI研究者", "equipment": "機械学習クラスタ、大容量ストレージ"
-    },
-    
-    # 画像・映像処理分野
-    {
-        "id": "image_lab_01", "name": "コンピュータビジョン研究室", "advisor": "藤原孝行教授", 
-        "description": "コンピュータビジョン、コンピュータグラフィックス",
-        "field_category": "テクノロジー・システム", "research_fields": ["画像・映像処理"],
-        # 13項目の基準値
-        "research_intensity": 8.0, "advisor_style": 7.5, "team_work": 7.0, "workload": 7.5, "theory_practice": 8.0,
-        "research_field_match": 8.5, "skill_development": 8.0, "lab_atmosphere": 7.0, "flexibility": 7.5, 
-        "publication_opportunity": 7.5, "interdisciplinary": 6.5, "communication_style": 7.0, "innovation_risk": 8.0,
-        "faculty_count": 1, "graduate_employment": "映像制作会社、VR/AR企業", "equipment": "高解像度カメラ、画像処理サーバー"
-    },
-    
-    # 医療情報・ヘルスケア分野
-    {
-        "id": "medical_lab_01", "name": "医用画像工学研究室", "advisor": "越野一博教授", 
-        "description": "医用画像工学、数理統計学、人工知能画像解析処理",
-        "field_category": "テクノロジー・システム", "research_fields": ["医療情報・ヘルスケア", "画像・映像処理"],
-        # 13項目の基準値
-        "research_intensity": 8.5, "advisor_style": 6.0, "team_work": 6.5, "workload": 8.0, "theory_practice": 7.5,
-        "research_field_match": 9.0, "skill_development": 8.5, "lab_atmosphere": 6.0, "flexibility": 6.0, 
-        "publication_opportunity": 8.5, "interdisciplinary": 9.5, "communication_style": 6.5, "innovation_risk": 8.5,
-        "faculty_count": 1, "graduate_employment": "医療機器メーカー、病院情報システム部門", "equipment": "医用画像解析システム、統計解析ソフト"
-    },
-    
-    # Webデザイン・UI/UX分野
-    {
-        "id": "design_lab_01", "name": "UXデザイン研究室", "advisor": "安田光孝教授", 
-        "description": "UX/UIデザイン、コンテンツプロデュース、デザイン思考",
-        "field_category": "クリエイティブ", "research_fields": ["Webデザイン・UI/UX"],
-        # 13項目の基準値
-        "research_intensity": 7.0, "advisor_style": 8.5, "team_work": 9.0, "workload": 7.0, "theory_practice": 8.5,
-        "research_field_match": 8.0, "skill_development": 9.0, "lab_atmosphere": 9.5, "flexibility": 9.0, 
-        "publication_opportunity": 6.5, "interdisciplinary": 8.5, "communication_style": 9.5, "innovation_risk": 8.0,
-        "faculty_count": 1, "graduate_employment": "デザイン会社、スタートアップ", "equipment": "デザインワークステーション、プロトタイピングツール"
-    },
-    
-    # ゲーム開発・eスポーツ分野
-    {
-        "id": "game_lab_01", "name": "ゲーム・eスポーツ研究室", "advisor": "川原勝教授", 
-        "description": "eスポーツ、メタバース、教育学",
-        "field_category": "エンターテイメント", "research_fields": ["ゲーム開発・eスポーツ"],
-        # 13項目の基準値
-        "research_intensity": 7.5, "advisor_style": 8.0, "team_work": 8.5, "workload": 7.5, "theory_practice": 8.0,
-        "research_field_match": 8.5, "skill_development": 8.0, "lab_atmosphere": 9.0, "flexibility": 8.5, 
-        "publication_opportunity": 7.0, "interdisciplinary": 8.0, "communication_style": 9.0, "innovation_risk": 9.0,
-        "faculty_count": 1, "graduate_employment": "ゲーム会社、eスポーツ関連企業", "equipment": "ゲーミングPC、VRセットアップ"
-    },
-    
-    # 哲学・人文・環境行動学分野
-    {
-        "id": "humanities_lab_01", "name": "環境行動学研究室", "advisor": "波田彰教授", 
-        "description": "環境行動学、地域コミュニティ、建築計画学、環境認知",
-        "field_category": "人文・社会・体育", "research_fields": ["哲学・人文・環境行動学"],
-        # 13項目の基準値
-        "research_intensity": 6.5, "advisor_style": 7.5, "team_work": 7.0, "workload": 6.0, "theory_practice": 5.5,
-        "research_field_match": 8.0, "skill_development": 7.0, "lab_atmosphere": 8.0, "flexibility": 8.0, 
-        "publication_opportunity": 7.0, "interdisciplinary": 9.0, "communication_style": 8.5, "innovation_risk": 7.0,
-        "faculty_count": 1, "graduate_employment": "都市計画関連、建築事務所", "equipment": "フィールドワーク機材、測定機器"
-    }
-]
-
-# FastAPIアプリケーション初期化（シンプル版）
+# ===== FastAPIアプリケーション初期化 =====
 app = FastAPI(
-    title="研究室選択支援システム v3.0 (完全18分野・13項目対応版)",
-    description="遺伝的アルゴリズムを用いたファジィ決定木による研究室マッチングシステム - 完全対応版",
+    title="研究室選択支援システム",
+    description="遺伝的アルゴリズムを用いたファジィ決定木による研究室マッチングシステム",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# システム初期化（起動時実行）
-def initialize_system():
-    """システム初期化"""
+# CORS設定
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 本番環境では適切に設定
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 静的ファイル配信（フロントエンド用）
+if os.path.exists("../frontend/build"):
+    app.mount("/static", StaticFiles(directory="../frontend/build/static"), name="static")
+
+# ===== システム状態管理 =====
+system_state = {
+    "initialized": False,
+    "fuzzy_engine": None,
+    "genetic_engine": None,
+    "decision_tree": None,
+    "lab_database": [],
+    "lab_data": [],  # エイリアス
+    "evaluation_count": 0,
+    "optimization_count": 0,
+    "api_calls": 0,
+    "error_count": 0
+}
+
+# ===== データ管理関数 =====
+
+def load_labs_from_json(json_path: str = None) -> List[Dict[str, Any]]:
+    """labs_database.jsonから研究室データを読み込む"""
+    if json_path is None:
+        # デフォルトパス設定
+        current_dir = Path(__file__).parent
+        possible_paths = [
+            current_dir / "data" / "labs_database.json",
+            current_dir / "labs_database.json",
+            current_dir.parent / "labs_database.json",
+            current_dir / "backend" / "data" / "labs_database.json"
+        ]
+        
+        json_path = None
+        for path in possible_paths:
+            if path.exists():
+                json_path = path
+                break
+    
     try:
-        print("\n🚀 研究室選択支援システム v3.0 起動中...")
+        if json_path is None:
+            print(f"⚠️ labs_database.jsonファイルが見つかりません")
+            print(f"📂 確認した場所:")
+            for path in possible_paths:
+                print(f"   - {path} {'(存在)' if path.exists() else '(不存在)'}")
+            return create_fallback_labs_data()
         
-        # システム状態初期化
-        system_state["lab_data"] = EXTENDED_LAB_DATA
+        print(f"📂 研究室データ読み込み: {json_path}")
+        
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        labs_data = data.get('labs', [])
+        
+        # データ構造を正規化（featuresを最上位に移動）
+        normalized_labs = []
+        for lab in labs_data:
+            normalized_lab = {
+                "id": lab.get("id", "unknown"),
+                "name": lab.get("name", "不明な研究室"),
+                "professor": lab.get("professor", "不明"),
+                "research_area": lab.get("research_area", "情報工学"),
+                "specialization": lab.get("specialization", ""),
+                "description": lab.get("description", ""),
+                "research_fields": lab.get("research_fields", [])
+            }
+            
+            # featuresオブジェクトの内容を最上位に移動
+            features = lab.get("features", {})
+            for criterion in COMPLETE_EVALUATION_CRITERIA:
+                normalized_lab[criterion] = features.get(criterion, 5.5)
+            
+            # メタデータも保持
+            normalized_lab["metadata"] = lab.get("metadata", {})
+            
+            normalized_labs.append(normalized_lab)
+        
+        print(f"✅ 研究室データ読み込み完了: {len(normalized_labs)}件")
+        print(f"📊 データベースバージョン: {data.get('version', 'unknown')}")
+        
+        return normalized_labs
+        
+    except Exception as e:
+        print(f"❌ JSONファイル読み込みエラー: {e}")
+        print(f"🔄 フォールバックデータを使用します")
+        return create_fallback_labs_data()
+
+def create_fallback_labs_data() -> List[Dict[str, Any]]:
+    """フォールバック用の研究室データ作成"""
+    print("📝 フォールバック研究室データを作成中...")
+    
+    fallback_labs = [
+        {
+            "id": "fallback_ai_lab",
+            "name": "AI・機械学習研究室（フォールバック）",
+            "professor": "システム教授",
+            "research_area": "人工知能・機械学習",
+            "specialization": "機械学習、深層学習",
+            "description": "人工知能と機械学習の研究（システム生成データ）",
+            "research_fields": ["人工知能・機械学習"],
+            # 13項目の評価基準
+            "research_intensity": 8.0,
+            "advisor_style": 7.0,
+            "team_work": 8.0,
+            "workload": 7.5,
+            "theory_practice": 6.5,
+            "research_field_match": 8.5,
+            "skill_development": 8.0,
+            "lab_atmosphere": 7.5,
+            "flexibility": 7.0,
+            "publication_opportunity": 8.0,
+            "interdisciplinary": 7.0,
+            "communication_style": 7.5,
+            "innovation_risk": 8.0,
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "fallback_design_lab",
+            "name": "デザイン研究室（フォールバック）",
+            "professor": "デザイン教授",
+            "research_area": "Webデザイン・UI/UX",
+            "specialization": "Webデザイン、UI/UXデザイン",
+            "description": "Webデザインとユーザビリティの研究（システム生成データ）",
+            "research_fields": ["Webデザイン・UI/UX"],
+            # 13項目の評価基準
+            "research_intensity": 6.5,
+            "advisor_style": 8.5,
+            "team_work": 8.5,
+            "workload": 6.0,
+            "theory_practice": 8.0,
+            "research_field_match": 8.0,
+            "skill_development": 8.5,
+            "lab_atmosphere": 9.0,
+            "flexibility": 9.0,
+            "publication_opportunity": 6.5,
+            "interdisciplinary": 8.0,
+            "communication_style": 9.0,
+            "innovation_risk": 7.5,
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 12,
+                "recent_publications": 5,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "fallback_game_lab",
+            "name": "ゲーム開発研究室（フォールバック）",
+            "professor": "ゲーム教授",
+            "research_area": "ゲーム開発・eスポーツ",
+            "specialization": "ゲームプログラミング、eスポーツ",
+            "description": "ゲーム開発とeスポーツの研究（システム生成データ）",
+            "research_fields": ["ゲーム開発・eスポーツ"],
+            # 13項目の評価基準
+            "research_intensity": 7.0,
+            "advisor_style": 8.0,
+            "team_work": 8.5,
+            "workload": 7.0,
+            "theory_practice": 8.5,
+            "research_field_match": 8.5,
+            "skill_development": 9.0,
+            "lab_atmosphere": 9.0,
+            "flexibility": 8.0,
+            "publication_opportunity": 6.0,
+            "interdisciplinary": 7.0,
+            "communication_style": 8.5,
+            "innovation_risk": 8.0,
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 15,
+                "recent_publications": 4,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "fallback_security_lab",
+            "name": "セキュリティ研究室（フォールバック）",
+            "professor": "セキュリティ教授",
+            "research_area": "ネットワーク・セキュリティ",
+            "specialization": "サイバーセキュリティ、暗号技術",
+            "description": "ネットワークセキュリティと暗号技術の研究（システム生成データ）",
+            "research_fields": ["ネットワーク・セキュリティ"],
+            # 13項目の評価基準
+            "research_intensity": 7.5,
+            "advisor_style": 6.5,
+            "team_work": 6.0,
+            "workload": 7.5,
+            "theory_practice": 5.5,
+            "research_field_match": 8.0,
+            "skill_development": 7.5,
+            "lab_atmosphere": 6.5,
+            "flexibility": 6.0,
+            "publication_opportunity": 7.5,
+            "interdisciplinary": 6.0,
+            "communication_style": 6.5,
+            "innovation_risk": 7.0,
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 8,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "fallback_theory_lab",
+            "name": "理論研究室（フォールバック）",
+            "professor": "理論教授",
+            "research_area": "自然科学・数理",
+            "specialization": "計算理論、アルゴリズム",
+            "description": "計算理論とアルゴリズムの研究（システム生成データ）",
+            "research_fields": ["自然科学・数理"],
+            # 13項目の評価基準
+            "research_intensity": 9.0,
+            "advisor_style": 5.5,
+            "team_work": 5.0,
+            "workload": 8.5,
+            "theory_practice": 3.0,
+            "research_field_match": 8.5,
+            "skill_development": 7.0,
+            "lab_atmosphere": 6.0,
+            "flexibility": 5.5,
+            "publication_opportunity": 9.0,
+            "interdisciplinary": 5.0,
+            "communication_style": 5.5,
+            "innovation_risk": 7.0,
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 15,
+                "funding_level": "高",
+                "equipment_rating": 6
+            }
+        }
+    ]
+    
+    print(f"✅ フォールバックデータ作成完了: {len(fallback_labs)}件")
+    return fallback_labs
+
+def initialize_system():
+    """システム初期化（JSON読み込み対応版）"""
+    global system_state
+    
+    print("🚀 システム初期化開始...")
+    
+    try:
+        # ファジィ推論エンジン初期化
+        if FUZZY_AVAILABLE:
+            system_state["fuzzy_engine"] = SimpleFuzzyInferenceEngine(
+                settings.core_features, 
+                "compatibility"
+            )
+            print("✅ ファジィ推論エンジン初期化完了")
+        
+        # 遺伝的アルゴリズム初期化
+        if GENETIC_AVAILABLE:
+            evolution_config = EvolutionConfig(
+                population_size=30,
+                generations=50, 
+                crossover_rate=0.8,
+                mutation_rate=0.1,
+                elitism_rate=0.1,
+                tournament_size=3
+            )
+            system_state["genetic_engine"] = EvolutionEngine(evolution_config)
+            print("✅ 遺伝的アルゴリズム初期化完了")
+        
+        # 決定木初期化
+        if DECISION_TREE_AVAILABLE:
+            tree_config = TreeConfig(
+                max_depth=5,
+                min_samples_leaf=5
+            )
+            system_state["decision_tree"] = EnhancedFuzzyDecisionTree(tree_config)
+            print("✅ ファジィ決定木初期化完了")
+        
+        # 研究室データベース初期化（JSON読み込み）
+        labs_data = load_labs_from_json()
+        system_state["lab_database"] = labs_data
+        system_state["lab_data"] = labs_data  # エイリアス
+        
+        print(f"✅ 研究室データベース初期化完了: {len(labs_data)}件")
+        
+        # データ検証
+        if labs_data:
+            sample_lab = labs_data[0]
+            available_criteria = [c for c in COMPLETE_EVALUATION_CRITERIA if c in sample_lab]
+            print(f"📊 利用可能な評価基準: {len(available_criteria)}/{len(COMPLETE_EVALUATION_CRITERIA)}項目")
+            
+            if len(available_criteria) < 10:
+                print(f"⚠️ 評価基準が不足しています")
+                missing_criteria = [c for c in COMPLETE_EVALUATION_CRITERIA if c not in sample_lab]
+                print(f"   不足項目: {missing_criteria}")
+        
         system_state["initialized"] = True
-        system_state["last_updated"] = datetime.now().isoformat()
-        
-        print(f"✅ システム初期化完了")
-        print(f"📊 研究室データ: {len(EXTENDED_LAB_DATA)}件")
-        print(f"🔧 評価基準: {len(COMPLETE_EVALUATION_CRITERIA)}項目")
-        print(f"🏛️ 研究分野: {len(RESEARCH_FIELDS_DATA)}分野")
-        
-        return True
+        print("🎉 システム初期化完了!")
         
     except Exception as e:
         print(f"❌ システム初期化エラー: {e}")
         traceback.print_exc()
         system_state["initialized"] = False
-        return False
 
-# CORS設定（強化版）
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8080", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080",
-        "http://localhost:5173",  # Vite
-        "http://127.0.0.1:5173",
-        "*"  # 開発用：本番では削除
-    ],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-    expose_headers=["*"]
-)
+# ===== 適合度計算関数 =====
 
-# グローバル例外ハンドラー
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    """グローバル例外ハンドラー"""
-    system_state["error_count"] += 1
+def calculate_enhanced_compatibility_from_json(
+    student_profile: Dict[str, float], 
+    lab_data: Dict[str, Any],
+    custom_weights: Optional[Dict[str, float]] = None
+) -> Dict[str, Any]:
+    """JSONデータ対応の適合度計算"""
     
-    error_detail = {
-        "error": str(exc),
-        "type": type(exc).__name__,
-        "path": str(request.url),
-        "method": request.method,
-        "timestamp": datetime.now().isoformat()
+    print(f"🧮 適合度計算開始: 研究室={lab_data.get('name', 'Unknown')}")
+    
+    # デフォルト重みを使用
+    weights = custom_weights if custom_weights else DEFAULT_CRITERIA_WEIGHTS
+    
+    # 各基準の適合度計算
+    criteria_scores = {}
+    total_weighted_score = 0.0
+    total_weights = 0.0
+    successful_calculations = 0
+    
+    for criterion in COMPLETE_EVALUATION_CRITERIA:
+        try:
+            if criterion in student_profile:
+                student_value = float(student_profile[criterion])
+                
+                # 研究室側の値を取得（JSONデータから直接）
+                lab_value = float(lab_data.get(criterion, 5.5))
+                
+                # 類似度計算（改良版）
+                actual_diff = abs(student_value - lab_value)
+                
+                # より寛容な類似度計算
+                if actual_diff <= 1.0:
+                    similarity_score = 1.0
+                elif actual_diff <= 2.0:
+                    similarity_score = 0.9
+                elif actual_diff <= 3.0:
+                    similarity_score = 0.7
+                elif actual_diff <= 4.0:
+                    similarity_score = 0.5
+                else:
+                    similarity_score = max(0.1, 0.5 - (actual_diff - 4.0) * 0.1)
+                
+                # 重み適用
+                weight = weights.get(criterion, 1.0)
+                weighted_score = similarity_score * weight
+                
+                criteria_scores[criterion] = {
+                    "student_value": student_value,
+                    "lab_value": lab_value,
+                    "difference": actual_diff,
+                    "similarity_score": similarity_score,
+                    "weight": weight,
+                    "weighted_score": weighted_score
+                }
+                
+                total_weighted_score += weighted_score
+                total_weights += weight
+                successful_calculations += 1
+                
+                print(f"  ✅ {criterion}: 学生={student_value}, 研究室={lab_value}, 類似度={similarity_score:.3f}")
+                
+        except Exception as e:
+            print(f"  ❌ {criterion}: 計算エラー - {e}")
+            continue
+    
+    # 総合スコア計算
+    if total_weights > 0:
+        final_score = total_weighted_score / total_weights
+    else:
+        final_score = 0.5  # フォールバック
+    
+    # 推薦レベル決定
+    if final_score >= 0.8:
+        recommendation_level = "強く推薦"
+    elif final_score >= 0.6:
+        recommendation_level = "推薦"
+    elif final_score >= 0.4:
+        recommendation_level = "検討可能"
+    else:
+        recommendation_level = "推薦しない"
+    
+    result = {
+        "lab_id": lab_data.get("id", "unknown"),
+        "lab_name": lab_data.get("name", "不明な研究室"),
+        "overall_score": final_score,
+        "criteria_scores": criteria_scores,
+        "recommendation_level": recommendation_level,
+        "field_match": True,
+        "data_completeness": successful_calculations / len(COMPLETE_EVALUATION_CRITERIA),
+        "total_criteria_evaluated": successful_calculations,
+        "total_weighted_score": total_weighted_score,
+        "total_weights": total_weights
     }
     
-    print(f"❌ API エラー: {error_detail}")
+    print(f"📊 計算完了: 総合スコア={final_score:.3f}, 評価基準={successful_calculations}/{len(COMPLETE_EVALUATION_CRITERIA)}")
     
-    return JSONResponse(
-        status_code=500,
-        content={
-            "detail": "内部サーバーエラーが発生しました",
-            "error_info": error_detail,
-            "suggestion": "サーバーログを確認してください"
-        }
-    )
+    return result
 
-# ミドルウェア：リクエスト追跡（改善版）
+def generate_detailed_explanation(compatibility_result: Dict[str, Any]) -> str:
+    """詳細な説明生成"""
+    
+    try:
+        score = compatibility_result.get("overall_score", 0.0)
+        recommendation = compatibility_result.get("recommendation_level", "不明")
+        criteria_count = compatibility_result.get("total_criteria_evaluated", 0)
+        
+        explanation_parts = [
+            f"総合適合度: {score:.1%} ({recommendation})"
+        ]
+        
+        if criteria_count > 0:
+            explanation_parts.append(f"評価基準数: {criteria_count}/13項目")
+        
+        # 高スコア基準の特定
+        criteria_scores = compatibility_result.get("criteria_scores", {})
+        if criteria_scores:
+            high_score_criteria = [
+                criterion for criterion, data in criteria_scores.items()
+                if isinstance(data, dict) and data.get("weighted_score", 0) > 0.8
+            ]
+            
+            if high_score_criteria:
+                explanation_parts.append(f"特に適合: {', '.join(high_score_criteria[:2])}")
+        
+        # 分野マッチ
+        if compatibility_result.get("field_match"):
+            explanation_parts.append("研究分野が一致")
+        
+        # データ完全性
+        completeness = compatibility_result.get("data_completeness", 0)
+        if completeness < 1.0:
+            explanation_parts.append(f"データ完全性: {completeness:.1%}")
+        
+        return "。".join(explanation_parts) + "。"
+        
+    except Exception as e:
+        print(f"⚠️ 説明生成エラー: {e}")
+        return f"適合度: {compatibility_result.get('overall_score', 0):.1%}"
+
+# ===== ミドルウェア設定 =====
+
 @app.middleware("http")
 async def enhanced_request_middleware(request: Request, call_next):
     """強化されたリクエスト追跡ミドルウェア"""
@@ -407,654 +606,234 @@ async def enhanced_request_middleware(request: Request, call_next):
             }
         )
 
-# ===== 核心アルゴリズム実装 =====
+# ===== APIエンドポイント =====
 
-def calculate_fuzzy_membership(value: float, low: float, medium: float, high: float) -> Dict[str, float]:
-    """ファジィメンバーシップ関数計算"""
-    membership = {"low": 0.0, "medium": 0.0, "high": 0.0}
-    
-    # 三角形メンバーシップ関数
-    if value <= low:
-        membership["low"] = 1.0
-    elif value <= medium:
-        membership["low"] = (medium - value) / (medium - low)
-        membership["medium"] = (value - low) / (medium - low)
-    elif value <= high:
-        membership["medium"] = (high - value) / (high - medium)
-        membership["high"] = (value - medium) / (high - medium)
+@app.get("/")
+async def read_root():
+    """ルートエンドポイント - フロントエンド配信またはAPI情報"""
+    if os.path.exists("../frontend/build/index.html"):
+        return FileResponse("../frontend/build/index.html")
     else:
-        membership["high"] = 1.0
-    
-    return membership
-
-def genetic_algorithm_optimization(
-    student_profile: Dict[str, float], 
-    lab_data: List[Dict], 
-    population_size: int = 30, 
-    generations: int = 20,
-    mutation_rate: float = 0.1,
-    crossover_rate: float = 0.8,
-    custom_weights: Optional[Dict[str, float]] = None
-) -> Dict[str, Any]:
-    """遺伝的アルゴリズムによる重み最適化"""
-    
-    print(f"🧬 遺伝的アルゴリズム開始: 集団={population_size}, 世代={generations}")
-    
-    # 重みの初期化
-    weights = custom_weights if custom_weights else DEFAULT_CRITERIA_WEIGHTS.copy()
-    
-    def evaluate_fitness(weights_vector: List[float]) -> float:
-        """適応度関数"""
-        temp_weights = {
-            criterion: weights_vector[i] 
-            for i, criterion in enumerate(COMPLETE_EVALUATION_CRITERIA)
-        }
-        
-        total_fitness = 0.0
-        sample_labs = lab_data[:min(5, len(lab_data))]  # サンプルの研究室で評価
-        
-        for lab in sample_labs:
-            try:
-                compatibility = calculate_enhanced_compatibility(student_profile, lab, temp_weights)
-                total_fitness += compatibility["overall_score"]
-            except Exception as e:
-                print(f"⚠️ 適応度評価エラー: {e}")
-                continue
-        
-        return total_fitness / len(sample_labs) if sample_labs else 0.0
-    
-    # 単純な遺伝的アルゴリズム実装
-    initial_weights = list(weights.values())
-    best_fitness = evaluate_fitness(initial_weights)
-    best_weights = initial_weights.copy()
-    
-    print(f"📊 初期適応度: {best_fitness:.3f}")
-    
-    for generation in range(generations):
-        # ランダム変異
-        mutated_weights = [
-            max(0.1, min(2.0, w + (random.random() - 0.5) * mutation_rate))
-            for w in best_weights
-        ]
-        
-        fitness = evaluate_fitness(mutated_weights)
-        if fitness > best_fitness:
-            best_fitness = fitness
-            best_weights = mutated_weights
-            print(f"📈 世代{generation}: 改善 適応度={best_fitness:.3f}")
-    
-    # 最適化された重みを辞書に変換
-    optimized_weights = {
-        criterion: best_weights[i]
-        for i, criterion in enumerate(COMPLETE_EVALUATION_CRITERIA)
-    }
-    
-    initial_fitness = evaluate_fitness(initial_weights)
-    improvement = best_fitness > initial_fitness
-    
-    print(f"✅ 最適化完了: 初期={initial_fitness:.3f} -> 最終={best_fitness:.3f}, 改善={improvement}")
-    
-    return {
-        "optimized_weights": optimized_weights,
-        "fitness_score": best_fitness,
-        "initial_fitness": initial_fitness,
-        "generations": generations,
-        "improvement": improvement,
-        "improvement_percentage": ((best_fitness - initial_fitness) / max(initial_fitness, 0.001)) * 100
-    }
-
-    return {
-        "optimized_weights": optimized_weights,
-        "fitness_score": best_fitness,
-        "initial_fitness": initial_fitness,
-        "generations": generations,
-        "improvement": improvement,
-        "improvement_percentage": ((best_fitness - initial_fitness) / max(initial_fitness, 0.001)) * 100
-    }
-
-def generate_detailed_explanation(compatibility_result: Dict[str, Any]) -> str:
-    """詳細な説明生成（修正版）"""
-    
-    try:
-        score = compatibility_result.get("overall_score", 0.0)
-        recommendation = compatibility_result.get("recommendation_level", "不明")
-        criteria_count = compatibility_result.get("total_criteria_evaluated", 0)
-        
-        explanation_parts = [
-            f"総合適合度: {score:.1%} ({recommendation})"
-        ]
-        
-        if criteria_count > 0:
-            explanation_parts.append(f"評価基準数: {criteria_count}/13項目")
-        
-        # 高スコア基準の特定
-        criteria_scores = compatibility_result.get("criteria_scores", {})
-        if criteria_scores:
-            high_score_criteria = [
-                criterion for criterion, data in criteria_scores.items()
-                if isinstance(data, dict) and data.get("weighted_score", 0) > 0.8
-            ]
-            
-            if high_score_criteria:
-                explanation_parts.append(f"特に適合: {', '.join(high_score_criteria[:2])}")
-        
-        # 分野マッチ
-        if compatibility_result.get("field_match"):
-            explanation_parts.append("研究分野が一致")
-        
-        # データ完全性
-        completeness = compatibility_result.get("data_completeness", 0)
-        if completeness < 1.0:
-            explanation_parts.append(f"データ完全性: {completeness:.1%}")
-        
-        return "。".join(explanation_parts) + "。"
-        
-    except Exception as e:
-        print(f"⚠️ 説明生成エラー: {e}")
-        return f"適合度: {compatibility_result.get('overall_score', 0):.1%}"
-    """詳細な説明生成（修正版）"""
-    
-    try:
-        score = compatibility_result.get("overall_score", 0.0)
-        recommendation = compatibility_result.get("recommendation_level", "不明")
-        criteria_count = compatibility_result.get("total_criteria_evaluated", 0)
-        
-        explanation_parts = [
-            f"総合適合度: {score:.1%} ({recommendation})"
-        ]
-        
-        if criteria_count > 0:
-            explanation_parts.append(f"評価基準数: {criteria_count}/13項目")
-        
-        # 高スコア基準の特定
-        criteria_scores = compatibility_result.get("criteria_scores", {})
-        if criteria_scores:
-            high_score_criteria = [
-                criterion for criterion, data in criteria_scores.items()
-                if isinstance(data, dict) and data.get("weighted_score", 0) > 0.8
-            ]
-            
-            if high_score_criteria:
-                explanation_parts.append(f"特に適合: {', '.join(high_score_criteria[:2])}")
-        
-        # 分野マッチ
-        if compatibility_result.get("field_match"):
-            explanation_parts.append("研究分野が一致")
-        
-        # データ完全性
-        completeness = compatibility_result.get("data_completeness", 0)
-        if completeness < 1.0:
-            explanation_parts.append(f"データ完全性: {completeness:.1%}")
-        
-        return "。".join(explanation_parts) + "。"
-        
-    except Exception as e:
-        print(f"⚠️ 説明生成エラー: {e}")
-        return f"適合度: {compatibility_result.get('overall_score', 0):.1%}"
-
-def calculate_enhanced_compatibility(
-    student_profile: Dict[str, float], 
-    lab_data: Dict[str, Any],
-    custom_weights: Optional[Dict[str, float]] = None
-) -> Dict[str, Any]:
-    """13項目完全対応の適合度計算（修正版）"""
-    
-    print(f"🧮 適合度計算開始: 研究室={lab_data.get('name', 'Unknown')}")
-    
-    weights = custom_weights if custom_weights else DEFAULT_CRITERIA_WEIGHTS
-    
-    # 各基準の適合度計算
-    criteria_scores = {}
-    total_weighted_score = 0.0
-    total_weights = 0.0
-    successful_calculations = 0
-    
-    for criterion in COMPLETE_EVALUATION_CRITERIA:
-        try:
-            if criterion in student_profile:
-                student_value = float(student_profile[criterion])
-                
-                # 研究室側の値を取得（デフォルト値による補完）
-                lab_value = float(lab_data.get(criterion, 5.5))  # 中間値をデフォルト
-                
-                # 類似度計算（差分の逆数ベース）
-                max_diff = 9.0  # 最大差分（1-10の範囲）
-                diff = abs(student_value - lab_value)
-                
-                # 類似度スコア計算（0-1の範囲）
-                if diff == 0:
-                    similarity_score = 1.0  # 完全一致
-                else:
-                    # 差分が小さいほど高スコア
-                    similarity_score = max(0.0, 1.0 - (diff / max_diff))
-                
-                # 重み適用
-                weight = weights.get(criterion, 1.0)
-                weighted_score = similarity_score * weight
-                
-                criteria_scores[criterion] = {
-                    "student_value": student_value,
-                    "lab_value": lab_value,
-                    "difference": diff,
-                    "similarity_score": similarity_score,
-                    "weight": weight,
-                    "weighted_score": weighted_score
-                }
-                
-                total_weighted_score += weighted_score
-                total_weights += weight
-                successful_calculations += 1
-                
-                print(f"  ✅ {criterion}: 学生={student_value}, 研究室={lab_value}, 類似度={similarity_score:.3f}, 重み適用後={weighted_score:.3f}")
-            else:
-                print(f"  ⚠️ {criterion}: 学生プロフィールに不足")
-        except Exception as e:
-            print(f"  ❌ {criterion}: 計算エラー - {e}")
-            continue
-    
-    # 全体スコア計算
-    if total_weights > 0 and successful_calculations > 0:
-        overall_score = total_weighted_score / total_weights
-    else:
-        print(f"  ⚠️ 重み合計が0またはに成功計算なし: total_weights={total_weights}, successful={successful_calculations}")
-        overall_score = 0.0
-    
-    # 研究分野マッチボーナス
-    field_match = False
-    field_bonus = 0.0
-    
-    if hasattr(student_profile, 'preferred_fields') and student_profile.preferred_fields:
-        lab_fields = lab_data.get("research_fields", [])
-        for preferred_field in student_profile.preferred_fields:
-            if preferred_field in lab_fields:
-                field_match = True
-                field_bonus = 0.1  # 10%のボーナス
-                break
-    
-    # 最終スコア計算
-    final_score = min(1.0, overall_score + field_bonus)
-    
-    # 推薦レベル決定
-    if final_score >= 0.8:
-        recommendation_level = "強く推薦"
-    elif final_score >= 0.65:
-        recommendation_level = "推薦"
-    elif final_score >= 0.5:
-        recommendation_level = "要検討"
-    else:
-        recommendation_level = "不適合"
-    
-    print(f"📊 計算結果: 基本適合度={overall_score:.3f}, 分野ボーナス={field_bonus:.3f}, 最終スコア={final_score:.3f}")
-    
-    return {
-        "lab_id": lab_data.get("id"),
-        "lab_name": lab_data.get("name"),
-        "overall_score": final_score,
-        "base_score": overall_score,
-        "field_bonus": field_bonus,
-        "criteria_scores": criteria_scores,
-        "field_match": field_match,
-        "recommendation_level": recommendation_level,
-        "total_criteria_evaluated": successful_calculations,
-        "data_completeness": successful_calculations / len(COMPLETE_EVALUATION_CRITERIA),
-        "calculation_details": {
-            "total_weighted_score": total_weighted_score,
-            "total_weights": total_weights,
-            "successful_calculations": successful_calculations
-        }
-    }
-
-def generate_detailed_explanation(compatibility_result: Dict[str, Any]) -> str:
-    """詳細な説明生成"""
-    
-    score = compatibility_result["overall_score"]
-    criteria_scores = compatibility_result["criteria_scores"]
-    
-    explanation_parts = [
-        f"総合適合度: {score:.1%} ({compatibility_result['recommendation_level']})"
-    ]
-    
-    # 高スコア基準
-    high_score_criteria = [
-        criterion for criterion, data in criteria_scores.items()
-        if data["weighted_score"] > 0.8
-    ]
-    
-    if high_score_criteria:
-        explanation_parts.append(
-            f"特に適合性が高い項目: {', '.join(high_score_criteria[:3])}"
-        )
-    
-    # 改善提案
-    low_score_criteria = [
-        criterion for criterion, data in criteria_scores.items()
-        if data["weighted_score"] < 0.4
-    ]
-    
-    if low_score_criteria:
-        explanation_parts.append(
-            f"検討が必要な項目: {', '.join(low_score_criteria[:2])}"
-        )
-    
-    return "。".join(explanation_parts) + "。"
-
-# ===== デバッグ・診断エンドポイント =====
-
-# ===== デバッグ・診断エンドポイント =====
-
-@app.get("/api/debug/endpoints", response_class=JSONResponse)
-async def list_endpoints():
-    """利用可能なAPIエンドポイント一覧"""
-    endpoints = [
-        # システム基本エンドポイント
-        {"path": "/", "method": "GET", "description": "システム情報", "category": "system"},
-        {"path": "/health", "method": "GET", "description": "ヘルスチェック", "category": "system"},
-        
-        # フロントエンド互換エンドポイント（優先度高）
-        {"path": "/api/evaluate", "method": "POST", "description": "研究室マッチング（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/optimize", "method": "POST", "description": "重み最適化（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/labs", "method": "GET", "description": "研究室一覧（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/fields", "method": "GET", "description": "研究分野一覧（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/status", "method": "GET", "description": "システム状態（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/evaluation-criteria", "method": "GET", "description": "評価基準（互換）", "category": "frontend", "priority": "high"},
-        {"path": "/api/categories", "method": "GET", "description": "研究分野カテゴリ", "category": "frontend"},
-        {"path": "/api/labs/{lab_id}", "method": "GET", "description": "研究室詳細", "category": "frontend"},
-        {"path": "/api/fields/{field_id}", "method": "GET", "description": "研究分野詳細", "category": "frontend"},
-        
-        # メインAPI（v1）
-        {"path": "/api/v1/research-fields", "method": "GET", "description": "研究分野一覧", "category": "data"},
-        {"path": "/api/v1/evaluation-criteria", "method": "GET", "description": "評価基準一覧", "category": "data"},
-        {"path": "/api/v1/labs", "method": "GET", "description": "研究室一覧", "category": "data"},
-        {"path": "/api/v1/match", "method": "POST", "description": "研究室マッチング", "category": "function"},
-        {"path": "/api/v1/optimize", "method": "POST", "description": "重み最適化", "category": "function"},
-        {"path": "/api/v1/stats", "method": "GET", "description": "システム統計", "category": "system"},
-        {"path": "/api/v1/config", "method": "GET", "description": "システム設定", "category": "system"},
-        {"path": "/api/v1/sample-profile", "method": "GET", "description": "サンプルプロフィール", "category": "helper"},
-        {"path": "/api/v1/validate-profile", "method": "POST", "description": "プロフィール検証", "category": "helper"},
-        {"path": "/api/v1/system-info", "method": "GET", "description": "詳細システム情報", "category": "system"},
-        {"path": "/api/v1/test-match", "method": "POST", "description": "マッチングテスト", "category": "test"},
-        
-        # エイリアス・ショートカット
-        {"path": "/api/v1/fields", "method": "GET", "description": "研究分野一覧（短縮パス）", "category": "alias"},
-        {"path": "/api/v1/criteria", "method": "GET", "description": "評価基準一覧（短縮パス）", "category": "alias"},
-        {"path": "/api/v1/evaluate", "method": "POST", "description": "互換性評価（マッチングのエイリアス）", "category": "alias"},
-        {"path": "/api/v1/status", "method": "GET", "description": "システム状態取得（ヘルスチェックのエイリアス）", "category": "alias"},
-        
-        # デバッグ・診断
-        {"path": "/api/debug/endpoints", "method": "GET", "description": "エンドポイント一覧", "category": "debug"},
-        {"path": "/api/debug/test", "method": "GET", "description": "接続テスト", "category": "debug"},
-        {"path": "/api/debug/test-evaluate", "method": "POST", "description": "/api/evaluate テスト", "category": "debug"},
-        {"path": "/api/debug/lab-data-check", "method": "GET", "description": "研究室データ確認", "category": "debug"},
-        
-        # API文書
-        {"path": "/docs", "method": "GET", "description": "API文書（Swagger）", "category": "docs"},
-        {"path": "/redoc", "method": "GET", "description": "ReDoc API文書", "category": "docs"}
-    ]
-    
-    # カテゴリ別に分類
-    by_category = {}
-    for endpoint in endpoints:
-        category = endpoint["category"]
-        if category not in by_category:
-            by_category[category] = []
-        by_category[category].append(endpoint)
-    
-    return {
-        "available_endpoints": endpoints,
-        "by_category": by_category,
-        "total_count": len(endpoints),
-        "base_url": "http://localhost:8000",
-        "categories": list(by_category.keys()),
-        "summary": {
-            "system": len(by_category.get("system", [])),
-            "data": len(by_category.get("data", [])),
-            "function": len(by_category.get("function", [])),
-            "frontend": len(by_category.get("frontend", [])),
-            "debug": len(by_category.get("debug", [])),
-            "docs": len(by_category.get("docs", []))
-        },
-        "important_frontend_endpoints": [
-            "POST /api/evaluate - メインマッチング機能",
-            "GET /api/labs - 研究室一覧取得", 
-            "GET /api/fields - 研究分野一覧取得",
-            "GET /api/status - システム状態確認"
-        ],
-        "debug_info": {
-            "lab_data_count": len(system_state["lab_data"]),
-            "criteria_count": len(COMPLETE_EVALUATION_CRITERIA),
-            "system_initialized": system_state["initialized"]
-        },
-        "timestamp": datetime.now().isoformat()
-    }
-
-@app.get("/api/debug/test", response_class=JSONResponse)
-async def debug_test():
-    """接続・動作テスト用エンドポイント"""
-    return {
-        "status": "success",
-        "message": "APIエンドポイントは正常に動作しています",
-        "server_time": datetime.now().isoformat(),
-        "system_status": "operational" if system_state["initialized"] else "initializing",
-        "test_data": {
-            "number": 12345,
-            "boolean": True,
-            "array": [1, 2, 3, 4, 5],
-            "object": {"key": "value", "nested": {"test": "success"}}
-        },
-        "available_endpoints": {
-            "evaluate": "POST /api/evaluate",
-            "labs": "GET /api/labs", 
-            "fields": "GET /api/fields",
-            "status": "GET /api/status"
-        }
-    }
-
-@app.post("/api/debug/test-evaluate")
-async def debug_test_evaluate():
-    """POST /api/evaluate エンドポイントのテスト"""
-    try:
-        print("🧪 /api/debug/test-evaluate: テスト開始")
-        
-        # テスト用のサンプルプロフィール
-        test_profile_data = {
-            "research_intensity": 8.0,
-            "advisor_style": 7.0,
-            "team_work": 6.0,
-            "workload": 7.0,
-            "theory_practice": 8.0,
-            "research_field_match": 9.0,
-            "skill_development": 7.0,
-            "lab_atmosphere": 8.0,
-            "flexibility": 6.0,
-            "publication_opportunity": 8.0,
-            "interdisciplinary": 5.0,
-            "communication_style": 7.0,
-            "innovation_risk": 8.0
-        }
-        
-        # 内部的に /api/evaluate を呼び出し
-        # MockRequestを作成
-        from fastapi import Request
-        
-        class MockRequest:
-            async def json(self):
-                return test_profile_data
-        
-        mock_request = MockRequest()
-        result = await evaluate_compatibility_frontend(mock_request)
-        
         return {
-            "test_status": "success",
-            "message": "/api/evaluate エンドポイントは正常に動作しています",
-            "test_profile": test_profile_data,
-            "result_preview": {
-                "total_labs": len(result.get("lab_results", [])) if hasattr(result, 'get') else 0,
-                "endpoint_accessible": True
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        print(f"❌ /api/debug/test-evaluate エラー: {e}")
-        return {
-            "test_status": "error",
-            "message": f"/api/evaluate エンドポイントのテストに失敗しました: {str(e)}",
-            "error_details": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
-
-# OPTIONS プリフライトリクエスト対応
-@app.options("/{path:path}")
-async def options_handler(path: str):
-    """CORS プリフライトリクエスト対応"""
-    print(f"🔄 OPTIONS リクエスト: {path}")
-    return JSONResponse(
-        content={"message": "OK"},
-        headers={
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            "Access-Control-Allow-Headers": "*",
-            "Access-Control-Max-Age": "86400"
-        }
-    )
-
-# ===== API エンドポイント =====
-
-@app.get("/", response_class=JSONResponse)
-async def root():
-    """ルートエンドポイント - システム状態確認（強化版）"""
-    try:
-        return {
-            "message": "研究室選択支援システム v3.0",
-            "status": "operational" if system_state["initialized"] else "initializing",
+            "message": "遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム",
             "version": "3.0.0",
-            "timestamp": datetime.now().isoformat(),
-            "features": {
-                "research_fields": len(RESEARCH_FIELDS_DATA),
-                "evaluation_criteria": len(COMPLETE_EVALUATION_CRITERIA),
-                "lab_database": len(system_state["lab_data"]),
-                "genetic_algorithm": True,
-                "fuzzy_inference": True,
-                "decision_tree": True
-            },
-            "stats": {
-                "api_calls": system_state["api_calls"],
-                "error_count": system_state["error_count"],
-                "uptime_seconds": int((datetime.now() - system_state["server_start_time"]).total_seconds())
-            },
-            "api_endpoints": {
+            "status": "running",
+            "endpoints": {
                 "health": "/health",
-                "docs": "/docs",
-                "research_fields": "/api/v1/research-fields",
-                "evaluation_criteria": "/api/v1/evaluation-criteria",
-                "labs": "/api/v1/labs",
-                "match": "/api/v1/match",
-                "optimize": "/api/v1/optimize",
-                "stats": "/api/v1/stats",
-                # フロントエンド互換エンドポイント
-                "evaluate_compat": "/api/evaluate",
-                "labs_compat": "/api/labs",
-                "fields_compat": "/api/fields",
-                "status_compat": "/api/status"
+                "labs": "/api/labs",
+                "evaluate": "/api/evaluate",
+                "optimize": "/api/optimize",
+                "docs": "/docs"
             }
         }
-    except Exception as e:
-        print(f"❌ ルートエンドポイントエラー: {e}")
-        return {
-            "message": "研究室選択支援システム v3.0",
-            "status": "error",
-            "error": str(e),
-            "timestamp": datetime.now().isoformat()
-        }
 
-@app.get("/health", response_class=JSONResponse)
+@app.get("/health")
 async def health_check():
-    """ヘルスチェック（強化版）"""
-    try:
-        health_status = {
-            "status": "healthy" if system_state["initialized"] else "starting",
-            "timestamp": datetime.now().isoformat(),
-            "database_status": "connected" if len(system_state["lab_data"]) > 0 else "empty",
-            "system_info": {
-                "has_numpy": HAS_NUMPY,
-                "has_fastapi": HAS_FASTAPI,
-                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-                "platform": sys.platform
-            },
-            "services": {
-                "api": True,
-                "fuzzy_engine": True,
-                "genetic_algorithm": True,
-                "lab_database": len(system_state["lab_data"]) > 0
-            },
-            "performance": {
-                "total_api_calls": system_state["api_calls"],
-                "error_count": system_state["error_count"],
-                "error_rate": system_state["error_count"] / max(1, system_state["api_calls"])
-            }
+    """ヘルスチェック"""
+    
+    # データベース状態チェック
+    lab_count = len(system_state.get("lab_database", []))
+    
+    # モジュール可用性チェック
+    modules_status = {
+        "fuzzy": FUZZY_AVAILABLE,
+        "genetic": GENETIC_AVAILABLE,
+        "decision_tree": DECISION_TREE_AVAILABLE,
+        "settings": SETTINGS_AVAILABLE
+    }
+    
+    # 全体的な健全性
+    overall_health = (
+        system_state["initialized"] and 
+        lab_count > 0
+    )
+    
+    return {
+        "status": "healthy" if overall_health else "unhealthy",
+        "version": "3.0.0",
+        "timestamp": time.time(),
+        "system_initialized": system_state["initialized"],
+        "modules": modules_status,
+        "database": {
+            "status": "OK" if lab_count > 0 else "Empty",
+            "lab_count": lab_count,
+            "evaluation_count": system_state["evaluation_count"]
+        },
+        "statistics": {
+            "api_calls": system_state["api_calls"],
+            "error_count": system_state["error_count"],
+            "optimization_count": system_state["optimization_count"]
         }
-        
-        # 簡易パフォーマンステスト
-        start_time = time.time()
-        test_calculation = sum(i * i for i in range(1000))
-        calculation_time = time.time() - start_time
-        health_status["performance"]["calculation_test_ms"] = round(calculation_time * 1000, 2)
-        
-        return health_status
-        
-    except Exception as e:
-        print(f"❌ ヘルスチェックエラー: {e}")
-        return {
-            "status": "error",
-            "timestamp": datetime.now().isoformat(),
-            "error": str(e)
-        }
+    }
 
-# ===== フロントエンド互換性エンドポイント（最初に配置） =====
+@app.get("/api/labs")
+async def get_labs():
+    """研究室一覧取得"""
+    
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
+    return {
+        "labs": system_state["lab_database"],
+        "total_count": len(system_state["lab_database"]),
+        "last_updated": time.time()
+    }
+
+@app.get("/api/labs/{lab_id}")
+async def get_lab_detail(lab_id: str):
+    """特定研究室の詳細取得"""
+    
+    lab = next((lab for lab in system_state["lab_database"] if lab["id"] == lab_id), None)
+    
+    if not lab:
+        raise HTTPException(status_code=404, detail="Lab not found")
+    
+    return lab
+
+@app.get("/api/fields")
+async def get_research_fields():
+    """研究分野一覧取得"""
+    
+    research_fields = [
+        "人工知能・機械学習",
+        "画像・映像処理",
+        "ネットワーク・セキュリティ",
+        "データベース・情報システム",
+        "組込み・IoT",
+        "教育・言語学",
+        "自然科学・数理",
+        "医療情報・ヘルスケア",
+        "観光情報・地域システム",
+        "経営情報・意思決定支援",
+        "音声・音響情報処理",
+        "システム運用・情報倫理",
+        "Webデザイン・UI/UX",
+        "デザイン・視覚表現",
+        "映像・アニメーション",
+        "コンピュータ音楽・サウンドアート",
+        "ゲーム開発・eスポーツ",
+        "VR/AR・メディアアート",
+        "哲学・人文・環境行動学",
+        "スポーツ・体育科学"
+    ]
+    
+    return {
+        "research_fields": research_fields,
+        "total_count": len(research_fields),
+        "categories": {
+            "テクノロジー・システム": 12,
+            "クリエイティブ": 4,
+            "エンターテイメント": 2,
+            "人文・社会・体育": 2
+        }
+    }
+
+@app.get("/api/evaluation-criteria")
+async def get_evaluation_criteria():
+    """評価基準一覧取得"""
+    
+    criteria_details = {
+        "research_intensity": {
+            "name": "研究強度",
+            "description": "研究にどれだけ集中的に取り組みたいか",
+            "range": "1(軽い研究) ～ 10(集中研究)"
+        },
+        "advisor_style": {
+            "name": "指導スタイル",
+            "description": "教授からの指導の受け方の好み",
+            "range": "1(厳格指導) ～ 10(自由指導)"
+        },
+        "team_work": {
+            "name": "チームワーク",
+            "description": "研究での他者との協働の程度",
+            "range": "1(個人研究) ～ 10(チーム研究)"
+        },
+        "workload": {
+            "name": "ワークロード",
+            "description": "研究活動の忙しさに対する許容度",
+            "range": "1(軽い負荷) ～ 10(重い負荷)"
+        },
+        "theory_practice": {
+            "name": "理論・実践バランス",
+            "description": "理論研究と実践的研究のバランス",
+            "range": "1(理論重視) ～ 10(実践重視)"
+        },
+        "research_field_match": {
+            "name": "研究分野適合性",
+            "description": "自分の興味と研究室の分野の一致度",
+            "range": "1(広い分野) ～ 10(専門特化)"
+        },
+        "skill_development": {
+            "name": "スキル開発",
+            "description": "専門性と汎用性のバランス",
+            "range": "1(専門特化) ～ 10(幅広いスキル)"
+        },
+        "lab_atmosphere": {
+            "name": "研究室雰囲気",
+            "description": "研究室の全体的な雰囲気",
+            "range": "1(静寂集中) ～ 10(活発議論)"
+        },
+        "flexibility": {
+            "name": "柔軟性",
+            "description": "研究時間の自由度",
+            "range": "1(固定スケジュール) ～ 10(柔軟スケジュール)"
+        },
+        "publication_opportunity": {
+            "name": "論文発表機会",
+            "description": "研究成果の論文化機会",
+            "range": "1(少ない機会) ～ 10(豊富な機会)"
+        },
+        "interdisciplinary": {
+            "name": "学際性",
+            "description": "他分野との連携の程度",
+            "range": "1(単一分野) ～ 10(学際連携)"
+        },
+        "communication_style": {
+            "name": "コミュニケーション",
+            "description": "研究室での交流スタイル",
+            "range": "1(少人数密接) ～ 10(オープン交流)"
+        },
+        "innovation_risk": {
+            "name": "革新性・リスク許容度",
+            "description": "新しい手法への挑戦度",
+            "range": "1(安全手法) ～ 10(革新手法)"
+        }
+    }
+    
+    return {
+        "evaluation_criteria": COMPLETE_EVALUATION_CRITERIA,
+        "criteria_details": criteria_details,
+        "total_count": len(COMPLETE_EVALUATION_CRITERIA),
+        "categories": {
+            "basic": COMPLETE_EVALUATION_CRITERIA[:5],
+            "extended": COMPLETE_EVALUATION_CRITERIA[5:10],
+            "special": COMPLETE_EVALUATION_CRITERIA[10:]
+        }
+    }
 
 @app.post("/api/evaluate")
 async def evaluate_compatibility_frontend(request: Request):
-    """フロントエンド互換性エンドポイント - /api/evaluate（完全修正版）"""
+    """フロントエンド互換性エンドポイント - /api/evaluate（JSON対応版）"""
     try:
         print(f"🎯 /api/evaluate エンドポイント実行開始")
         
-        # システム初期化チェック
         if not system_state["initialized"]:
-            print("⚠️ システム初期化実行中...")
-            if not initialize_system():
-                raise HTTPException(
-                    status_code=503,
-                    detail="システムの初期化に失敗しました。サーバーを再起動してください。"
-                )
+            raise HTTPException(status_code=503, detail="システムが初期化されていません")
         
-        # リクエストボディを取得
         body = await request.json()
-        print(f"📥 リクエスト受信: {type(body)} - {len(str(body))}文字")
+        print(f"📥 /api/evaluate リクエスト受信: {len(str(body))}文字")
         
         # リクエスト形式の正規化
-        profile_data = None
         if "student_profile" in body:
             profile_data = body["student_profile"]
-            print("📋 形式: student_profile")
-        elif "preferences" in body:
-            profile_data = body["preferences"]
-            print("📋 形式: preferences")
         elif "evaluation_criteria" in body:
             profile_data = body["evaluation_criteria"]
-            print("📋 形式: evaluation_criteria")
         else:
             profile_data = body
-            print("📋 形式: 直接プロフィール")
         
-        if not profile_data:
-            raise HTTPException(
-                status_code=400,
-                detail="プロフィールデータが見つかりません"
-            )
+        print(f"📊 プロフィールデータ解析: {len(profile_data)}項目")
         
-        print(f"📊 プロフィールデータ項目数: {len(profile_data)}")
-        
-        # 13項目の必須フィールド確認と補完
+        # 必須フィールドの確認と補完
         missing_fields = [field for field in COMPLETE_EVALUATION_CRITERIA if field not in profile_data]
         if missing_fields:
             print(f"⚠️ 不足フィールド: {missing_fields}")
@@ -1073,24 +852,34 @@ async def evaluate_compatibility_frontend(request: Request):
         
         # マッチング実行
         print(f"🔄 マッチング処理開始...")
-        print(f"📊 利用可能研究室数: {len(system_state['lab_data'])}")
         
-        if not system_state["lab_data"]:
+        # 研究室データベースを取得
+        lab_database = system_state.get("lab_database", [])
+        if not lab_database:
+            # フォールバックデータを再読み込み
+            print("🔄 研究室データが空です。再読み込みを試行...")
+            lab_database = load_labs_from_json()
+            system_state["lab_database"] = lab_database
+            system_state["lab_data"] = lab_database
+        
+        if not lab_database:
             raise HTTPException(
                 status_code=500,
-                detail="研究室データが初期化されていません"
+                detail="研究室データが初期化されていません。labs_database.jsonファイルを確認してください。"
             )
         
-        # 各研究室との適合度計算（修正版）
+        print(f"📊 利用可能研究室数: {len(lab_database)}")
+        
+        # 各研究室との適合度計算
         results = []
         calculation_errors = []
         
-        for i, lab in enumerate(system_state["lab_data"]):
+        for i, lab in enumerate(lab_database):
             try:
                 print(f"\n--- 研究室 {i+1}: {lab.get('name', 'Unknown')} ---")
                 
-                # 新しい適合度計算関数を使用
-                compatibility = calculate_enhanced_compatibility(profile_data, lab)
+                # JSON対応の適合度計算関数を使用
+                compatibility = calculate_enhanced_compatibility_from_json(profile_data, lab)
                 
                 result = {
                     "lab_id": compatibility["lab_id"],
@@ -1102,14 +891,17 @@ async def evaluate_compatibility_frontend(request: Request):
                     },
                     "explanation": generate_detailed_explanation(compatibility),
                     "recommendation_level": compatibility["recommendation_level"],
-                    "field_match": compatibility["field_match"],
+                    "field_match": compatibility.get("field_match", True),
                     "timestamp": datetime.now().isoformat(),
                     # 追加の詳細情報
-                    "advisor": lab.get("advisor", "不明"),
+                    "advisor": lab.get("professor", "不明"),
                     "description": lab.get("description", ""),
-                    "field_category": lab.get("field_category", ""),
+                    "research_area": lab.get("research_area", ""),
+                    "specialization": lab.get("specialization", ""),
+                    "research_fields": lab.get("research_fields", []),
                     "base_score": compatibility.get("base_score", compatibility["overall_score"]),
-                    "data_completeness": compatibility.get("data_completeness", 1.0)
+                    "data_completeness": compatibility.get("data_completeness", 1.0),
+                    "metadata": lab.get("metadata", {})
                 }
                 results.append(result)
                 print(f"✅ 計算成功: {compatibility['lab_name']} = {compatibility['overall_score']:.3f}")
@@ -1123,7 +915,7 @@ async def evaluate_compatibility_frontend(request: Request):
         if not results:
             raise HTTPException(
                 status_code=500,
-                detail="すべての研究室の計算に失敗しました。システム管理者に連絡してください。"
+                detail="すべての研究室の計算に失敗しました。研究室データの形式を確認してください。"
             )
         
         # スコア順でソート
@@ -1149,17 +941,18 @@ async def evaluate_compatibility_frontend(request: Request):
                 "low_compatibility_count": len([r for r in results if r["compatibility_score"] < 0.6])
             },
             "metadata": {
-                "processing_time": time.time() - time.time(),
-                "evaluation_count": system_state["evaluation_count"] + 1,
+                "processing_time": 0.1,  # 仮の処理時間
+                "evaluation_count": system_state.get("evaluation_count", 0) + 1,
                 "timestamp": datetime.now().isoformat(),
                 "endpoint": "/api/evaluate",
-                "calculation_method": "enhanced_compatibility_v3",
-                "criteria_used": len(COMPLETE_EVALUATION_CRITERIA)
+                "calculation_method": "json_enhanced_compatibility_v1",
+                "criteria_used": len(COMPLETE_EVALUATION_CRITERIA),
+                "data_source": "labs_database.json"
             }
         }
         
         # 評価回数更新
-        system_state["evaluation_count"] += 1
+        system_state["evaluation_count"] = system_state.get("evaluation_count", 0) + 1
         
         if calculation_errors:
             frontend_response["warnings"] = {
@@ -1183,15 +976,21 @@ async def evaluate_compatibility_frontend(request: Request):
                 "message": "評価処理で予期しないエラーが発生しました",
                 "error": str(e),
                 "endpoint": "/api/evaluate",
-                "suggestion": "システム管理者に連絡してください"
+                "suggestion": "labs_database.jsonファイルの存在と形式を確認してください"
             }
         )
 
 @app.post("/api/optimize")
 async def optimize_frontend(request: Request):
-    """フロントエンド互換性エンドポイント - /api/optimize"""
+    """遺伝的アルゴリズムによる重み最適化エンドポイント"""
     try:
         print(f"🧬 /api/optimize エンドポイント実行開始")
+        
+        if not system_state["initialized"]:
+            raise HTTPException(status_code=503, detail="システムが初期化されていません")
+        
+        if not GENETIC_AVAILABLE:
+            raise HTTPException(status_code=503, detail="遺伝的アルゴリズムが利用できません")
         
         body = await request.json()
         print(f"📥 /api/optimize リクエスト受信")
@@ -1212,979 +1011,321 @@ async def optimize_frontend(request: Request):
             if field not in profile_data:
                 profile_data[field] = 5.0
         
-        # OptimizationRequestに変換
-        try:
-            student_profile = StudentProfile(**profile_data)
-            optimization_request = OptimizationRequest(
-                student_profile=student_profile,
-                population_size=optimization_params.get("population_size", 30),
-                generations=optimization_params.get("generations", 20),
-                mutation_rate=optimization_params.get("mutation_rate", 0.1),
-                crossover_rate=optimization_params.get("crossover_rate", 0.8),
-                custom_weights=optimization_params.get("custom_weights")
-            )
-        except Exception as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"最適化リクエストの形式が無効です: {str(e)}"
-            )
+        # 研究室データベースを取得
+        lab_database = system_state.get("lab_database", [])
+        if not lab_database:
+            raise HTTPException(status_code=500, detail="研究室データが利用できません")
+        
+        print(f"🧬 遺伝的アルゴリズムによる重み最適化開始...")
+        
+        # 最適化パラメータの設定
+        evolution_config = EvolutionConfig(
+            population_size=optimization_params.get("population_size", 30),
+            generations=optimization_params.get("generations", 25),
+            crossover_rate=optimization_params.get("crossover_rate", 0.8),
+            mutation_rate=optimization_params.get("mutation_rate", 0.1),
+            elitism_rate=0.1,
+            tournament_size=3,
+            convergence_threshold=1e-4,
+            max_stagnation=10
+        )
+        
+        # 遺伝的アルゴリズムエンジンの作成
+        genetic_engine = EvolutionEngine(evolution_config)
         
         # 最適化実行
-        result = await optimize_weights(optimization_request)
+        start_time = time.time()
+        evolution_result = genetic_engine.optimize_weights_for_student(profile_data, lab_database)
+        processing_time = time.time() - start_time
+        
+        # 最適化された重みを辞書形式に変換
+        optimized_weights_list = evolution_result.best_individual.chromosome
+        optimized_weights_dict = {
+            COMPLETE_EVALUATION_CRITERIA[i]: optimized_weights_list[i] 
+            for i in range(min(len(COMPLETE_EVALUATION_CRITERIA), len(optimized_weights_list)))
+        }
+        
+        print(f"✅ 遺伝的アルゴリズム最適化完了:")
+        print(f"   - 世代数: {evolution_result.generation + 1}")
+        print(f"   - 最高適応度: {evolution_result.best_fitness:.4f}")
+        print(f"   - 収束: {evolution_result.convergence_achieved}")
+        print(f"   - 処理時間: {processing_time:.2f}秒")
+        
+        # 最適化された重みで研究室評価を実行
+        optimized_results = []
+        for lab in lab_database:
+            compatibility = calculate_enhanced_compatibility_from_json(
+                profile_data, lab, optimized_weights_dict
+            )
+            
+            optimized_results.append({
+                "lab_id": compatibility["lab_id"],
+                "lab_name": compatibility["lab_name"],
+                "compatibility_score": compatibility["overall_score"],
+                "explanation": generate_detailed_explanation(compatibility),
+                "recommendation_level": compatibility["recommendation_level"],
+                "advisor": lab.get("professor", "不明"),
+                "research_area": lab.get("research_area", ""),
+                "detailed_scores": {
+                    criterion: data["weighted_score"] if isinstance(data, dict) else data
+                    for criterion, data in compatibility["criteria_scores"].items()
+                },
+                "metadata": lab.get("metadata", {})
+            })
+        
+        optimized_results.sort(key=lambda x: x["compatibility_score"], reverse=True)
+        
+        # 改善度の計算
+        original_scores = []
+        optimized_scores = [r["compatibility_score"] for r in optimized_results]
+        
+        # デフォルト重みでの評価も実行（比較用）
+        for lab in lab_database:
+            compatibility = calculate_enhanced_compatibility_from_json(profile_data, lab, DEFAULT_CRITERIA_WEIGHTS)
+            original_scores.append(compatibility["overall_score"])
+        
+        avg_original = sum(original_scores) / len(original_scores)
+        avg_optimized = sum(optimized_scores) / len(optimized_scores)
+        improvement = ((avg_optimized - avg_original) / max(avg_original, 0.001)) * 100
         
         # フロントエンド互換形式でレスポンス
         frontend_response = {
-            "optimization_result": result["optimization_result"],
-            "lab_results": result["sample_results"],
-            "results": result["sample_results"],
+            "optimization_result": {
+                "optimized_weights": optimized_weights_dict,
+                "original_weights": DEFAULT_CRITERIA_WEIGHTS,
+                "fitness_score": evolution_result.best_fitness,
+                "generations_used": evolution_result.generation + 1,
+                "convergence_achieved": evolution_result.convergence_achieved,
+                "improvement_percentage": improvement,
+                "avg_original_score": avg_original,
+                "avg_optimized_score": avg_optimized,
+                "optimization_method": "genetic_algorithm",
+                "algorithm_params": {
+                    "population_size": evolution_config.population_size,
+                    "generations": evolution_config.generations,
+                    "mutation_rate": evolution_config.mutation_rate,
+                    "crossover_rate": evolution_config.crossover_rate
+                }
+            },
+            "lab_results": optimized_results,
+            "results": optimized_results,
             "metadata": {
-                "processing_time": result["processing_time_seconds"],
-                "parameters_used": result["parameters_used"],
-                "timestamp": result["timestamp"],
-                "endpoint": "/api/optimize"
+                "processing_time": processing_time,
+                "optimization_count": system_state.get("optimization_count", 0) + 1,
+                "timestamp": datetime.now().isoformat(),
+                "endpoint": "/api/optimize",
+                "data_source": "labs_database.json"
             }
         }
         
+        # 最適化回数更新
+        system_state["optimization_count"] = system_state.get("optimization_count", 0) + 1
+        
         print(f"📤 /api/optimize レスポンス送信")
+        print(f"📈 改善度: {improvement:.2f}% (平均スコア: {avg_original:.3f} → {avg_optimized:.3f})")
+        
         return JSONResponse(content=frontend_response)
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ /api/optimize エラー: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"最適化処理でエラーが発生しました: {str(e)}"
-        )
-
-@app.get("/api/labs")
-async def get_labs_frontend():
-    """フロントエンド互換性エンドポイント - /api/labs"""
-    try:
-        result = await get_labs()
-        return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/fields")
-async def get_fields_frontend():
-    """フロントエンド互換性エンドポイント - /api/fields"""
-    try:
-        result = await get_research_fields()
-        return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/status")
-async def get_status_frontend():
-    """フロントエンド互換性エンドポイント - /api/status"""
-    try:
-        result = await health_check()
-        return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/labs/{lab_id}")
-async def get_lab_detail_frontend(lab_id: str):
-    """特定研究室の詳細取得"""
-    try:
-        # 研究室データから指定IDを検索
-        lab = next((lab for lab in system_state["lab_data"] if lab["id"] == lab_id), None)
-        
-        if not lab:
-            raise HTTPException(
-                status_code=404,
-                detail=f"研究室ID '{lab_id}' が見つかりません"
-            )
-        
-        return JSONResponse(content={
-            "lab": lab,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"研究室詳細の取得に失敗しました: {str(e)}"
-        )
-
-@app.get("/api/fields/{field_id}")
-async def get_field_detail_frontend(field_id: str):
-    """特定研究分野の詳細取得"""
-    try:
-        field = next((field for field in RESEARCH_FIELDS_DATA if field["id"] == field_id), None)
-        
-        if not field:
-            raise HTTPException(
-                status_code=404,
-                detail=f"研究分野ID '{field_id}' が見つかりません"
-            )
-        
-        return JSONResponse(content={
-            "field": field,
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"研究分野詳細の取得に失敗しました: {str(e)}"
-        )
-
-@app.get("/api/categories")
-async def get_categories_frontend():
-    """研究分野カテゴリ一覧取得"""
-    try:
-        categories = {}
-        for field in RESEARCH_FIELDS_DATA:
-            category = field["category"]
-            if category not in categories:
-                categories[category] = []
-            categories[category].append(field)
-        
-        return JSONResponse(content={
-            "categories": categories,
-            "category_names": list(categories.keys()),
-            "total_categories": len(categories),
-            "timestamp": datetime.now().isoformat()
-        })
-        
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"カテゴリ一覧の取得に失敗しました: {str(e)}"
-        )
-
-@app.get("/api/evaluation-criteria")
-async def get_evaluation_criteria_frontend():
-    """フロントエンド互換性エンドポイント - /api/evaluation-criteria"""
-    try:
-        result = await get_evaluation_criteria()
-        return JSONResponse(content=result)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/v1/research-fields", response_class=JSONResponse)
-async def get_research_fields():
-    """研究分野一覧取得"""
-    return {
-        "fields": RESEARCH_FIELDS_DATA,
-        "total_count": len(RESEARCH_FIELDS_DATA),
-        "categories": list(set(field["category"] for field in RESEARCH_FIELDS_DATA))
-    }
-
-@app.get("/api/v1/evaluation-criteria", response_class=JSONResponse)
-async def get_evaluation_criteria():
-    """評価基準一覧取得"""
-    return {
-        "criteria": COMPLETE_EVALUATION_CRITERIA,
-        "total_count": len(COMPLETE_EVALUATION_CRITERIA),
-        "categories": {
-            "basic": COMPLETE_EVALUATION_CRITERIA[:5],
-            "extended": COMPLETE_EVALUATION_CRITERIA[5:10],
-            "special": COMPLETE_EVALUATION_CRITERIA[10:]
-        },
-        "default_weights": DEFAULT_CRITERIA_WEIGHTS
-    }
-
-@app.get("/api/v1/labs", response_class=JSONResponse)
-async def get_labs():
-    """研究室一覧取得"""
-    return {
-        "labs": system_state["lab_data"],
-        "total_count": len(system_state["lab_data"]),
-        "last_updated": system_state["last_updated"]
-    }
-
-@app.post("/api/v1/match", response_class=JSONResponse)
-async def match_labs(student_profile: StudentProfile):
-    """研究室マッチング実行（強化版）"""
-    try:
-        print(f"🎯 マッチングリクエスト受信: {student_profile.student_id or 'anonymous'}")
-        
-        # システム初期化チェック
-        if not system_state["initialized"]:
-            print("⚠️ システムが初期化されていません。初期化を実行...")
-            if not initialize_system():
-                raise HTTPException(
-                    status_code=503, 
-                    detail="システムの初期化に失敗しました。サーバーを再起動してください。"
-                )
-        
-        system_state["evaluation_count"] += 1
-        start_time = time.time()
-        
-        # 学生プロフィールを辞書に変換
-        profile_dict = student_profile.dict()
-        print(f"📝 プロフィール検証: {len(profile_dict)}項目")
-        
-        # 入力値検証
-        for criterion in COMPLETE_EVALUATION_CRITERIA:
-            if criterion not in profile_dict:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"必須フィールドが不足しています: {criterion}"
-                )
-            
-            value = profile_dict[criterion]
-            if not isinstance(value, (int, float)) or not (1 <= value <= 10):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"無効な値: {criterion} = {value} (1-10の範囲で指定してください)"
-                )
-        
-        # 全研究室との適合度計算
-        results = []
-        calculation_errors = []
-        
-        for i, lab in enumerate(system_state["lab_data"]):
-            try:
-                compatibility = calculate_enhanced_compatibility(profile_dict, lab)
-                
-                result = MatchingResult(
-                    lab_id=compatibility["lab_id"],
-                    lab_name=compatibility["lab_name"],
-                    compatibility_score=compatibility["overall_score"],
-                    detailed_scores={
-                        criterion: data["weighted_score"]
-                        for criterion, data in compatibility["criteria_scores"].items()
-                    },
-                    explanation=generate_detailed_explanation(compatibility),
-                    recommendation_level=compatibility["recommendation_level"],
-                    field_match=compatibility["field_match"],
-                    timestamp=datetime.now().isoformat()
-                )
-                results.append(result)
-                
-            except Exception as e:
-                error_msg = f"研究室 {lab.get('name', f'ID:{i}')} の計算エラー: {str(e)}"
-                calculation_errors.append(error_msg)
-                print(f"⚠️ {error_msg}")
-                continue
-        
-        if not results:
-            raise HTTPException(
-                status_code=500,
-                detail="マッチング計算でエラーが発生しました。すべての研究室の計算に失敗しました。"
-            )
-        
-        # スコア順でソート
-        results.sort(key=lambda x: x.compatibility_score, reverse=True)
-        
-        processing_time = time.time() - start_time
-        
-        response_data = {
-            "results": [result.dict() for result in results],
-            "total_evaluated": len(results),
-            "processing_time_seconds": round(processing_time, 3),
-            "evaluation_count": system_state["evaluation_count"],
-            "timestamp": datetime.now().isoformat(),
-            "quality_metrics": {
-                "successful_calculations": len(results),
-                "failed_calculations": len(calculation_errors),
-                "success_rate": len(results) / len(system_state["lab_data"]),
-                "average_compatibility": sum(r.compatibility_score for r in results) / len(results)
-            }
-        }
-        
-        if calculation_errors:
-            response_data["warnings"] = {
-                "calculation_errors": calculation_errors,
-                "message": "一部の研究室で計算エラーが発生しましたが、他の研究室の結果を表示しています。"
-            }
-        
-        print(f"✅ マッチング完了: {len(results)}件, {processing_time:.3f}秒")
-        return response_data
-        
-    except HTTPException:
-        # HTTPExceptionはそのまま再発生
-        raise
-    except Exception as e:
-        print(f"❌ マッチング処理で予期しないエラー: {e}")
+        print(f"❌ /api/optimize 予期しないエラー: {e}")
         traceback.print_exc()
         raise HTTPException(
-            status_code=500, 
-            detail={
-                "message": "マッチング処理で予期しないエラーが発生しました",
-                "error": str(e),
-                "suggestion": "入力データを確認し、再度お試しください"
-            }
-        )
-
-@app.post("/api/v1/optimize", response_class=JSONResponse)
-async def optimize_weights(request: OptimizationRequest):
-    """遺伝的アルゴリズムによる重み最適化（強化版）"""
-    try:
-        print(f"🧬 最適化リクエスト受信: 集団サイズ={request.population_size}, 世代数={request.generations}")
-        
-        # システム初期化チェック
-        if not system_state["initialized"]:
-            initialize_system()
-        
-        start_time = time.time()
-        
-        # パラメータ検証
-        if not (10 <= request.population_size <= 100):
-            raise HTTPException(status_code=400, detail="population_size は 10-100 の範囲で指定してください")
-        
-        if not (5 <= request.generations <= 50):
-            raise HTTPException(status_code=400, detail="generations は 5-50 の範囲で指定してください")
-        
-        if not (0.01 <= request.mutation_rate <= 0.5):
-            raise HTTPException(status_code=400, detail="mutation_rate は 0.01-0.5 の範囲で指定してください")
-        
-        # 最適化実行
-        try:
-            optimization_result = genetic_algorithm_optimization(
-                student_profile=request.student_profile.dict(),
-                lab_data=system_state["lab_data"],
-                population_size=request.population_size,
-                generations=request.generations,
-                mutation_rate=request.mutation_rate,
-                crossover_rate=request.crossover_rate,
-                custom_weights=request.custom_weights
-            )
-        except Exception as e:
-            print(f"❌ 遺伝的アルゴリズム実行エラー: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"遺伝的アルゴリズムの実行でエラーが発生しました: {str(e)}"
-            )
-        
-        # 最適化された重みでマッチング実行
-        optimized_profile = request.student_profile.dict()
-        results = []
-        
-        try:
-            sample_labs = system_state["lab_data"][:min(10, len(system_state["lab_data"]))]
-            
-            for lab in sample_labs:
-                compatibility = calculate_enhanced_compatibility(
-                    optimized_profile, 
-                    lab, 
-                    optimization_result["optimized_weights"]
-                )
-                results.append({
-                    "lab_id": compatibility["lab_id"],
-                    "lab_name": compatibility["lab_name"],
-                    "compatibility_score": compatibility["overall_score"],
-                    "recommendation_level": compatibility["recommendation_level"]
-                })
-            
-            results.sort(key=lambda x: x["compatibility_score"], reverse=True)
-            
-        except Exception as e:
-            print(f"❌ 最適化後マッチング計算エラー: {e}")
-            # 最適化結果は返すが、サンプル結果は空にする
-            results = []
-        
-        processing_time = time.time() - start_time
-        
-        response_data = {
-            "optimization_result": optimization_result,
-            "sample_results": results[:5],
-            "processing_time_seconds": round(processing_time, 3),
-            "parameters_used": {
-                "population_size": request.population_size,
-                "generations": request.generations,
-                "mutation_rate": request.mutation_rate,
-                "crossover_rate": request.crossover_rate
-            },
-            "quality_metrics": {
-                "improvement_achieved": optimization_result.get("improvement", False),
-                "final_fitness": optimization_result.get("fitness_score", 0),
-                "sample_labs_evaluated": len(results)
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        print(f"✅ 最適化完了: {processing_time:.3f}秒, 改善={optimization_result.get('improvement', False)}")
-        return response_data
-        
-    except HTTPException:
-        # HTTPExceptionはそのまま再発生
-        raise
-    except Exception as e:
-        print(f"❌ 最適化処理で予期しないエラー: {e}")
-        traceback.print_exc()
-        raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail={
                 "message": "最適化処理で予期しないエラーが発生しました",
                 "error": str(e),
-                "suggestion": "パラメータを確認し、再度お試しください"
+                "endpoint": "/api/optimize",
+                "suggestion": "遺伝的アルゴリズムモジュールとlabs_database.jsonファイルを確認してください"
             }
         )
 
-# ===== メインAPI v1エンドポイント =====
+# ===== デバッグ・診断エンドポイント =====
 
-@app.get("/api/v1/fields", response_class=JSONResponse)
-async def get_fields_alias():
-    """研究分野一覧取得（短縮パス）"""
-    return await get_research_fields()
-
-@app.get("/api/v1/criteria", response_class=JSONResponse) 
-async def get_criteria_alias():
-    """評価基準一覧取得（短縮パス）"""
-    return await get_evaluation_criteria()
-
-@app.post("/api/v1/evaluate", response_class=JSONResponse)
-async def evaluate_compatibility(student_profile: StudentProfile):
-    """互換性評価（マッチングのエイリアス）"""
-    return await match_labs(student_profile)
-
-@app.get("/api/v1/status", response_class=JSONResponse)
-async def get_status():
-    """システム状態取得（ヘルスチェックのエイリアス）"""
-    return await health_check()
-
-@app.post("/api/v1/test-match", response_class=JSONResponse)
-async def test_matching():
-    """マッチングテスト用エンドポイント（詳細ログ付き）"""
+@app.get("/api/debug/lab-data-check")
+async def debug_lab_data_check():
+    """研究室データの詳細確認用デバッグエンドポイント"""
     try:
-        print("\n🧪 === マッチングテスト開始 ===")
+        lab_database = system_state.get("lab_database", [])
         
-        # テスト用プロフィール
-        test_profile_data = {
-            "research_intensity": 8.0,
-            "advisor_style": 7.0,
-            "team_work": 6.0,
-            "workload": 7.0,
-            "theory_practice": 8.0,
-            "research_field_match": 9.0,
-            "skill_development": 7.0,
-            "lab_atmosphere": 8.0,
-            "flexibility": 6.0,
-            "publication_opportunity": 8.0,
-            "interdisciplinary": 5.0,
-            "communication_style": 7.0,
-            "innovation_risk": 8.0,
-            "student_id": "test_user",
-            "preferred_fields": ["人工知能・機械学習"]
-        }
+        if not lab_database:
+            return {
+                "status": "error",
+                "message": "研究室データが読み込まれていません",
+                "lab_count": 0,
+                "suggestions": [
+                    "labs_database.jsonファイルの存在を確認",
+                    "ファイルの形式とエンコーディングを確認",
+                    "バックエンドサーバーの再起動"
+                ]
+            }
         
-        print(f"📝 テストプロフィール: {test_profile_data}")
+        # データ分析
+        sample_lab = lab_database[0] if lab_database else {}
+        available_criteria = [c for c in COMPLETE_EVALUATION_CRITERIA if c in sample_lab]
+        missing_criteria = [c for c in COMPLETE_EVALUATION_CRITERIA if c not in sample_lab]
         
-        # StudentProfileに変換
-        test_profile = StudentProfile(**test_profile_data)
-        print(f"✅ プロフィール変換成功")
-        
-        # システム初期化チェック
-        if not system_state["initialized"]:
-            print("⚠️ システム初期化実行中...")
-            initialize_system()
-        
-        print(f"📊 利用可能研究室数: {len(system_state['lab_data'])}")
-        
-        # 各研究室との適合度を個別にテスト
-        test_results = []
-        for i, lab in enumerate(system_state["lab_data"][:3]):  # 最初の3件をテスト
-            print(f"\n--- 研究室 {i+1}: {lab['name']} ---")
-            
-            try:
-                compatibility = calculate_enhanced_compatibility(test_profile_data, lab)
-                test_results.append({
-                    "lab_name": compatibility["lab_name"],
-                    "lab_id": compatibility["lab_id"],
-                    "compatibility_score": compatibility["overall_score"],
-                    "base_score": compatibility.get("base_score", 0),
-                    "criteria_count": compatibility["total_criteria_evaluated"],
-                    "recommendation": compatibility["recommendation_level"],
-                    "calculation_success": True
-                })
-                print(f"✅ 計算成功: スコア={compatibility['overall_score']:.3f}")
-            except Exception as e:
-                print(f"❌ 計算エラー: {e}")
-                test_results.append({
-                    "lab_name": lab.get("name", "Unknown"),
-                    "lab_id": lab.get("id", "unknown"),
-                    "compatibility_score": 0.0,
-                    "error": str(e),
-                    "calculation_success": False
-                })
-        
-        # 正常なマッチング処理も実行
-        try:
-            print(f"\n🔄 フルマッチング実行...")
-            full_result = await match_labs(test_profile)
-            full_success = True
-            full_count = full_result.get("total_evaluated", 0)
-            print(f"✅ フルマッチング成功: {full_count}件評価")
-        except Exception as e:
-            print(f"❌ フルマッチングエラー: {e}")
-            full_success = False
-            full_count = 0
-            full_result = {"error": str(e)}
+        # 各研究室の評価基準完全性チェック
+        completeness_stats = []
+        for lab in lab_database:
+            available = len([c for c in COMPLETE_EVALUATION_CRITERIA if c in lab])
+            completeness = available / len(COMPLETE_EVALUATION_CRITERIA)
+            completeness_stats.append({
+                "name": lab.get("name", "不明"),
+                "available_criteria": available,
+                "completeness": completeness
+            })
         
         return {
-            "test_status": "completed",
-            "message": "マッチングテストが完了しました",
-            "test_profile": test_profile_data,
-            "individual_tests": test_results,
-            "full_matching": {
-                "success": full_success,
-                "total_evaluated": full_count,
-                "sample_results": full_result.get("results", [])[:3] if full_success else []
+            "status": "success",
+            "lab_count": len(lab_database),
+            "data_analysis": {
+                "total_criteria_expected": len(COMPLETE_EVALUATION_CRITERIA),
+                "available_criteria_count": len(available_criteria),
+                "missing_criteria_count": len(missing_criteria),
+                "sample_lab_keys": list(sample_lab.keys()),
+                "available_criteria": available_criteria,
+                "missing_criteria": missing_criteria,
+                "completeness_per_lab": completeness_stats
             },
-            "system_info": {
-                "initialized": system_state["initialized"],
-                "lab_count": len(system_state["lab_data"]),
-                "criteria_count": len(COMPLETE_EVALUATION_CRITERIA)
+            "labs_summary": [
+                {
+                    "id": lab.get("id"),
+                    "name": lab.get("name"),
+                    "professor": lab.get("professor"),
+                    "research_area": lab.get("research_area"),
+                    "criteria_count": len([c for c in COMPLETE_EVALUATION_CRITERIA if c in lab])
+                }
+                for lab in lab_database
+            ],
+            "system_state": {
+                "initialized": system_state.get("initialized", False),
+                "evaluation_count": system_state.get("evaluation_count", 0),
+                "optimization_count": system_state.get("optimization_count", 0)
+            }
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"データ確認中にエラーが発生しました: {str(e)}",
+            "error_details": str(e)
+        }
+
+@app.get("/api/debug/genetic-test")
+async def debug_genetic_test():
+    """遺伝的アルゴリズムのテスト用エンドポイント"""
+    try:
+        if not GENETIC_AVAILABLE:
+            return {
+                "status": "error",
+                "message": "遺伝的アルゴリズムが利用できません",
+                "genetic_available": False
+            }
+        
+        # 簡単なテスト用適応度関数
+        def test_fitness_function(weights):
+            return sum(weights) / len(weights)
+        
+        # テスト用設定
+        test_config = EvolutionConfig(
+            population_size=10,
+            generations=5,
+            crossover_rate=0.8,
+            mutation_rate=0.1
+        )
+        
+        # テスト実行
+        genetic_engine = EvolutionEngine(test_config)
+        start_time = time.time()
+        result = genetic_engine.evolve(test_fitness_function, verbose=False)
+        processing_time = time.time() - start_time
+        
+        return {
+            "status": "success",
+            "message": "遺伝的アルゴリズムのテスト実行が成功しました",
+            "genetic_available": True,
+            "test_result": {
+                "best_fitness": result.best_fitness,
+                "generations_used": result.generation + 1,
+                "convergence_achieved": result.convergence_achieved,
+                "processing_time": processing_time,
+                "chromosome_length": len(result.best_individual.chromosome)
             },
             "timestamp": datetime.now().isoformat()
         }
         
     except Exception as e:
-        print(f"❌ テスト実行エラー: {e}")
-        traceback.print_exc()
         return {
-            "test_status": "error",
-            "message": f"マッチングテストに失敗しました: {str(e)}",
+            "status": "error",
+            "message": f"遺伝的アルゴリズムのテストでエラーが発生しました: {str(e)}",
             "error_details": str(e),
-            "timestamp": datetime.now().isoformat()
+            "genetic_available": GENETIC_AVAILABLE
         }
 
-@app.get("/api/debug/lab-data-check", response_class=JSONResponse)
-async def check_lab_data():
-    """研究室データの構造確認"""
-    try:
-        if not system_state["lab_data"]:
-            return {"error": "研究室データが初期化されていません"}
-        
-        sample_lab = system_state["lab_data"][0]
-        
-        # 13項目の存在チェック
-        criteria_status = {}
-        for criterion in COMPLETE_EVALUATION_CRITERIA:
-            criteria_status[criterion] = {
-                "exists": criterion in sample_lab,
-                "value": sample_lab.get(criterion, "不明"),
-                "type": type(sample_lab.get(criterion, None)).__name__
-            }
-        
-        return {
-            "total_labs": len(system_state["lab_data"]),
-            "sample_lab": {
-                "id": sample_lab.get("id"),
-                "name": sample_lab.get("name"),
-                "all_fields": list(sample_lab.keys())
-            },
-            "criteria_status": criteria_status,
-            "missing_criteria": [c for c in COMPLETE_EVALUATION_CRITERIA if c not in sample_lab],
-            "extra_fields": [k for k in sample_lab.keys() if k not in COMPLETE_EVALUATION_CRITERIA],
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        return {
-            "error": f"データ確認でエラーが発生しました: {str(e)}",
-            "timestamp": datetime.now().isoformat()
-        }
-
-@app.get("/api/v1/config", response_class=JSONResponse)
-async def get_system_config():
-    """システム設定情報取得"""
-    try:
-        return {
-            "system_config": {
-                "version": "3.0.0",
-                "api_version": "v1",
-                "max_request_size": "10MB",
-                "timeout_seconds": 30,
-                "supported_methods": ["GET", "POST", "OPTIONS"],
-                "cors_enabled": True
-            },
-            "evaluation_config": {
-                "criteria_count": len(COMPLETE_EVALUATION_CRITERIA),
-                "value_range": {"min": 1, "max": 10},
-                "required_fields": COMPLETE_EVALUATION_CRITERIA
-            },
-            "lab_config": {
-                "total_labs": len(system_state["lab_data"]),
-                "field_count": len(RESEARCH_FIELDS_DATA),
-                "matching_algorithm": "fuzzy_genetic"
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"設定情報の取得に失敗しました: {str(e)}")
-
-@app.get("/api/v1/sample-profile", response_class=JSONResponse)
-async def get_sample_profile():
-    """サンプルプロフィール取得"""
-    try:
-        sample_profiles = [
-            {
-                "name": "AI研究志向",
-                "description": "人工知能・機械学習分野に強い関心",
-                "profile": {
-                    "research_intensity": 9.0,
-                    "advisor_style": 6.0,
-                    "team_work": 7.0,
-                    "workload": 8.0,
-                    "theory_practice": 7.0,
-                    "research_field_match": 10.0,
-                    "skill_development": 8.0,
-                    "lab_atmosphere": 7.0,
-                    "flexibility": 6.0,
-                    "publication_opportunity": 9.0,
-                    "interdisciplinary": 6.0,
-                    "communication_style": 7.0,
-                    "innovation_risk": 9.0
-                }
-            },
-            {
-                "name": "バランス型",
-                "description": "全体的にバランスの取れた志向",
-                "profile": {
-                    "research_intensity": 6.0,
-                    "advisor_style": 6.0,
-                    "team_work": 7.0,
-                    "workload": 6.0,
-                    "theory_practice": 6.0,
-                    "research_field_match": 7.0,
-                    "skill_development": 7.0,
-                    "lab_atmosphere": 7.0,
-                    "flexibility": 7.0,
-                    "publication_opportunity": 6.0,
-                    "interdisciplinary": 6.0,
-                    "communication_style": 7.0,
-                    "innovation_risk": 6.0
-                }
-            },
-            {
-                "name": "デザイン重視",
-                "description": "クリエイティブ・デザイン分野志向",
-                "profile": {
-                    "research_intensity": 6.0,
-                    "advisor_style": 8.0,
-                    "team_work": 9.0,
-                    "workload": 5.0,
-                    "theory_practice": 8.0,
-                    "research_field_match": 8.0,
-                    "skill_development": 9.0,
-                    "lab_atmosphere": 9.0,
-                    "flexibility": 9.0,
-                    "publication_opportunity": 5.0,
-                    "interdisciplinary": 8.0,
-                    "communication_style": 9.0,
-                    "innovation_risk": 8.0
-                }
-            }
-        ]
-        
-        return {
-            "sample_profiles": sample_profiles,
-            "usage": "これらのプロフィールはテスト・デモ用です",
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"サンプルプロフィールの取得に失敗しました: {str(e)}")
-
-@app.post("/api/v1/validate-profile", response_class=JSONResponse)
-async def validate_student_profile(profile_data: dict):
-    """学生プロフィールの検証"""
-    try:
-        validation_results = {
-            "is_valid": True,
-            "errors": [],
-            "warnings": [],
-            "suggestions": []
-        }
-        
-        # 必須フィールドチェック
-        for criterion in COMPLETE_EVALUATION_CRITERIA:
-            if criterion not in profile_data:
-                validation_results["is_valid"] = False
-                validation_results["errors"].append(f"必須フィールドが不足: {criterion}")
-            else:
-                value = profile_data[criterion]
-                if not isinstance(value, (int, float)):
-                    validation_results["is_valid"] = False
-                    validation_results["errors"].append(f"無効なデータ型: {criterion} ({type(value).__name__})")
-                elif not (1 <= value <= 10):
-                    validation_results["is_valid"] = False
-                    validation_results["errors"].append(f"値の範囲外: {criterion} = {value} (1-10が必要)")
-                elif value == 5.0:
-                    validation_results["warnings"].append(f"中間値: {criterion} = {value} (より具体的な値を推奨)")
-        
-        # バランスチェック
-        if validation_results["is_valid"]:
-            values = [profile_data[c] for c in COMPLETE_EVALUATION_CRITERIA if c in profile_data]
-            if values:
-                mean_val = sum(values) / len(values)
-                if mean_val < 3.0:
-                    validation_results["suggestions"].append("全体的に低い値です。より積極的な評価を検討してください")
-                elif mean_val > 8.0:
-                    validation_results["suggestions"].append("全体的に高い値です。より現実的な評価を検討してください")
-                
-                # 分散チェック
-                variance = sum((v - mean_val) ** 2 for v in values) / len(values)
-                if variance < 0.5:
-                    validation_results["suggestions"].append("値のばらつきが少ないです。特徴をより明確にすることを推奨します")
-        
-        return {
-            "validation": validation_results,
-            "profile_summary": {
-                "field_count": len([k for k in profile_data.keys() if k in COMPLETE_EVALUATION_CRITERIA]),
-                "required_field_count": len(COMPLETE_EVALUATION_CRITERIA),
-                "completion_rate": len([k for k in profile_data.keys() if k in COMPLETE_EVALUATION_CRITERIA]) / len(COMPLETE_EVALUATION_CRITERIA)
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"プロフィール検証に失敗しました: {str(e)}")
-
-@app.get("/api/v1/system-info", response_class=JSONResponse)
-async def get_detailed_system_info():
-    """詳細システム情報"""
-    try:
-        import platform
-        import psutil
-        
-        system_info = {
-            "application": {
-                "name": "研究室選択支援システム",
-                "version": "3.0.0",
-                "api_version": "v1",
-                "description": "遺伝的アルゴリズムを用いたファジィ決定木による研究室マッチングシステム"
-            },
-            "server": {
-                "platform": platform.platform(),
-                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
-                "architecture": platform.architecture()[0],
-                "processor": platform.processor() or "Unknown"
-            },
-            "features": {
-                "numpy_available": HAS_NUMPY,
-                "fastapi_available": HAS_FASTAPI,
-                "fuzzy_inference": True,
-                "genetic_algorithm": True,
-                "decision_tree": True,
-                "cors_enabled": True
-            },
-            "data": {
-                "research_fields": len(RESEARCH_FIELDS_DATA),
-                "evaluation_criteria": len(COMPLETE_EVALUATION_CRITERIA),
-                "lab_database": len(system_state["lab_data"]),
-                "algorithm_components": ["fuzzy_membership", "genetic_optimization", "decision_tree_classification"]
-            },
-            "runtime": {
-                "uptime_seconds": int((datetime.now() - system_state["server_start_time"]).total_seconds()),
-                "total_requests": system_state["api_calls"],
-                "error_count": system_state["error_count"],
-                "evaluation_count": system_state["evaluation_count"]
-            },
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        return system_info
-        
-    except Exception as e:
-        # psutilが利用できない場合の基本情報
-        return {
-            "application": {
-                "name": "研究室選択支援システム",
-                "version": "3.0.0",
-                "status": "operational"
-            },
-            "error": f"詳細情報の取得に失敗: {str(e)}",
-            "timestamp": datetime.now().isoformat()
-        }
-    """システム統計情報"""
+@app.get("/api/debug/test")
+async def debug_test():
+    """接続・動作テスト用エンドポイント"""
     return {
-        "system_info": {
-            "version": "3.0.0",
-            "initialized": system_state["initialized"],
-            "uptime_seconds": int((datetime.now() - system_state["server_start_time"]).total_seconds()),
-            "database_version": system_state["database_version"]
+        "status": "success",
+        "message": "APIエンドポイントは正常に動作しています",
+        "server_time": datetime.now().isoformat(),
+        "system_status": "operational" if system_state["initialized"] else "initializing",
+        "modules_available": {
+            "fuzzy": FUZZY_AVAILABLE,
+            "genetic": GENETIC_AVAILABLE,
+            "decision_tree": DECISION_TREE_AVAILABLE,
+            "settings": SETTINGS_AVAILABLE
         },
-        "usage_stats": {
-            "total_api_calls": system_state["api_calls"],
-            "evaluation_count": system_state["evaluation_count"],
-            "error_count": system_state["error_count"],
-            "success_rate": (system_state["api_calls"] - system_state["error_count"]) / max(1, system_state["api_calls"])
+        "test_data": {
+            "number": 12345,
+            "boolean": True,
+            "array": [1, 2, 3, 4, 5],
+            "object": {"key": "value", "nested": {"test": "success"}}
         },
-        "data_stats": {
-            "research_fields": len(RESEARCH_FIELDS_DATA),
-            "evaluation_criteria": len(COMPLETE_EVALUATION_CRITERIA),
-            "lab_database_size": len(system_state["lab_data"]),
-            "last_updated": system_state["last_updated"]
+        "available_endpoints": {
+            "evaluate": "POST /api/evaluate",
+            "optimize": "POST /api/optimize",
+            "labs": "GET /api/labs", 
+            "fields": "GET /api/fields",
+            "status": "GET /health"
         }
     }
 
-# サーバー起動設定（改善版）
-def start_server():
-    """サーバー起動関数"""
-    
-    # システム初期化
-    print("🔧 システム初期化中...")
-    if not initialize_system():
-        print("❌ システム初期化に失敗しました")
-        return False
-    
-    # ポート設定
-    port = int(os.getenv("PORT", 8000))
-    host = os.getenv("HOST", "0.0.0.0")
-    
-    print(f"\n🚀 研究室選択支援システム v3.0 サーバー起動...")
-    print(f"📍 URL: http://localhost:{port}")
-    print(f"📚 API文書: http://localhost:{port}/docs")
-    print(f"🔧 ヘルスチェック: http://localhost:{port}/health")
-    print(f"🎯 研究分野: {len(RESEARCH_FIELDS_DATA)}分野")
-    print(f"📊 評価基準: {len(COMPLETE_EVALUATION_CRITERIA)}項目")
-    print(f"🏛️ 研究室データ: {len(EXTENDED_LAB_DATA)}件")
-    
-    print("\n📋 利用可能なAPIエンドポイント:")
-    endpoints = [
-        ("GET", "/", "システム情報"),
-        ("GET", "/health", "ヘルスチェック"),
-        
-        # メインAPIエンドポイント（v1）
-        ("GET", "/api/v1/research-fields", "研究分野一覧"),
-        ("GET", "/api/v1/evaluation-criteria", "評価基準一覧"),
-        ("GET", "/api/v1/labs", "研究室一覧"),
-        ("POST", "/api/v1/match", "研究室マッチング"),
-        ("POST", "/api/v1/optimize", "重み最適化"),
-        ("GET", "/api/v1/stats", "システム統計"),
-        ("GET", "/api/v1/config", "システム設定"),
-        ("GET", "/api/v1/sample-profile", "サンプルプロフィール"),
-        ("POST", "/api/v1/validate-profile", "プロフィール検証"),
-        
-        # フロントエンド互換性エンドポイント
-        ("POST", "/api/evaluate", "研究室マッチング（互換）"),
-        ("POST", "/api/optimize", "重み最適化（互換）"),
-        ("GET", "/api/labs", "研究室一覧（互換）"),
-        ("GET", "/api/labs/{lab_id}", "研究室詳細"),
-        ("GET", "/api/fields", "研究分野一覧（互換）"),
-        ("GET", "/api/fields/{field_id}", "研究分野詳細"),
-        ("GET", "/api/categories", "研究分野カテゴリ"),
-        ("GET", "/api/evaluation-criteria", "評価基準（互換）"),
-        ("GET", "/api/status", "システム状態（互換）"),
-        
-        # デバッグ・診断エンドポイント
-        ("GET", "/api/debug/endpoints", "エンドポイント一覧"),
-        ("GET", "/api/debug/test", "接続テスト"),
-        ("POST", "/api/v1/test-match", "マッチングテスト"),
-        ("GET", "/api/v1/system-info", "詳細システム情報"),
-        
-        # API文書
-        ("GET", "/docs", "API文書（Swagger）"),
-        ("GET", "/redoc", "API文書（ReDoc）")
-    ]
-    
-    for method, path, description in endpoints:
-        print(f"   {method:4} {path:30} - {description}")
-    
-    print("\n💡 フロントエンドから接続テスト:")
-    print(f"   # 基本接続テスト")
-    print(f"   curl http://localhost:{port}/health")
-    print(f"   curl http://localhost:{port}/api/debug/test")
-    print(f"   curl http://localhost:{port}/api/debug/endpoints")
-    
-    print(f"\n   # データ取得テスト")
-    print(f"   curl http://localhost:{port}/api/fields")
-    print(f"   curl http://localhost:{port}/api/labs")
-    print(f"   curl http://localhost:{port}/api/evaluation-criteria")
-    
-    print(f"\n   # フロントエンド互換エンドポイントテスト")
-    print(f"   curl http://localhost:{port}/api/status")
-    print(f"   curl http://localhost:{port}/api/categories")
-    
-    print("\n💡 マッチングテスト:")
-    print(f"   # 簡易テスト")
-    print(f"   curl -X POST http://localhost:{port}/api/v1/test-match")
-    
-    print(f"   # 完全マッチングテスト（JSON）")
-    sample_json = '''{
-  "research_intensity": 8.0,
-  "advisor_style": 7.0,
-  "team_work": 6.0,
-  "workload": 7.0,
-  "theory_practice": 8.0,
-  "research_field_match": 9.0,
-  "skill_development": 7.0,
-  "lab_atmosphere": 8.0,
-  "flexibility": 6.0,
-  "publication_opportunity": 8.0,
-  "interdisciplinary": 5.0,
-  "communication_style": 7.0,
-  "innovation_risk": 8.0
-}'''
-    print(f"   curl -X POST http://localhost:{port}/api/evaluate \\")
-    print(f"        -H 'Content-Type: application/json' \\")
-    print(f"        -d '{sample_json}'")
-    
-    print(f"\n🔧 トラブルシューティング:")
-    print(f"   - エンドポイント一覧: http://localhost:{port}/api/debug/endpoints")
-    print(f"   - 接続テスト: http://localhost:{port}/api/debug/test")
-    print(f"   - システム詳細: http://localhost:{port}/api/v1/system-info")
-    print(f"   - API文書: http://localhost:{port}/docs")
-    
-    print(f"\n📝 フロントエンド開発者向け:")
-    print(f"   - ベースURL: http://localhost:{port}")
-    print(f"   - メインマッチングAPI: POST /api/evaluate")
-    print(f"   - 研究室一覧: GET /api/labs")
-    print(f"   - 研究分野一覧: GET /api/fields")
-    print(f"   - システム状態: GET /api/status")
-    
-    print("\n🛑 停止するには Ctrl+C を押してください")
-    print("=" * 80)
-    
-    try:
-        uvicorn.run(
-            app,
-            host=host,
-            port=port,
-            reload=False,  # 本番環境では無効
-            log_level="info",
-            access_log=True,
-            server_header=False,
-            date_header=False
-        )
-        
-    except KeyboardInterrupt:
-        print("\n🛑 サーバーを停止しています...")
-        system_state["initialized"] = False
-        print("✅ サーバー停止完了")
-        
-    except Exception as e:
-        print(f"❌ サーバー起動エラー: {e}")
-        traceback.print_exc()
-        return False
-    
-    return True
+# OPTIONS プリフライトリクエスト対応
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    """CORS プリフライトリクエスト対応"""
+    print(f"🔄 OPTIONS リクエスト: {path}")
+    return JSONResponse(
+        content={"message": "CORS preflight handled"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization"
+        }
+    )
 
+# ===== システム初期化実行 =====
+initialize_system()
+
+# ===== サーバー起動部分 =====
 if __name__ == "__main__":
-    try:
-        # 基本的な環境チェック
-        print("🔍 環境チェック中...")
-        
-        if not HAS_FASTAPI:
-            print("❌ FastAPI が利用できません")
-            print("💡 解決方法: pip install fastapi uvicorn")
-            sys.exit(1)
-        
-        print(f"✅ Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
-        print(f"✅ FastAPI 利用可能")
-        print(f"✅ NumPy {'利用可能' if HAS_NUMPY else '利用不可（オプション）'}")
-        
-        # サーバー起動
-        success = start_server()
-        
-        if not success:
-            print("❌ サーバー起動に失敗しました")
-            sys.exit(1)
-            
-    except KeyboardInterrupt:
-        print("\n🛑 プロセスが中断されました")
-    except Exception as e:
-        print(f"❌ 予期しないエラー: {e}")
-        traceback.print_exc()
-        sys.exit(1)
+    print("\n🚀 FastAPI サーバー起動中...")
+    print(f"📍 URL: http://localhost:{settings.port}")
+    print(f"📚 API文書: http://localhost:{settings.port}/docs")
+    print("🔧 システム状況:")
+    print(f"  - ファジィ推論: {'✅' if FUZZY_AVAILABLE else '❌'}")
+    print(f"  - 遺伝的アルゴリズム: {'✅' if GENETIC_AVAILABLE else '❌'}")
+    print(f"  - 決定木: {'✅' if DECISION_TREE_AVAILABLE else '❌'}")
+    print(f"  - 研究室データ: {len(system_state['lab_database'])}件")
+    print(f"  - 評価基準: {len(COMPLETE_EVALUATION_CRITERIA)}項目")
+    
+    uvicorn.run(
+    app,
+    host=settings.host,
+    port=settings.port,
+    reload=False,  # reloadをFalseに変更
+    log_level="info"
+)
