@@ -1,7 +1,7 @@
-// frontend/src/services/api.ts - 完全修正版（構文エラー解決）
+// frontend/src/services/api.ts - 完全修正版
 import axios from 'axios';
 
-// ===== 型定義 =====
+// ===== 型定義（バックエンドの実際のレスポンスに対応） =====
 
 export interface EvaluationPreferences {
   research_intensity: number;       // 研究強度
@@ -19,41 +19,70 @@ export interface EvaluationPreferences {
   innovation_risk: number;         // 革新性・リスク許容度
 }
 
+// バックエンドの実際のレスポンス形式に合わせた型定義
 export interface LabResult {
   lab_name: string;
-  professor_name: string;
+  compatibility_score: number;     // バックエンドが実際に返すフィールド名
   research_area: string;
-  final_score: number;
-  detailed_scores?: { [key: string]: number };
+  professor_name?: string;
+  recommendation_level?: string;
   explanation?: string;
-  suggestions?: string[];
-  keywords?: string[];
-  metadata?: {
-    student_count?: number;
-    equipment_level?: number;
-    funding_level?: string;
-    faculty_type?: string;
+  detailed_analysis?: {
+    strengths?: string[];
+    concerns?: string[];
+    recommendations?: string[];
+    criteria_scores?: { [key: string]: any };
   };
+
+  // 後方互換性のため
+  final_score?: number;            // compatibility_scoreのエイリアス
 }
 
 export interface EvaluationResponse {
   lab_results: LabResult[];
+  results?: LabResult[];           // バックエンドが両方の形式で返す場合がある
   summary?: {
     total_labs: number;
     avg_score: number;
     max_score: number;
     min_score: number;
+    high_compatibility_count?: number;
+    medium_compatibility_count?: number;
+    low_compatibility_count?: number;
   };
   metadata?: {
-    evaluation_time: string;
-    algorithm_version: string;
+    processing_time?: number;
+    evaluation_count?: number;
+    timestamp?: string;
+    endpoint?: string;
+    calculation_method?: string;
+    criteria_used?: number;
+  };
+  warnings?: {
+    calculation_errors?: string[];
+    message?: string;
   };
 }
 
 export interface StudentProfile {
-  evaluation_criteria: EvaluationPreferences;
-  field_interests: { [key: string]: number };
+  evaluation_criteria?: EvaluationPreferences;
+  field_interests?: { [key: string]: number };
   profile_name?: string;
+
+  // 直接フィールド形式もサポート（バックエンド互換性）
+  research_intensity?: number;
+  advisor_style?: number;
+  team_work?: number;
+  workload?: number;
+  theory_practice?: number;
+  research_field_match?: number;
+  skill_development?: number;
+  lab_atmosphere?: number;
+  flexibility?: number;
+  publication_opportunity?: number;
+  interdisciplinary?: number;
+  communication_style?: number;
+  innovation_risk?: number;
 }
 
 export interface ResearchField {
@@ -67,41 +96,41 @@ export interface ResearchField {
 
 // ===== 定数データ =====
 
-export const RESEARCH_FIELDS: ResearchField[] = [
-  // テクノロジー・システム分野
-  { id: 'ai_ml', name: '人工知能・機械学習', category: 'テクノロジー・システム', description: 'AI技術、機械学習、データサイエンス', faculty_count: 7, keywords: ['機械学習', 'データ解析', 'AI'] },
-  { id: 'image_processing', name: '画像・映像処理', category: 'テクノロジー・システム', description: 'コンピュータビジョン、画像解析、映像技術', faculty_count: 6, keywords: ['画像処理', 'CV', '映像'] },
-  { id: 'network_security', name: 'ネットワーク・セキュリティ', category: 'テクノロジー・システム', description: 'ネットワーク技術、情報セキュリティ、通信システム', faculty_count: 3, keywords: ['セキュリティ', 'ネットワーク'] },
-  { id: 'database_systems', name: 'データベース・情報システム', category: 'テクノロジー・システム', description: 'データベース設計、情報システム開発', faculty_count: 3, keywords: ['DB', 'システム'] },
-  { id: 'embedded_iot', name: '組込み・IoT', category: 'テクノロジー・システム', description: '組込みシステム、IoT、ユビキタス', faculty_count: 2, keywords: ['組込み', 'IoT'] },
-  { id: 'education_linguistics', name: '教育・言語学', category: 'テクノロジー・システム', description: '教育システム、言語処理、教育工学', faculty_count: 5, keywords: ['教育', '言語処理'] },
-  { id: 'natural_science_math', name: '自然科学・数理', category: 'テクノロジー・システム', description: '数理科学、自然科学シミュレーション', faculty_count: 6, keywords: ['数理', '科学'] },
-  { id: 'medical_healthcare', name: '医療情報・ヘルスケア', category: 'テクノロジー・システム', description: '医療情報システム、ヘルスケアIT', faculty_count: 2, keywords: ['医療', 'ヘルスケア'] },
-  { id: 'tourism_regional', name: '観光情報・地域システム', category: 'テクノロジー・システム', description: '観光情報システム、地域情報化', faculty_count: 2, keywords: ['観光', '地域'] },
-  { id: 'business_decision', name: '経営情報・意思決定支援', category: 'テクノロジー・システム', description: '経営情報システム、意思決定支援', faculty_count: 3, keywords: ['経営', '意思決定'] },
-  { id: 'audio_processing', name: '音声・音響情報処理', category: 'テクノロジー・システム', description: '音声処理、音響信号処理', faculty_count: 2, keywords: ['音声', '音響'] },
-  { id: 'system_ethics', name: 'システム運用・情報倫理', category: 'テクノロジー・システム', description: 'システム運用管理、情報倫理', faculty_count: 3, keywords: ['運用', '倫理'] },
-
-  // クリエイティブ分野
-  { id: 'web_design', name: 'Webデザイン・UI/UX', category: 'クリエイティブ', description: 'Webデザイン、ユーザーインターフェース設計', faculty_count: 4, keywords: ['Web', 'UI/UX'] },
-  { id: 'design_visual', name: 'デザイン・視覚表現', category: 'クリエイティブ', description: 'グラフィックデザイン、視覚芸術', faculty_count: 4, keywords: ['デザイン', 'グラフィック'] },
-  { id: 'video_animation', name: '映像・アニメーション', category: 'クリエイティブ', description: '映像制作、アニメーション技術', faculty_count: 2, keywords: ['映像', 'アニメ'] },
-  { id: 'computer_music', name: 'コンピュータ音楽・サウンドアート', category: 'クリエイティブ', description: '電子音楽、サウンドアート', faculty_count: 2, keywords: ['音楽', 'サウンド'] },
-
-  // エンターテイメント分野
-  { id: 'game_esports', name: 'ゲーム開発・eスポーツ', category: 'エンターテイメント', description: 'ゲーム開発、eスポーツ技術', faculty_count: 2, keywords: ['ゲーム', 'eスポーツ'] },
-  { id: 'vr_ar_media', name: 'VR/AR・メディアアート', category: 'エンターテイメント', description: 'VR/AR技術、メディアアート', faculty_count: 2, keywords: ['VR', 'AR', 'メディアアート'] },
-
-  // 人文・社会・体育分野
-  { id: 'philosophy_humanities', name: '哲学・人文・環境行動学', category: '人文・社会・体育', description: '哲学、人文科学、環境行動学', faculty_count: 2, keywords: ['哲学', '人文', '環境'] },
-  { id: 'sports_science', name: 'スポーツ・体育科学', category: '人文・社会・体育', description: 'スポーツ科学、体育工学', faculty_count: 2, keywords: ['スポーツ', '体育'] }
-];
-
 export const FIELD_CATEGORIES = [
   'テクノロジー・システム',
   'クリエイティブ',
   'エンターテイメント',
   '人文・社会・体育'
+];
+
+export const RESEARCH_FIELDS: ResearchField[] = [
+  // テクノロジー・システム分野
+  { id: 'ai_ml', name: '人工知能・機械学習', category: 'テクノロジー・システム', description: 'AI技術、機械学習、データサイエンス', faculty_count: 7 },
+  { id: 'image_processing', name: '画像・映像処理', category: 'テクノロジー・システム', description: 'コンピュータビジョン、画像解析、映像技術', faculty_count: 6 },
+  { id: 'network_security', name: 'ネットワーク・セキュリティ', category: 'テクノロジー・システム', description: 'ネットワーク技術、情報セキュリティ', faculty_count: 3 },
+  { id: 'database_systems', name: 'データベース・情報システム', category: 'テクノロジー・システム', description: 'データベース設計、情報システム開発', faculty_count: 3 },
+  { id: 'embedded_iot', name: '組込み・IoT', category: 'テクノロジー・システム', description: '組込みシステム、IoT、ユビキタス', faculty_count: 2 },
+  { id: 'education_linguistics', name: '教育・言語学', category: 'テクノロジー・システム', description: '教育システム、言語処理', faculty_count: 5 },
+  { id: 'natural_science_math', name: '自然科学・数理', category: 'テクノロジー・システム', description: '数理科学、自然科学シミュレーション', faculty_count: 6 },
+  { id: 'medical_healthcare', name: '医療情報・ヘルスケア', category: 'テクノロジー・システム', description: '医療情報システム、ヘルスケアIT', faculty_count: 2 },
+  { id: 'tourism_regional', name: '観光情報・地域システム', category: 'テクノロジー・システム', description: '観光情報システム、地域情報化', faculty_count: 2 },
+  { id: 'business_decision', name: '経営情報・意思決定支援', category: 'テクノロジー・システム', description: '経営情報システム、意思決定支援', faculty_count: 3 },
+  { id: 'audio_processing', name: '音声・音響情報処理', category: 'テクノロジー・システム', description: '音声処理、音響信号処理', faculty_count: 2 },
+  { id: 'system_ethics', name: 'システム運用・情報倫理', category: 'テクノロジー・システム', description: 'システム運用管理、情報倫理', faculty_count: 3 },
+
+  // クリエイティブ分野
+  { id: 'web_design', name: 'Webデザイン・UI/UX', category: 'クリエイティブ', description: 'Webデザイン、ユーザーインターフェース設計', faculty_count: 4 },
+  { id: 'design_visual', name: 'デザイン・視覚表現', category: 'クリエイティブ', description: 'グラフィックデザイン、視覚芸術', faculty_count: 4 },
+  { id: 'video_animation', name: '映像・アニメーション', category: 'クリエイティブ', description: '映像制作、アニメーション表現', faculty_count: 2 },
+  { id: 'computer_music', name: 'コンピュータ音楽・サウンドアート', category: 'クリエイティブ', description: 'コンピュータ音楽、サウンドアート', faculty_count: 2 },
+
+  // エンターテイメント分野
+  { id: 'game_esports', name: 'ゲーム開発・eスポーツ', category: 'エンターテイメント', description: 'ゲーム開発、eスポーツ、ゲーミング', faculty_count: 2 },
+  { id: 'vr_ar_media', name: 'VR/AR・メディアアート', category: 'エンターテイメント', description: 'VR/AR技術、メディアアート', faculty_count: 2 },
+
+  // 人文・社会・体育分野
+  { id: 'philosophy_humanities', name: '哲学・人文・環境行動学', category: '人文・社会・体育', description: '哲学、人文学、環境行動学', faculty_count: 2 },
+  { id: 'sports_science', name: 'スポーツ・体育科学', category: '人文・社会・体育', description: 'スポーツ科学、体育学', faculty_count: 2 }
 ];
 
 export const CRITERIA_INFO = {
@@ -172,10 +201,6 @@ export const CRITERIA_INFO = {
   }
 };
 
-export interface ResearchFieldInterests {
-  [key: string]: number;
-}
-
 // ===== ユーティリティ関数 =====
 
 export const fieldUtils = {
@@ -190,6 +215,12 @@ export const fieldUtils = {
   getAllCategories: (): string[] => {
     return FIELD_CATEGORIES;
   }
+};
+
+// スコア取得ヘルパー関数（compatibility_score と final_score の両方に対応）
+export const getLabScore = (labResult: LabResult): number => {
+  // compatibility_score を優先、なければ final_score を使用
+  return labResult.compatibility_score ?? labResult.final_score ?? 0;
 };
 
 // ===== APIサービスクラス =====
@@ -253,17 +284,25 @@ class ApiService {
 
       console.log('📥 レスポンス受信:', response.data);
 
-      // レスポンスデータの正規化
+      // レスポンスデータの正規化と後方互換性対応
       const data = response.data;
+
+      // lab_results の各項目に final_score を追加（後方互換性）
+      const normalizedLabResults = (data.lab_results || data.results || []).map((lab: any) => ({
+        ...lab,
+        final_score: lab.compatibility_score ?? lab.final_score ?? 0  // final_scoreを追加
+      }));
+
       const normalizedResponse: EvaluationResponse = {
-        lab_results: data.lab_results || data.results || [],
+        lab_results: normalizedLabResults,
         summary: data.summary || {
-          total_labs: data.lab_results?.length || 0,
+          total_labs: normalizedLabResults.length,
           avg_score: 0,
           max_score: 0,
           min_score: 0
         },
-        metadata: data.metadata
+        metadata: data.metadata,
+        warnings: data.warnings
       };
 
       console.log('✅ 評価完了:', normalizedResponse);
@@ -307,77 +346,36 @@ class ApiService {
 
   // デモプロファイル取得
   async getDemoProfile(): Promise<StudentProfile> {
-    try {
-      const response = await axios.get(`${this.baseURL}/api/demo-profile`);
-      return response.data;
-    } catch (error) {
-      console.error('デモプロファイル取得エラー:', error);
-      // フォールバック用のデモデータ
-      return {
-        evaluation_criteria: {
-          research_intensity: 7,
-          advisor_style: 6,
-          team_work: 8,
-          workload: 6,
-          theory_practice: 7,
-          research_field_match: 9,
-          skill_development: 8,
-          lab_atmosphere: 7,
-          flexibility: 6,
-          publication_opportunity: 8,
-          interdisciplinary: 7,
-          communication_style: 6,
-          innovation_risk: 7,
-        },
-        field_interests: {
-          'ai_ml': 9,
-          'image_processing': 7,
-          'web_design': 6
-        },
-        profile_name: 'デモユーザー'
-      };
-    }
-  }
-
-  // 研究分野データ取得
-  async getResearchFields(): Promise<{ research_fields: ResearchField[]; total_fields: number; total_labs: number }> {
-    try {
-      const response = await axios.get(`${this.baseURL}/api/research-fields`);
-      return response.data;
-    } catch (error) {
-      console.error('研究分野取得エラー:', error);
-      // フォールバック：ローカルデータを返す
-      return {
-        research_fields: RESEARCH_FIELDS,
-        total_fields: RESEARCH_FIELDS.length,
-        total_labs: RESEARCH_FIELDS.reduce((sum, field) => sum + field.faculty_count, 0)
-      };
-    }
+    return {
+      evaluation_criteria: {
+        research_intensity: 7.0,
+        advisor_style: 6.0,
+        team_work: 7.0,
+        workload: 6.0,
+        theory_practice: 7.0,
+        research_field_match: 8.0,
+        skill_development: 7.0,
+        lab_atmosphere: 7.0,
+        flexibility: 7.0,
+        publication_opportunity: 8.0,
+        interdisciplinary: 6.0,
+        communication_style: 6.0,
+        innovation_risk: 6.0,
+      },
+      field_interests: {
+        'ai_ml': 8.0,
+        'image_processing': 6.0,
+        'web_design': 7.0,
+        'game_esports': 5.0,
+        'vr_ar_media': 6.0,
+      }
+    };
   }
 }
 
-// ===== エクスポート =====
-
 export const apiService = new ApiService();
 
+// 接続テスト関数
 export const testApiConnection = async (): Promise<boolean> => {
   return await apiService.testConnection();
 };
-
-export const validateEvaluationPreferences = (preferences: Partial<EvaluationPreferences>): string[] => {
-  const errors: string[] = [];
-  const requiredCriteria = Object.keys(CRITERIA_INFO);
-
-  for (const criterion of requiredCriteria) {
-    const value = preferences[criterion as keyof EvaluationPreferences];
-    if (value === undefined || value === null) {
-      errors.push(`${CRITERIA_INFO[criterion as keyof typeof CRITERIA_INFO].name}が未設定です`);
-    } else if (value < 1 || value > 10) {
-      errors.push(`${CRITERIA_INFO[criterion as keyof typeof CRITERIA_INFO].name}の値が範囲外です (1-10)`);
-    }
-  }
-
-  return errors;
-};
-
-export default apiService;
