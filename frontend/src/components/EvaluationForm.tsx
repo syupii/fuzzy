@@ -87,8 +87,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     flexibility: 5,
     publication_opportunity: 5,
     interdisciplinary: 5,
-    communication_style: 5,
-    innovation_risk: 5,
+    communication_style: 5
   });
 
   // 研究分野選択の状態
@@ -152,7 +151,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         publication_opportunity: 8,
         interdisciplinary: 7,
         communication_style: 6,
-        innovation_risk: 7,
       };
 
       setPreferences(demoPreferences);

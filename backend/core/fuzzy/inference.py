@@ -144,7 +144,6 @@ class Complete13CriteriaFuzzyEngine:
         # 特殊項目（調整重要度）
         "interdisciplinary": 0.8,
         "communication_style": 0.9,
-        "innovation_risk": 1.0
     }
     
     def __init__(self, 
@@ -445,34 +444,40 @@ class Complete13CriteriaFuzzyEngine:
         """特殊パターンルール追加"""
         
         rule_id = getattr(self, '_next_rule_id', 30)
+
+
         
-        # 革新性重視パターン
+        rule_id = getattr(self, '_next_rule_id', 30)
+    
+        # 挑戦的研究パターン（革新性の代替）
         self.rules.append(FuzzyRule(
             rule_id=rule_id,
             antecedents={
-                "innovation_risk": "high",
                 "research_intensity": "high",
-                "interdisciplinary": "high"
+                "interdisciplinary": "high",
+                "publication_opportunity": "high"
             },
-            consequent="high",
+            consequent="high", 
             confidence=0.8,
             rule_weight=1.0
         ))
         rule_id += 1
-        
-        # 安定性重視パターン
+    
+        # 安定志向パターン（安定性の代替）
         self.rules.append(FuzzyRule(
             rule_id=rule_id,
             antecedents={
-                "innovation_risk": "low",
-                "flexibility": "low",
-                "workload": "medium"
+                "workload": "medium",
+                "flexibility": "medium",
+                "advisor_style": "low"  # 指導重視
             },
             consequent="medium",
             confidence=0.7,
             rule_weight=0.9
         ))
         rule_id += 1
+    
+        self._next_rule_id = rule_id
         
         # 学際性重視パターン
         self.rules.append(FuzzyRule(
@@ -524,18 +529,17 @@ class Complete13CriteriaFuzzyEngine:
         rule_id += 1
         
         # クリエイティブ系
-        self.rules.append(FuzzyRule(
+       self.rules.append(FuzzyRule(
             rule_id=rule_id,
             antecedents={
-                "innovation_risk": "high",
                 "flexibility": "high",
-                "lab_atmosphere": "high"
+                "lab_atmosphere": "high",
+                "skill_development": "high"  # 創造性スキル重視
             },
             consequent="high",
             confidence=0.75,
             rule_weight=1.0
         ))
-        rule_id += 1
         
         self._next_rule_id = rule_id
     

@@ -26,7 +26,7 @@ except ImportError:
 
 # FastAPI関連のインポート
 try:
-    from fastapi import FastAPI, HTTPException, Request
+    from fastapi import FastAPI, HTTPException, Requestss
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import JSONResponse
     import uvicorn
@@ -81,8 +81,7 @@ COMPLETE_EVALUATION_CRITERIA = [
     "flexibility",            # 柔軟性
     "publication_opportunity", # 論文発表機会
     "interdisciplinary",      # 学際性
-    "communication_style",    # コミュニケーション
-    "innovation_risk"         # 革新性・リスク許容度
+    "communication_style",    # コミュニケーション  
 ]
 
 # サンプル研究室データ（42件の多様な研究室）
@@ -164,7 +163,6 @@ BALANCED_CRITERIA_WEIGHTS = {
     "flexibility": 0.9,
     "interdisciplinary": 0.8,
     "communication_style": 0.8,
-    "innovation_risk": 0.7
 }
 
 def calculate_balanced_similarity(student_val: float, lab_val: float) -> float:
@@ -280,8 +278,7 @@ def get_balanced_lab_value(lab_data: Dict[str, Any], criterion: str, lab_name: s
         "flexibility": (4.5, 8.5),
         "publication_opportunity": (4.5, 8.5),
         "interdisciplinary": (4.0, 8.0),
-        "communication_style": (5.0, 8.5),
-        "innovation_risk": (4.5, 8.0)
+        "communication_style": (5.0, 8.5)
     }
     
     min_val, max_val = base_ranges.get(criterion, (5.0, 8.0))

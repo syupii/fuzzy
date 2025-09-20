@@ -16,7 +16,6 @@ export interface EvaluationPreferences {
   publication_opportunity: number; // 論文発表機会
   interdisciplinary: number;       // 学際性
   communication_style: number;     // コミュニケーション
-  innovation_risk: number;         // 革新性・リスク許容度
 }
 
 // バックエンドの実際のレスポンス形式に合わせた型定義
@@ -193,11 +192,6 @@ export const CRITERIA_INFO = {
     name: 'コミュニケーション',
     description: '研究室での交流スタイル',
     range: '1(少人数密接) ～ 10(オープン交流)'
-  },
-  innovation_risk: {
-    name: '革新性・リスク許容度',
-    description: '新しい手法への挑戦度',
-    range: '1(安全手法) ～ 10(革新手法)'
   }
 };
 
@@ -360,7 +354,6 @@ class ApiService {
         publication_opportunity: 8.0,
         interdisciplinary: 6.0,
         communication_style: 6.0,
-        innovation_risk: 6.0,
       },
       field_interests: {
         'ai_ml': 8.0,
