@@ -1,8 +1,9 @@
-# core/genetic/evolution.py - 遺伝的アルゴリズム実装（SyntaxError修正版）
+# core/genetic/evolution.py - 遺伝的アルゴリズム完全実装版
 
 import random
 import math
 import numpy as np
+import time
 from typing import List, Dict, Any, Optional, Tuple, Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -35,7 +36,6 @@ class Individual:
             self.chromosome = [random.uniform(0.5, 2.0) for _ in range(13)]
     
     def __str__(self):
-        # SyntaxError修正：f-stringの中のリスト内包表記を分離
         chromosome_preview = [f'{x:.2f}' for x in self.chromosome[:5]]
         return f"Individual(fitness={self.fitness:.4f}, chromosome={chromosome_preview}...)"
     
@@ -62,13 +62,14 @@ class EvolutionResult:
 # ===== 遺伝的アルゴリズムエンジン =====
 
 class EvolutionEngine:
-    """遺伝的アルゴリズムエンジン"""
+    """遺伝的アルゴリズムエンジン（完全版）"""
     
     def __init__(self, config: EvolutionConfig):
         self.config = config
         self.population: List[Individual] = []
         self.generation = 0
         self.fitness_history: List[float] = []
+        self.avg_fitness_history: List[float] = []
         self.stagnation_count = 0
         self.best_fitness = float('-inf')
         
@@ -100,17 +101,21 @@ class EvolutionEngine:
         if tournament_size is None:
             tournament_size = self.config.tournament_size
         
-        tournament = random.sample(self.population, tournament_size)
+        # ランダムにトーナメント参加者を選択
+        tournament = random.sample(self.population, min(tournament_size, len(self.population)))
+        # 最も適応度の高い個体を返す
         return max(tournament, key=lambda x: x.fitness)
     
     def crossover(self, parent1: Individual, parent2: Individual) -> Tuple[Individual, Individual]:
         """交叉操作（一様交叉）"""
         if random.random() > self.config.crossover_rate:
+            # 交叉しない場合は親をそのままコピー
             return parent1.copy(), parent2.copy()
         
         child1_chromosome = []
         child2_chromosome = []
         
+        # 遺伝子ごとにランダムに親から継承
         for i in range(len(parent1.chromosome)):
             if random.random() < 0.5:
                 child1_chromosome.append(parent1.chromosome[i])
@@ -125,15 +130,15 @@ class EvolutionEngine:
         return child1, child2
     
     def mutate(self, individual: Individual) -> Individual:
-        """突然変異操作"""
+        """突然変異操作（ガウシアン変異）"""
         mutated = individual.copy()
         
         for i in range(len(mutated.chromosome)):
             if random.random() < self.config.mutation_rate:
-                # ガウシアン変異
+                # ガウシアン変異: 正規分布に従うランダムな値を加算
                 mutation_strength = 0.1
                 mutated.chromosome[i] += random.gauss(0, mutation_strength)
-                # 範囲制限
+                # 範囲制限（0.1〜3.0の範囲に収める）
                 mutated.chromosome[i] = max(0.1, min(3.0, mutated.chromosome[i]))
         
         # 染色体の正規化
@@ -145,10 +150,11 @@ class EvolutionEngine:
     
     def select_survivors(self, population: List[Individual]) -> List[Individual]:
         """生存者選択（エリート保存 + ルーレット選択）"""
+        
         # エリート個体の保存
         elite_count = max(1, int(self.config.population_size * self.config.elitism_rate))
         population.sort(key=lambda x: x.fitness, reverse=True)
-        survivors = population[:elite_count].copy()
+        survivors = [ind.copy() for ind in population[:elite_count]]
         
         # 残りをルーレット選択で決定
         remaining_count = self.config.population_size - elite_count
@@ -162,6 +168,7 @@ class EvolutionEngine:
             if total_fitness > 0:
                 probabilities = [f / total_fitness for f in adjusted_fitnesses]
                 
+                # ルーレット選択
                 for _ in range(remaining_count):
                     r = random.random()
                     cumulative = 0.0
@@ -172,198 +179,226 @@ class EvolutionEngine:
                             break
             else:
                 # フォールバック：ランダム選択
-                survivors.extend(random.choices(population, k=remaining_count))
+                survivors.extend([ind.copy() for ind in random.choices(population, k=remaining_count)])
         
         return survivors[:self.config.population_size]
     
+    def evolve_generation(self) -> None:
+        """1世代の進化プロセス"""
+        
+        # 新しい子個体を生成
+        offspring = []
+        
+        # エリート個体を保存
+        elite_count = max(1, int(self.config.population_size * self.config.elitism_rate))
+        self.population.sort(key=lambda x: x.fitness, reverse=True)
+        elites = [ind.copy() for ind in self.population[:elite_count]]
+        
+        # 残りの個体数を生成
+        offspring_count = self.config.population_size - elite_count
+        
+        while len(offspring) < offspring_count:
+            # 親の選択（トーナメント選択）
+            parent1 = self.tournament_selection()
+            parent2 = self.tournament_selection()
+            
+            # 交叉
+            child1, child2 = self.crossover(parent1, parent2)
+            
+            # 変異
+            child1 = self.mutate(child1)
+            child2 = self.mutate(child2)
+            
+            offspring.append(child1)
+            if len(offspring) < offspring_count:
+                offspring.append(child2)
+        
+        # 新世代を作成（エリート + 子個体）
+        self.population = elites + offspring[:offspring_count]
+        
+        # 年齢を更新
+        for ind in self.population:
+            ind.age += 1
+    
+    def calculate_statistics(self) -> Tuple[float, float, float, float]:
+        """集団の統計情報を計算"""
+        fitnesses = [ind.fitness for ind in self.population]
+        
+        best_fitness = max(fitnesses)
+        avg_fitness = sum(fitnesses) / len(fitnesses)
+        min_fitness = min(fitnesses)
+        std_fitness = np.std(fitnesses) if len(fitnesses) > 1 else 0.0
+        
+        return best_fitness, avg_fitness, min_fitness, std_fitness
+    
     def evolve(self, fitness_function: Callable, verbose: bool = True) -> EvolutionResult:
-        """進化プロセスの実行"""
+        """進化プロセスの実行（完全版）"""
         start_time = time.time()
         
         # 初期化
-        self.initialize_population()
+        if not self.population:
+            self.initialize_population()
+        
         self.generation = 0
         self.fitness_history = []
+        self.avg_fitness_history = []
         self.stagnation_count = 0
         self.best_fitness = float('-inf')
         
         if verbose:
-            print(f"🧬 遺伝的アルゴリズム開始: {self.config.generations}世代")
+            print(f"\n🧬 遺伝的アルゴリズム開始")
+            print(f"  集団サイズ: {self.config.population_size}")
+            print(f"  最大世代数: {self.config.generations}")
+            print(f"  交叉率: {self.config.crossover_rate}")
+            print(f"  変異率: {self.config.mutation_rate}")
         
+        # 進化ループ
         for generation in range(self.config.generations):
             self.generation = generation
             
-            # 適応度評価
+            # 全個体の適応度を評価
             for individual in self.population:
                 self.evaluate_fitness(individual, fitness_function)
             
-            # 統計情報の更新
-            current_best_fitness = max(ind.fitness for ind in self.population)
-            avg_fitness = sum(ind.fitness for ind in self.population) / len(self.population)
-            self.fitness_history.append(current_best_fitness)
+            # 統計情報の計算
+            best_fitness, avg_fitness, min_fitness, std_fitness = self.calculate_statistics()
+            
+            # 履歴に記録
+            self.fitness_history.append(best_fitness)
+            self.avg_fitness_history.append(avg_fitness)
+            
+            # 進捗表示
+            if verbose and generation % 10 == 0:
+                print(f"  世代 {generation:3d}: "
+                      f"最良={best_fitness:.6f}, "
+                      f"平均={avg_fitness:.6f}, "
+                      f"標準偏差={std_fitness:.6f}")
             
             # 収束判定
-            if abs(current_best_fitness - self.best_fitness) < self.config.convergence_threshold:
-                self.stagnation_count += 1
+            if generation > 0:
+                improvement = best_fitness - self.best_fitness
+                if abs(improvement) < self.config.convergence_threshold:
+                    self.stagnation_count += 1
+                    if self.stagnation_count >= self.config.max_stagnation:
+                        if verbose:
+                            print(f"\n✅ 収束検出（世代{generation}）")
+                            print(f"  改善が{self.config.max_stagnation}世代間で"
+                                  f"{self.config.convergence_threshold}以下")
+                        break
+                else:
+                    self.stagnation_count = 0
+                    self.best_fitness = best_fitness
             else:
-                self.stagnation_count = 0
-                self.best_fitness = current_best_fitness
-            
-            if verbose and generation % 10 == 0:
-                print(f"  世代 {generation}: 最高適応度={current_best_fitness:.4f}, 平均={avg_fitness:.4f}")
-            
-            # 早期終了条件
-            if self.stagnation_count >= self.config.max_stagnation:
-                if verbose:
-                    print(f"📊 収束達成: 世代 {generation} (停滞: {self.stagnation_count})")
-                break
+                self.best_fitness = best_fitness
             
             # 次世代の生成
-            new_population = []
-            
-            while len(new_population) < self.config.population_size:
-                # 親選択
-                parent1 = self.tournament_selection()
-                parent2 = self.tournament_selection()
-                
-                # 交叉
-                child1, child2 = self.crossover(parent1, parent2)
-                
-                # 突然変異
-                child1 = self.mutate(child1)
-                child2 = self.mutate(child2)
-                
-                new_population.extend([child1, child2])
-            
-            # 集団サイズの調整
-            new_population = new_population[:self.config.population_size]
-            
-            # 適応度評価
-            for individual in new_population:
-                self.evaluate_fitness(individual, fitness_function)
-            
-            # 生存者選択（エリート保存）
-            combined_population = self.population + new_population
-            self.population = self.select_survivors(combined_population)
-            
-            # 年齢の更新
-            for individual in self.population:
-                individual.age += 1
+            self.evolve_generation()
         
-        # 最終結果の準備
+        processing_time = time.time() - start_time
+        
+        # 最終的な最良個体を取得
         self.population.sort(key=lambda x: x.fitness, reverse=True)
         best_individual = self.population[0]
         
-        processing_time = time.time() - start_time
-        convergence_achieved = self.stagnation_count >= self.config.max_stagnation
-        
         if verbose:
-            print(f"🎉 進化完了: {self.generation + 1}世代, 処理時間={processing_time:.2f}秒")
-            print(f"📈 最高適応度: {best_individual.fitness:.4f}")
+            print(f"\n✅ 遺伝的アルゴリズム完了")
+            print(f"  最終世代: {self.generation + 1}")
+            print(f"  最良適応度: {best_individual.fitness:.6f}")
+            print(f"  処理時間: {processing_time:.2f}秒")
+            print(f"  収束判定: {'達成' if self.stagnation_count >= self.config.max_stagnation else '未達成'}")
         
+        # 結果を返す
         return EvolutionResult(
             best_individual=best_individual,
             best_fitness=best_individual.fitness,
-            generation=self.generation,
+            generation=self.generation + 1,
             population=self.population,
             fitness_history=self.fitness_history,
-            convergence_achieved=convergence_achieved,
+            convergence_achieved=self.stagnation_count >= self.config.max_stagnation,
             processing_time=processing_time,
             parameters_used=self.config
         )
+
+# ===== ヘルパー関数 =====
+
+def create_evolution_config(
+    population_size: int = 50,
+    generations: int = 100,
+    mutation_rate: float = 0.1,
+    crossover_rate: float = 0.8,
+    elitism_rate: float = 0.1,
+    tournament_size: int = 3,
+    convergence_threshold: float = 1e-6,
+    max_stagnation: int = 20
+) -> EvolutionConfig:
+    """進化設定の作成"""
+    return EvolutionConfig(
+        population_size=population_size,
+        generations=generations,
+        mutation_rate=mutation_rate,
+        crossover_rate=crossover_rate,
+        elitism_rate=elitism_rate,
+        tournament_size=tournament_size,
+        convergence_threshold=convergence_threshold,
+        max_stagnation=max_stagnation
+    )
+
+# ===== テスト関数 =====
+
+def test_evolution_engine():
+    """進化エンジンのテスト"""
     
-    def optimize_weights_for_student(self, student_profile: Dict[str, float], 
-                                   lab_database: List[Dict[str, Any]]) -> EvolutionResult:
-        """学生プロフィールに対する重み最適化"""
-        
-        def fitness_function(weights: List[float]) -> float:
-            """適応度関数：学生の希望に合う研究室との適合度を最大化"""
-            total_score = 0.0
-            count = 0
-            
-            # 重みを辞書形式に変換
-            criteria = [
-                "research_intensity", "advisor_style", "team_work", "workload", "theory_practice",
-                "research_field_match", "skill_development", "lab_atmosphere", "flexibility", 
-                "publication_opportunity", "interdisciplinary", "communication_style", "innovation_risk"
-            ]
-            
-            weight_dict = {criteria[i]: weights[i] for i in range(min(len(criteria), len(weights)))}
-            
-            for lab in lab_database:
-                try:
-                    # 各基準での類似度計算
-                    criterion_scores = []
-                    for criterion in criteria:
-                        if criterion in student_profile and criterion in lab:
-                            student_val = student_profile[criterion]
-                            lab_val = lab.get(criterion, 5.5)
-                            
-                            # 類似度計算
-                            diff = abs(student_val - lab_val)
-                            if diff <= 1.0:
-                                similarity = 1.0
-                            elif diff <= 2.0:
-                                similarity = 0.9
-                            elif diff <= 3.0:
-                                similarity = 0.7
-                            else:
-                                similarity = max(0.1, 0.7 - (diff - 3.0) * 0.1)
-                            
-                            # 重み適用
-                            weight = weight_dict.get(criterion, 1.0)
-                            weighted_score = similarity * weight
-                            criterion_scores.append(weighted_score)
-                    
-                    if criterion_scores:
-                        lab_score = sum(criterion_scores) / len(criterion_scores)
-                        total_score += lab_score
-                        count += 1
-                        
-                except Exception as e:
-                    continue
-            
-            return total_score / max(count, 1)
-        
-        # 進化実行
-        return self.evolve(fitness_function, verbose=True)
-
-# ===== ユーティリティ関数 =====
-
-def create_default_weights() -> Dict[str, float]:
-    """デフォルト重みを作成"""
-    return {
-        "research_intensity": 1.3,
-        "advisor_style": 1.2,
-        "team_work": 1.1,
-        "workload": 1.0,
-        "theory_practice": 1.1,
-        "research_field_match": 1.4,
-        "skill_development": 1.1,
-        "lab_atmosphere": 1.0,
-        "flexibility": 0.9,
-        "publication_opportunity": 1.2,
-        "interdisciplinary": 0.8,
-        "communication_style": 0.9,
-        "innovation_risk": 1.0
-    }
-
-def weights_list_to_dict(weights_list: List[float]) -> Dict[str, float]:
-    """重みリストを辞書に変換"""
-    criteria = [
-        "research_intensity", "advisor_style", "team_work", "workload", "theory_practice",
-        "research_field_match", "skill_development", "lab_atmosphere", "flexibility", 
-        "publication_opportunity", "interdisciplinary", "communication_style", "innovation_risk"
-    ]
+    print("=" * 60)
+    print("🧬 遺伝的アルゴリズムエンジンテスト")
+    print("=" * 60)
     
-    return {criteria[i]: weights_list[i] for i in range(min(len(criteria), len(weights_list)))}
-
-def weights_dict_to_list(weights_dict: Dict[str, float]) -> List[float]:
-    """重み辞書をリストに変換"""
-    criteria = [
-        "research_intensity", "advisor_style", "team_work", "workload", "theory_practice",
-        "research_field_match", "skill_development", "lab_atmosphere", "flexibility", 
-        "publication_opportunity", "interdisciplinary", "communication_style", "innovation_risk"
-    ]
+    # テスト用の適応度関数（簡単な最適化問題）
+    def test_fitness_function(chromosome: List[float]) -> float:
+        """テスト適応度関数: 全要素の二乗和の逆数を最大化"""
+        # 目標: 全ての要素を1.0に近づける
+        target = 1.0
+        total_error = sum((x - target) ** 2 for x in chromosome)
+        fitness = 1.0 / (total_error + 1e-6)
+        return fitness
     
-    return [weights_dict.get(criterion, 1.0) for criterion in criteria]
+    # 設定作成
+    config = create_evolution_config(
+        population_size=20,
+        generations=50,
+        mutation_rate=0.15,
+        crossover_rate=0.8,
+        elitism_rate=0.1,
+        max_stagnation=10
+    )
+    
+    print(f"\n📋 設定:")
+    print(f"  集団サイズ: {config.population_size}")
+    print(f"  世代数: {config.generations}")
+    print(f"  変異率: {config.mutation_rate}")
+    print(f"  交叉率: {config.crossover_rate}")
+    
+    # エンジン作成と実行
+    engine = EvolutionEngine(config)
+    result = engine.evolve(test_fitness_function, verbose=True)
+    
+    # 結果表示
+    print(f"\n📊 最終結果:")
+    print(f"  最良適応度: {result.best_fitness:.6f}")
+    print(f"  世代数: {result.generation}")
+    print(f"  処理時間: {result.processing_time:.2f}秒")
+    print(f"  収束: {'✅ 達成' if result.convergence_achieved else '❌ 未達成'}")
+    print(f"  最良個体の染色体（先頭5要素）: {[f'{x:.3f}' for x in result.best_individual.chromosome[:5]]}")
+    
+    # 適応度の推移をグラフ的に表示
+    print(f"\n📈 適応度推移（簡易版）:")
+    history_sample = result.fitness_history[::max(1, len(result.fitness_history) // 10)]
+    for i, fitness in enumerate(history_sample):
+        bar_length = int(fitness / max(history_sample) * 40)
+        print(f"  {'█' * bar_length} {fitness:.4f}")
+    
+    print("\n✅ テスト完了")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    # テスト実行
+    test_evolution_engine()

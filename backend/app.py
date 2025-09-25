@@ -1,60 +1,77 @@
 #!/usr/bin/env python3
 """
 遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム
-完全優先度対応版 FastAPI メインアプリケーション - app.py v5.0.0
-
-新機能:
-- 12項目評価基準
-- 各項目の優先度設定（1-10段階）
-- 優先度を考慮した重み付きマッチングアルゴリズム
-- 18分野研究分野対応
-- 統合AI評価エンジン
+FastAPI メインアプリケーション - 本格実装版
 """
 
 import os
 import sys
-import time
+import uvicorn
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
+from typing import Dict, List, Any, Optional, Tuple
 import json
-import math
+import time
 import random
-import traceback
-import logging
-from pathlib import Path
-from typing import Dict, List, Any, Optional, Union, Tuple
-from datetime import datetime
+import numpy as np
+from dataclasses import dataclass, asdict
 
-# 基本ライブラリのインポート
+# プロジェクトルートをパスに追加
+project_root = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, project_root)
+
+# システムモジュールのインポート
 try:
-    import numpy as np
-    HAS_NUMPY = True
+    from config.settings import settings
+    SETTINGS_AVAILABLE = True
 except ImportError:
-    HAS_NUMPY = False
-    print("⚠️ numpy が利用できません。基本機能で代替します。")
+    SETTINGS_AVAILABLE = False
+    class FallbackSettings:
+        app_name = "Lab Matching System with Genetic Fuzzy Decision Tree"
+        api_version = "v1"
+        host = "0.0.0.0"
+        port = 8000
+        debug = True
+        core_features = [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+    settings = FallbackSettings()
 
-# FastAPI関連のインポート
+# ファジィ・遺伝的アルゴリズムのインポート
 try:
-    from fastapi import FastAPI, HTTPException, Request
-    from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse, FileResponse
-    from fastapi.staticfiles import StaticFiles
-    import uvicorn
-    HAS_FASTAPI = True
-    print("✅ FastAPI モジュール正常にロード（優先度対応版）")
-except ImportError as e:
-    print(f"❌ FastAPI インポートエラー: {e}")
-    print("💡 解決方法: pip install fastapi uvicorn")
-    sys.exit(1)
+    from core.fuzzy.inference import SimpleFuzzyInferenceEngine
+    FUZZY_AVAILABLE = True
+except ImportError:
+    FUZZY_AVAILABLE = False
+    print("⚠️ ファジィモジュールが利用できません")
 
-# FastAPIアプリケーションインスタンス
+try:
+    from core.genetic.evolution import EvolutionEngine, EvolutionConfig, Individual
+    from core.genetic.population import Population, PopulationConfig
+    from core.genetic.operators import OperatorConfig, SelectionMethod, CrossoverMethod, MutationMethod
+    GENETIC_AVAILABLE = True
+except ImportError:
+    GENETIC_AVAILABLE = False
+    print("⚠️ 遺伝的アルゴリズムモジュールが利用できません")
+
+try:
+    from core.decision_tree.tree import FuzzyDecisionTree
+    DECISION_TREE_AVAILABLE = True
+except ImportError:
+    DECISION_TREE_AVAILABLE = False
+    print("⚠️ 決定木モジュールが利用できません")
+
+# FastAPIアプリケーション作成
 app = FastAPI(
-    title="遺伝的アルゴリズム×ファジィ決定木×優先度対応研究室選択支援システム",
-    description="18分野対応・12項目評価基準（優先度設定可能）による超高精度研究室マッチングシステム",
-    version="5.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    title=settings.app_name if SETTINGS_AVAILABLE else "Lab Matching System",
+    version=settings.api_version if SETTINGS_AVAILABLE else "v1",
+    description="遺伝的アルゴリズムを用いたファジィ決定木による研究室選択支援システム"
 )
 
-# CORS設定
+# CORSミドルウェア設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -63,687 +80,464 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 静的ファイル配信（フロントエンド用）
-if os.path.exists("../frontend/build"):
-    app.mount("/static", StaticFiles(directory="../frontend/build/static"), name="static")
-
-# ログ設定
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# システム状態管理
+# グローバル状態管理
 system_state = {
     "initialized": False,
+    "lab_database": [],
     "evaluation_count": 0,
-    "priority_evaluations": 0,  # 新規追加
-    "last_updated": None,
-    "server_start_time": datetime.now(),
-    "api_calls": 0,
-    "genetic_optimization_runs": 0,
-    "priority_aware_engines": {},  # 新規追加
-    "lab_database": []
+    "optimization_cache": {},
+    "genetic_engine": None,
+    "best_weights": None
 }
 
-# 12項目対応の評価基準（革新性項目削除済み）
-EVALUATION_CRITERIA = [
-    # 基本項目（5項目）
-    "research_intensity",      # 研究強度 (1:軽い研究 → 10:集中研究)
-    "advisor_style",          # 指導スタイル (1:厳格指導 → 10:自由指導)
-    "team_work",              # チームワーク (1:個人研究 → 10:チーム研究)
-    "workload",               # ワークロード (1:軽い負荷 → 10:重い負荷)
-    "theory_practice",        # 理論・実践バランス (1:理論重視 → 10:実践重視)
-    
-    # 拡張項目（5項目）
-    "research_field_match",   # 研究分野適合性 (1:広い分野 → 10:専門特化)
-    "skill_development",      # スキル開発 (1:専門特化 → 10:幅広いスキル)
-    "lab_atmosphere",         # 研究室雰囲気 (1:静寂集中 → 10:活発議論)
-    "flexibility",            # 柔軟性 (1:固定スケジュール → 10:柔軟スケジュール)
-    "publication_opportunity", # 論文発表機会 (1:少ない機会 → 10:豊富な機会)
-    
-    # 特殊項目（2項目）
-    "interdisciplinary",      # 学際性 (1:単一分野 → 10:学際連携)
-    "communication_style"     # コミュニケーション (1:少人数密接 → 10:オープン交流)
-]
+# ===== 研究室データベース =====
 
-# 評価基準の詳細情報
-CRITERIA_INFO = {
-    'research_intensity': {
-        'name': '研究強度',
-        'description': '研究にどれだけ集中的に取り組みたいか',
-        'range': '1（軽い研究）〜 10（集中研究）',
-        'category': 'basic'
-    },
-    'advisor_style': {
-        'name': '指導スタイル',
-        'description': '教授からの指導の受け方の好み',
-        'range': '1（厳格指導）〜 10（自由指導）',
-        'category': 'basic'
-    },
-    'team_work': {
-        'name': 'チームワーク',
-        'description': '研究での他者との協働の程度',
-        'range': '1（個人研究）〜 10（チーム研究）',
-        'category': 'basic'
-    },
-    'workload': {
-        'name': 'ワークロード',
-        'description': '研究活動の忙しさに対する許容度',
-        'range': '1（軽い負荷）〜 10（重い負荷）',
-        'category': 'basic'
-    },
-    'theory_practice': {
-        'name': '理論・実践バランス',
-        'description': '理論研究と実践的研究のバランス',
-        'range': '1（理論重視）〜 10（実践重視）',
-        'category': 'basic'
-    },
-    'research_field_match': {
-        'name': '研究分野適合性',
-        'description': '自分の興味と研究室の分野の一致度',
-        'range': '1（広い分野）〜 10（専門特化）',
-        'category': 'extended'
-    },
-    'skill_development': {
-        'name': 'スキル開発',
-        'description': '専門性と汎用性のバランス',
-        'range': '1（専門特化）〜 10（幅広いスキル）',
-        'category': 'extended'
-    },
-    'lab_atmosphere': {
-        'name': '研究室雰囲気',
-        'description': '研究室の全体的な雰囲気',
-        'range': '1（静寂集中）〜 10（活発議論）',
-        'category': 'extended'
-    },
-    'flexibility': {
-        'name': '柔軟性',
-        'description': '研究時間の自由度',
-        'range': '1（固定スケジュール）〜 10（柔軟スケジュール）',
-        'category': 'extended'
-    },
-    'publication_opportunity': {
-        'name': '論文発表機会',
-        'description': '研究成果の論文化機会',
-        'range': '1（少ない機会）〜 10（豊富な機会）',
-        'category': 'extended'
-    },
-    'interdisciplinary': {
-        'name': '学際性',
-        'description': '他分野との連携の程度',
-        'range': '1（単一分野）〜 10（学際連携）',
-        'category': 'special'
-    },
-    'communication_style': {
-        'name': 'コミュニケーション',
-        'description': '研究室での交流スタイル',
-        'range': '1（少人数密接）〜 10（オープン交流）',
-        'category': 'special'
-    }
-}
-
-# 新研究分野構成（18分野）
-RESEARCH_FIELDS = {
-    # テクノロジー・システム分野（12分野）
-    "ai_ml": {
-        "name": "人工知能・機械学習", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 7,
-        "faculty": ["伊藤雅彦", "内山敏雄", "小野亮太", "齋藤健司", "谷口文武", "辻準平", "山北貴典"]
-    },
-    "image_processing": {
-        "name": "画像・映像処理", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 6,
-        "faculty": ["森圭佑", "向田茂", "高井奈美", "藤原孝行", "越野一博", "上杉正人"]
-    },
-    "network_security": {
-        "name": "ネットワーク・セキュリティ", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 3,
-        "faculty": ["尾崎宏和", "中島潤", "佐々木洋平"]
-    },
-    "database_systems": {
-        "name": "データベース・情報システム", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 3,
-        "faculty": ["山北貴典", "坂田圭司", "向原強"]
-    },
-    "embedded_iot": {
-        "name": "組込み・IoT", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 2,
-        "faculty": ["田鎖次郎", "湯村翼"]
-    },
-    "education_linguistics": {
-        "name": "教育・言語学", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 5,
-        "faculty": ["飯嶋美知子", "金銀珠", "田中英夫", "齋藤一", "近澤潤"]
-    },
-    "natural_science": {
-        "name": "自然科学・数理", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 6,
-        "faculty": ["柿並義宏", "甫喜本司", "松井伸也", "新井山亮", "佐々木洋平", "湯村翼"]
-    },
-    "medical_healthcare": {
-        "name": "医療情報・ヘルスケア", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 2,
-        "faculty": ["越野一博", "上杉正人"]
-    },
-    "tourism_regional": {
-        "name": "観光情報・地域システム", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 2,
-        "faculty": ["齋藤一", "小野亮太"]
-    },
-    "business_decision": {
-        "name": "経営情報・意思決定支援", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 3,
-        "faculty": ["坂田圭司", "向原強", "田中英夫"]
-    },
-    "audio_processing": {
-        "name": "音声・音響情報処理", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 2,
-        "faculty": ["廣奥透", "森圭佑"]
-    },
-    "system_ethics": {
-        "name": "システム運用・情報倫理", 
-        "category": "テクノロジー・システム",
-        "faculty_count": 3,
-        "faculty": ["田鎖次郎", "中島潤", "三浦洋"]
-    },
-    
-    # クリエイティブ分野（4分野）
-    "web_design": {
-        "name": "Webデザイン・UI/UX", 
-        "category": "クリエイティブ",
-        "faculty_count": 4,
-        "faculty": ["杉沢愛美", "坂本牧葉", "高井奈美", "安田光孝"]
-    },
-    "design_visual": {
-        "name": "デザイン・視覚表現", 
-        "category": "クリエイティブ",
-        "faculty_count": 4,
-        "faculty": ["坂本牧葉", "大嶋宏一", "Marty M. ITO", "安田光孝"]
-    },
-    "video_animation": {
-        "name": "映像・アニメーション", 
-        "category": "クリエイティブ",
-        "faculty_count": 2,
-        "faculty": ["大嶋宏一", "島田映二"]
-    },
-    "computer_music": {
-        "name": "コンピュータ音楽・サウンドアート", 
-        "category": "クリエイティブ",
-        "faculty_count": 2,
-        "faculty": ["廣奥透", "島田映二"]
-    },
-    
-    # エンターテイメント分野（2分野）
-    "game_esports": {
-        "name": "ゲーム開発・eスポーツ", 
-        "category": "エンターテイメント",
-        "faculty_count": 2,
-        "faculty": ["藤原孝行", "織田哲"]
-    },
-    "vr_ar_media": {
-        "name": "VR/AR・メディアアート", 
-        "category": "エンターテイメント",
-        "faculty_count": 2,
-        "faculty": ["Marty M. ITO", "島田映二"]
-    },
-    
-    # 人文・社会・体育分野（2分野）
-    "philosophy_humanities": {
-        "name": "哲学・人文・環境行動学", 
-        "category": "人文・社会・体育",
-        "faculty_count": 2,
-        "faculty": ["三浦洋", "隼田尚彦"]
-    },
-    "sports_science": {
-        "name": "スポーツ・体育科学", 
-        "category": "人文・社会・体育",
-        "faculty_count": 2,
-        "faculty": ["綿谷貴志", "織田哲"]
-    }
-}
-
-# 重み設定
-BALANCED_CRITERIA_WEIGHTS = {criterion: 1.0/len(EVALUATION_CRITERIA) for criterion in EVALUATION_CRITERIA}
-
-# 優先度対応エンジンクラス群
-class PriorityAwareFuzzyEngine:
-    """優先度対応ファジィ推論エンジン（簡易版）"""
-    
-    def __init__(self):
-        self.initialized = True
-    
-    def predict_with_priorities(
-        self, 
-        student_profile: Dict[str, Any], 
-        lab_profile: Dict[str, Any],
-        priorities: Dict[str, float]
-    ) -> Tuple[float, str]:
-        """優先度を考慮したファジィ推論予測"""
-        
-        total_weighted_score = 0.0
-        total_weight = 0.0
-        
-        for criterion in EVALUATION_CRITERIA:
-            if criterion in student_profile and criterion in lab_profile:
-                student_val = float(student_profile[criterion])
-                lab_val = float(lab_profile[criterion])
-                priority = priorities.get(criterion, 5.0)
-                
-                # 正規化
-                if student_val > 1.0:
-                    student_val /= 10.0
-                if lab_val > 1.0:
-                    lab_val /= 10.0
-                
-                # ファジィ類似度計算（ガウシアン）
-                sigma = 0.25
-                diff = abs(student_val - lab_val)
-                fuzzy_similarity = math.exp(-(diff ** 2) / (2 * sigma ** 2))
-                
-                # 優先度による重み付け
-                priority_weight = priority / 10.0
-                weighted_score = fuzzy_similarity * priority_weight
-                
-                total_weighted_score += weighted_score
-                total_weight += priority_weight
-        
-        final_score = total_weighted_score / total_weight if total_weight > 0 else 0.0
-        explanation = f"優先度ファジィ推論: {final_score:.3f}"
-        
-        return final_score, explanation
-
-
-class PriorityAwareGeneticEngine:
-    """優先度対応遺伝的アルゴリズム（簡易版）"""
-    
-    def __init__(self, population_size: int = 20, generations: int = 15):
-        self.population_size = population_size
-        self.generations = generations
-        self.initialized = True
-    
-    def evaluate_with_priorities(
-        self,
-        student_profile: Dict[str, Any],
-        lab_profile: Dict[str, Any], 
-        priorities: Dict[str, float]
-    ) -> Tuple[float, str]:
-        """優先度を考慮した遺伝的評価"""
-        
-        # 進化的重み最適化のシミュレーション
-        best_fitness = 0.0
-        
-        for generation in range(5):  # 簡易版なので5世代のみ
-            # 重みベクトル生成
-            weights = {}
-            for criterion in EVALUATION_CRITERIA:
-                priority = priorities.get(criterion, 5.0)
-                # 優先度ベースの重み + ランダムノイズ
-                base_weight = priority / 10.0
-                noise = random.uniform(-0.1, 0.1)
-                weights[criterion] = max(0.1, min(1.0, base_weight + noise))
-            
-            # 適応度計算
-            fitness = self._calculate_fitness_with_weights(
-                student_profile, lab_profile, weights, priorities
-            )
-            
-            if fitness > best_fitness:
-                best_fitness = fitness
-        
-        explanation = f"優先度遺伝的アルゴリズム: {best_fitness:.3f}"
-        
-        return best_fitness, explanation
-    
-    def _calculate_fitness_with_weights(
-        self,
-        student_profile: Dict[str, Any],
-        lab_profile: Dict[str, Any],
-        weights: Dict[str, float],
-        priorities: Dict[str, float]
-    ) -> float:
-        """重み付き適応度計算"""
-        
-        total_score = 0.0
-        total_weight = 0.0
-        
-        for criterion in EVALUATION_CRITERIA:
-            if criterion in student_profile and criterion in lab_profile:
-                student_val = float(student_profile[criterion])
-                lab_val = float(lab_profile[criterion])
-                
-                # 正規化
-                if student_val > 1.0:
-                    student_val /= 10.0
-                if lab_val > 1.0:
-                    lab_val /= 10.0
-                
-                # 適合度
-                match = 1.0 - abs(student_val - lab_val)
-                
-                # 重みと優先度の組み合わせ
-                weight = weights.get(criterion, 0.5)
-                priority = priorities.get(criterion, 5.0) / 10.0
-                combined_weight = weight * priority
-                
-                total_score += match * combined_weight
-                total_weight += combined_weight
-        
-        return total_score / total_weight if total_weight > 0 else 0.0
-
-
-# サンプル研究室データ（デモ用）
 SAMPLE_LABS = [
-    {
-        "id": "lab_itoh",
-        "name": "伊藤雅彦研究室",
-        "advisor": "伊藤雅彦",
-        "research_area": "人工知能・機械学習",
-        "category": "テクノロジー・システム",
-        "research_intensity": 8.5,
-        "advisor_style": 7.0,
-        "team_work": 8.0,
-        "workload": 8.0,
-        "theory_practice": 6.5,
-        "research_field_match": 9.0,
-        "skill_development": 8.5,
-        "lab_atmosphere": 7.5,
-        "flexibility": 6.0,
-        "publication_opportunity": 9.0,
-        "interdisciplinary": 7.0,
-        "communication_style": 7.5
-    },
-    {
-        "id": "lab_uchiyama",
-        "name": "内山敏雄研究室",
-        "advisor": "内山敏雄",
-        "research_area": "人工知能・機械学習",
-        "category": "テクノロジー・システム",
-        "research_intensity": 9.0,
-        "advisor_style": 6.5,
-        "team_work": 7.5,
-        "workload": 8.5,
-        "theory_practice": 7.0,
-        "research_field_match": 9.0,
-        "skill_development": 8.0,
-        "lab_atmosphere": 7.0,
-        "flexibility": 5.5,
-        "publication_opportunity": 8.5,
-        "interdisciplinary": 6.5,
-        "communication_style": 7.0
-    },
-    {
-        "id": "lab_web_design",
-        "name": "Webデザイン研究室",
-        "advisor": "杉沢愛美",
-        "research_area": "Webデザイン・UI/UX",
-        "category": "クリエイティブ",
-        "research_intensity": 7.0,
-        "advisor_style": 8.5,
-        "team_work": 9.0,
-        "workload": 7.5,
-        "theory_practice": 8.0,
-        "research_field_match": 7.5,
-        "skill_development": 9.0,
-        "lab_atmosphere": 8.5,
-        "flexibility": 8.0,
-        "publication_opportunity": 6.5,
-        "interdisciplinary": 8.0,
-        "communication_style": 8.5
-    },
-    {
-        "id": "lab_game_dev",
-        "name": "ゲーム開発研究室",
-        "advisor": "藤原孝行",
-        "research_area": "ゲーム開発・eスポーツ",
-        "category": "エンターテイメント",
-        "research_intensity": 8.0,
-        "advisor_style": 7.5,
-        "team_work": 8.5,
-        "workload": 8.0,
-        "theory_practice": 7.5,
-        "research_field_match": 8.0,
-        "skill_development": 8.5,
-        "lab_atmosphere": 8.0,
-        "flexibility": 7.0,
-        "publication_opportunity": 7.0,
-        "interdisciplinary": 7.5,
-        "communication_style": 8.0
-    },
-    {
-        "id": "lab_sports",
-        "name": "スポーツ科学研究室",
-        "advisor": "綿谷貴志",
-        "research_area": "スポーツ・体育科学",
-        "category": "人文・社会・体育",
-        "research_intensity": 6.5,
-        "advisor_style": 8.0,
-        "team_work": 9.0,
-        "workload": 7.0,
-        "theory_practice": 8.5,
-        "research_field_match": 6.0,
-        "skill_development": 7.5,
-        "lab_atmosphere": 9.0,
-        "flexibility": 8.5,
-        "publication_opportunity": 6.0,
-        "interdisciplinary": 8.5,
-        "communication_style": 9.0
-    }
+    # テクノロジー・システム分野
+    {"id": "lab_001", "name": "松本研究室", "field": "人工知能・機械学習", "category": "technology",
+     "research_intensity": 0.85, "advisor_style": 0.65, "team_work": 0.75, "workload": 0.80, 
+     "theory_practice": 0.70, "research_field_match": 0.90, "skill_development": 0.85,
+     "lab_atmosphere": 0.70, "flexibility": 0.60, "publication_opportunity": 0.85,
+     "interdisciplinary": 0.65, "communication_style": 0.70},
+    
+    {"id": "lab_002", "name": "小川研究室", "field": "画像・映像処理", "category": "technology",
+     "research_intensity": 0.80, "advisor_style": 0.70, "team_work": 0.70, "workload": 0.75,
+     "theory_practice": 0.65, "research_field_match": 0.85, "skill_development": 0.80,
+     "lab_atmosphere": 0.75, "flexibility": 0.65, "publication_opportunity": 0.80,
+     "interdisciplinary": 0.60, "communication_style": 0.75},
+    
+    {"id": "lab_003", "name": "高橋研究室", "field": "ネットワーク・セキュリティ", "category": "technology",
+     "research_intensity": 0.75, "advisor_style": 0.60, "team_work": 0.65, "workload": 0.70,
+     "theory_practice": 0.75, "research_field_match": 0.80, "skill_development": 0.75,
+     "lab_atmosphere": 0.65, "flexibility": 0.70, "publication_opportunity": 0.75,
+     "interdisciplinary": 0.55, "communication_style": 0.65},
+    
+    {"id": "lab_004", "name": "坂田研究室", "field": "経営情報・意思決定支援", "category": "technology",
+     "research_intensity": 0.70, "advisor_style": 0.75, "team_work": 0.80, "workload": 0.65,
+     "theory_practice": 0.80, "research_field_match": 0.75, "skill_development": 0.85,
+     "lab_atmosphere": 0.80, "flexibility": 0.75, "publication_opportunity": 0.70,
+     "interdisciplinary": 0.85, "communication_style": 0.80},
+    
+    # クリエイティブ分野
+    {"id": "lab_005", "name": "佐藤研究室", "field": "Webデザイン・UI/UX", "category": "creative",
+     "research_intensity": 0.65, "advisor_style": 0.80, "team_work": 0.85, "workload": 0.70,
+     "theory_practice": 0.85, "research_field_match": 0.75, "skill_development": 0.90,
+     "lab_atmosphere": 0.85, "flexibility": 0.80, "publication_opportunity": 0.60,
+     "interdisciplinary": 0.75, "communication_style": 0.85},
+    
+    {"id": "lab_006", "name": "田中研究室", "field": "デザイン・視覚表現", "category": "creative",
+     "research_intensity": 0.60, "advisor_style": 0.85, "team_work": 0.80, "workload": 0.65,
+     "theory_practice": 0.90, "research_field_match": 0.70, "skill_development": 0.85,
+     "lab_atmosphere": 0.90, "flexibility": 0.85, "publication_opportunity": 0.55,
+     "interdisciplinary": 0.70, "communication_style": 0.90},
+    
+    # エンターテイメント分野
+    {"id": "lab_007", "name": "山田研究室", "field": "ゲーム開発・eスポーツ", "category": "entertainment",
+     "research_intensity": 0.70, "advisor_style": 0.75, "team_work": 0.90, "workload": 0.80,
+     "theory_practice": 0.80, "research_field_match": 0.80, "skill_development": 0.80,
+     "lab_atmosphere": 0.85, "flexibility": 0.70, "publication_opportunity": 0.65,
+     "interdisciplinary": 0.60, "communication_style": 0.85},
+    
+    {"id": "lab_008", "name": "伊藤研究室", "field": "VR/AR・メディアアート", "category": "entertainment",
+     "research_intensity": 0.75, "advisor_style": 0.70, "team_work": 0.85, "workload": 0.75,
+     "theory_practice": 0.75, "research_field_match": 0.85, "skill_development": 0.85,
+     "lab_atmosphere": 0.80, "flexibility": 0.75, "publication_opportunity": 0.70,
+     "interdisciplinary": 0.80, "communication_style": 0.80},
+    
+    # 人文・社会・体育分野
+    {"id": "lab_009", "name": "三浦研究室", "field": "哲学・人文・環境行動学", "category": "humanities",
+     "research_intensity": 0.65, "advisor_style": 0.80, "team_work": 0.60, "workload": 0.60,
+     "theory_practice": 0.60, "research_field_match": 0.70, "skill_development": 0.70,
+     "lab_atmosphere": 0.70, "flexibility": 0.85, "publication_opportunity": 0.75,
+     "interdisciplinary": 0.90, "communication_style": 0.75},
+    
+    {"id": "lab_010", "name": "綿谷研究室", "field": "スポーツ・体育科学", "category": "humanities",
+     "research_intensity": 0.70, "advisor_style": 0.75, "team_work": 0.85, "workload": 0.75,
+     "theory_practice": 0.85, "research_field_match": 0.75, "skill_development": 0.80,
+     "lab_atmosphere": 0.85, "flexibility": 0.70, "publication_opportunity": 0.70,
+     "interdisciplinary": 0.70, "communication_style": 0.85},
 ]
 
-# システム初期化
-def initialize_system():
-    """システム初期化"""
+# ===== 遺伝的アルゴリズム最適化関数 =====
+
+def create_genetic_engine(config: Optional[Dict[str, Any]] = None) -> EvolutionEngine:
+    """遺伝的アルゴリズムエンジンの作成"""
+    
+    # デフォルト設定
+    evolution_config = EvolutionConfig(
+        population_size=config.get("population_size", 30) if config else 30,
+        generations=config.get("generations", 50) if config else 50,
+        mutation_rate=config.get("mutation_rate", 0.15) if config else 0.15,
+        crossover_rate=config.get("crossover_rate", 0.8) if config else 0.8,
+        elitism_rate=config.get("elitism_rate", 0.1) if config else 0.1,
+        tournament_size=config.get("tournament_size", 3) if config else 3,
+        convergence_threshold=config.get("convergence_threshold", 1e-6) if config else 1e-6,
+        max_stagnation=config.get("max_stagnation", 15) if config else 15
+    )
+    
+    return EvolutionEngine(evolution_config)
+
+def fitness_function(individual: Individual, student_profile: Dict[str, float], 
+                     labs: List[Dict[str, Any]]) -> float:
+    """適応度関数：個体の重みを使って研究室とのマッチング精度を評価"""
     
     try:
-        print("🔧 システム初期化開始...")
+        weights = individual.chromosome
         
-        # 研究室データベース初期化
-        system_state["lab_database"] = SAMPLE_LABS.copy()
+        # 評価基準の取得
+        features = settings.core_features if SETTINGS_AVAILABLE else [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
         
-        # 優先度対応エンジン初期化
-        system_state["priority_aware_engines"] = {
-            "fuzzy": PriorityAwareFuzzyEngine(),
-            "genetic": PriorityAwareGeneticEngine()
-        }
+        # 重みの数を調整
+        if len(weights) > len(features):
+            weights = weights[:len(features)]
+        elif len(weights) < len(features):
+            weights = list(weights) + [1.0] * (len(features) - len(weights))
         
-        # システム状態更新
+        total_error = 0.0
+        
+        # 全研究室とのマッチングを評価
+        for lab in labs:
+            # 重み付き距離計算
+            weighted_distance = 0.0
+            for i, feature in enumerate(features):
+                student_val = float(student_profile.get(feature, 0.5))
+                lab_val = float(lab.get(feature, 0.5))
+                
+                # 10段階評価の場合は正規化
+                if student_val > 1.0:
+                    student_val /= 10.0
+                
+                # 重みを適用した距離
+                diff = abs(student_val - lab_val)
+                weighted_distance += weights[i] * diff
+            
+            # 正規化された誤差を累積
+            normalized_error = weighted_distance / sum(weights) if sum(weights) > 0 else 0
+            total_error += normalized_error
+        
+        # 適応度は誤差の逆数（誤差が小さいほど高い適応度）
+        avg_error = total_error / len(labs) if len(labs) > 0 else 1.0
+        fitness = 1.0 / (avg_error + 1e-6)
+        
+        return fitness
+        
+    except Exception as e:
+        print(f"⚠️ 適応度計算エラー: {e}")
+        return 0.0
+
+def optimize_with_genetic_algorithm(student_profiles: List[Dict[str, float]], 
+                                    labs: List[Dict[str, Any]], 
+                                    config: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """遺伝的アルゴリズムによる重み最適化"""
+    
+    print(f"\n🧬 遺伝的アルゴリズム最適化開始")
+    print(f"  学生プロファイル数: {len(student_profiles)}")
+    print(f"  研究室数: {len(labs)}")
+    
+    start_time = time.time()
+    
+    # エンジン作成
+    engine = create_genetic_engine(config)
+    
+    # 初期集団生成
+    engine.initialize_population()
+    print(f"  初期集団生成完了: {len(engine.population)}個体")
+    
+    # 各世代の進化
+    best_fitness_history = []
+    avg_fitness_history = []
+    
+    for generation in range(engine.config.generations):
+        # 適応度評価
+        for individual in engine.population:
+            # 複数の学生プロファイルで評価し、平均を取る
+            total_fitness = 0.0
+            for profile in student_profiles:
+                total_fitness += fitness_function(individual, profile, labs)
+            individual.fitness = total_fitness / len(student_profiles)
+        
+        # 集団を適応度でソート
+        engine.population.sort(key=lambda ind: ind.fitness, reverse=True)
+        
+        # 統計情報
+        best_fitness = engine.population[0].fitness
+        avg_fitness = sum(ind.fitness for ind in engine.population) / len(engine.population)
+        
+        best_fitness_history.append(best_fitness)
+        avg_fitness_history.append(avg_fitness)
+        
+        if generation % 10 == 0:
+            print(f"  世代 {generation}: 最良適応度={best_fitness:.4f}, 平均適応度={avg_fitness:.4f}")
+        
+        # 収束判定
+        if generation > 0:
+            improvement = best_fitness - best_fitness_history[-2]
+            if abs(improvement) < engine.config.convergence_threshold:
+                engine.stagnation_count += 1
+                if engine.stagnation_count >= engine.config.max_stagnation:
+                    print(f"  収束検出（世代{generation}）")
+                    break
+            else:
+                engine.stagnation_count = 0
+        
+        # 次世代生成
+        engine.evolve_generation()
+    
+    processing_time = time.time() - start_time
+    
+    # 最良個体の取得
+    best_individual = engine.population[0]
+    
+    print(f"✅ 最適化完了")
+    print(f"  最終世代: {generation + 1}")
+    print(f"  最良適応度: {best_individual.fitness:.6f}")
+    print(f"  処理時間: {processing_time:.2f}秒")
+    print(f"  最適重み: {[f'{w:.3f}' for w in best_individual.chromosome[:5]]}...")
+    
+    return {
+        "best_weights": best_individual.chromosome,
+        "best_fitness": best_individual.fitness,
+        "generations": generation + 1,
+        "processing_time": processing_time,
+        "fitness_history": {
+            "best": best_fitness_history,
+            "average": avg_fitness_history
+        },
+        "convergence_achieved": engine.stagnation_count >= engine.config.max_stagnation,
+        "population_size": len(engine.population)
+    }
+
+# ===== システム初期化 =====
+
+def initialize_system():
+    """システム初期化"""
+    try:
+        print("\n🚀 システム初期化中...")
+        
+        # 研究室データベース読み込み
+        system_state["lab_database"] = SAMPLE_LABS
+        print(f"✅ 研究室データ読み込み完了: {len(SAMPLE_LABS)}件")
+        
+        # 遺伝的アルゴリズムエンジン初期化
+        if GENETIC_AVAILABLE:
+            system_state["genetic_engine"] = create_genetic_engine()
+            print("✅ 遺伝的アルゴリズムエンジン初期化完了")
+        
         system_state["initialized"] = True
-        system_state["last_updated"] = datetime.now()
-        
-        print(f"✅ システム初期化完了")
-        print(f"   - 研究室データ: {len(SAMPLE_LABS)}件")
-        print(f"   - 評価基準: {len(EVALUATION_CRITERIA)}項目（優先度対応）")
-        print(f"   - 研究分野: {len(RESEARCH_FIELDS)}分野")
-        print(f"   - 優先度エンジン: ファジィ・遺伝的アルゴリズム対応")
-        
-        return True
+        print("✅ システム初期化完了")
         
     except Exception as e:
         print(f"❌ システム初期化エラー: {e}")
-        return False
+        system_state["initialized"] = False
 
-# APIエンドポイント群
+initialize_system()
+
+# ===== 適合度計算関数 =====
+
+def calculate_compatibility_with_weights(student_profile: Dict[str, float], 
+                                        lab: Dict[str, Any],
+                                        weights: Optional[List[float]] = None) -> float:
+    """重み付き適合度計算（改良版）"""
+    
+    try:
+        # 評価基準の取得
+        features = settings.core_features if SETTINGS_AVAILABLE else [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+        
+        if weights is None:
+            # デフォルト重み（均等）
+            weights = [1.0] * len(features)
+        
+        # 重みの数を調整（足りない場合は1.0で埋める）
+        if len(weights) < len(features):
+            weights = list(weights) + [1.0] * (len(features) - len(weights))
+        
+        total_weighted_similarity = 0.0
+        total_weight = 0.0
+        
+        for i, feature in enumerate(features):
+            # 学生の値を取得（デフォルト0.5）
+            student_val = float(student_profile.get(feature, 0.5))
+            
+            # 10段階評価の場合は0-1に正規化
+            if student_val > 1.0:
+                student_val /= 10.0
+            
+            # 研究室の値を取得（デフォルト0.5）
+            lab_val = float(lab.get(feature, 0.5))
+            
+            # 類似度計算（1 - 差の絶対値）
+            similarity = 1.0 - abs(student_val - lab_val)
+            similarity = max(0.0, min(1.0, similarity))  # 0-1に制限
+            
+            # 重み適用
+            weight = weights[i] if i < len(weights) else 1.0
+            weighted_similarity = weight * similarity
+            
+            total_weighted_similarity += weighted_similarity
+            total_weight += weight
+        
+        # 正規化
+        if total_weight > 0:
+            compatibility = total_weighted_similarity / total_weight
+        else:
+            compatibility = 0.0
+        
+        # 0-1の範囲に制限
+        compatibility = max(0.0, min(1.0, compatibility))
+        
+        return compatibility
+        
+    except Exception as e:
+        print(f"⚠️ 適合度計算エラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return 0.5  # エラー時はデフォルト値を返す
+
+# ===== APIエンドポイント =====
 
 @app.get("/")
-async def root():
+async def read_root():
     """ルートエンドポイント"""
-    return {
-        "message": "遺伝的アルゴリズム×ファジィ決定木×優先度対応研究室選択支援システム",
-        "version": "5.0.0",
-        "features": ["12項目評価基準", "優先度設定", "18分野対応", "AI統合評価"],
-        "status": "operational" if system_state["initialized"] else "initializing"
-    }
+    if os.path.exists("../frontend/build/index.html"):
+        return FileResponse("../frontend/build/index.html")
+    else:
+        return {
+            "message": "遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム",
+            "version": "2.0.0",
+            "status": "running",
+            "genetic_algorithm": "fully_implemented",
+            "endpoints": {
+                "health": "/health",
+                "labs": "/api/labs",
+                "evaluate": "/api/evaluate",
+                "optimize": "/api/optimize",
+                "docs": "/docs"
+            }
+        }
 
-@app.get("/api/fields")
-async def get_research_fields():
-    """研究分野一覧取得"""
-    return {
-        "research_fields": RESEARCH_FIELDS,
-        "total_count": len(RESEARCH_FIELDS),
-        "categories": list(set([field["category"] for field in RESEARCH_FIELDS.values()]))
+@app.get("/health")
+async def health_check():
+    """ヘルスチェック"""
+    
+    lab_count = len(system_state.get("lab_database", []))
+    
+    modules_status = {
+        "fuzzy": FUZZY_AVAILABLE,
+        "genetic": GENETIC_AVAILABLE,
+        "decision_tree": DECISION_TREE_AVAILABLE,
+        "settings": SETTINGS_AVAILABLE
     }
-
-@app.get("/api/criteria")
-async def get_evaluation_criteria():
-    """評価基準情報取得"""
+    
+    overall_health = (
+        system_state["initialized"] and 
+        any(modules_status.values()) and 
+        lab_count > 0
+    )
+    
     return {
-        "criteria": CRITERIA_INFO,
-        "total_count": len(EVALUATION_CRITERIA),
-        "categories": {
-            "basic": [k for k, v in CRITERIA_INFO.items() if v['category'] == 'basic'],
-            "extended": [k for k, v in CRITERIA_INFO.items() if v['category'] == 'extended'], 
-            "special": [k for k, v in CRITERIA_INFO.items() if v['category'] == 'special']
-        },
-        "priority_support": True,
-        "priority_range": "1-10"
+        "status": "healthy" if overall_health else "unhealthy",
+        "version": "2.0.0",
+        "timestamp": time.time(),
+        "system_initialized": system_state["initialized"],
+        "modules": modules_status,
+        "genetic_engine_status": "initialized" if system_state.get("genetic_engine") else "not_initialized",
+        "database": {
+            "status": "OK" if lab_count > 0 else "Empty",
+            "lab_count": lab_count,
+            "evaluation_count": system_state["evaluation_count"]
+        }
     }
 
 @app.get("/api/labs")
 async def get_labs():
     """研究室一覧取得"""
+    
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
     return {
-        "labs": SAMPLE_LABS,
-        "total_count": len(SAMPLE_LABS),
-        "categories": list(set([lab["category"] for lab in SAMPLE_LABS]))
+        "labs": system_state["lab_database"],
+        "total_count": len(system_state["lab_database"]),
+        "last_updated": time.time()
     }
-
-@app.get("/api/labs/{lab_id}")
-async def get_lab_detail(lab_id: str):
-    """特定研究室の詳細取得"""
-    lab = next((lab for lab in SAMPLE_LABS if lab["id"] == lab_id), None)
-    if not lab:
-        raise HTTPException(status_code=404, detail="Lab not found")
-    return lab
 
 @app.post("/api/evaluate")
 async def evaluate_compatibility(request: Dict[str, Any]):
-    """学生プロファイルに基づく研究室適合度評価（優先度対応版）"""
+    """研究室との適合度評価（フロントエンド互換版）"""
     
     if not system_state["initialized"]:
         raise HTTPException(status_code=503, detail="System not initialized")
     
     try:
-        student_profile = request.get("student_profile", {})
-        priorities = student_profile.get("priorities", {})
+        # リクエストから学生プロファイルを取得
+        student_profile = request.get("student_profile", request)
+        
+        print(f"📥 評価リクエスト受信")
+        print(f"  プロファイルキー: {list(student_profile.keys())[:5]}...")
         
         # 入力検証
-        for criterion in EVALUATION_CRITERIA:
-            if criterion not in student_profile:
+        required_features = settings.core_features if SETTINGS_AVAILABLE else [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+        
+        for feature in required_features:
+            if feature not in student_profile:
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Missing required criterion: {criterion}"
+                    detail=f"Missing required feature: {feature}"
                 )
         
-        print(f"📥 優先度対応評価リクエスト受信: {len(EVALUATION_CRITERIA)}項目")
-        if priorities:
-            print(f"📊 優先度データ: {len(priorities)}項目")
-            print(f"🎯 最高優先度: {max(priorities.items(), key=lambda x: x[1]) if priorities else 'なし'}")
+        # 現在の最適重みを使用（存在すれば）
+        weights = system_state.get("best_weights")
         
-        # 各研究室との適合度計算（優先度対応）
+        # 各研究室との適合度計算
         lab_results = []
-        
-        for lab in SAMPLE_LABS:
-            compatibility = calculate_priority_weighted_compatibility(
-                student_profile, lab, priorities
+        for lab in system_state["lab_database"]:
+            compatibility = calculate_compatibility_with_weights(
+                student_profile, lab, weights
             )
             
-            # AI統合評価（ファジィ + 遺伝的アルゴリズム）
-            ai_scores = {}
-            
-            # ファジィ推論
-            try:
-                fuzzy_engine = system_state["priority_aware_engines"]["fuzzy"]
-                fuzzy_score, fuzzy_explanation = fuzzy_engine.predict_with_priorities(
-                    student_profile, lab, priorities
-                )
-                ai_scores["fuzzy"] = fuzzy_score
-            except:
-                ai_scores["fuzzy"] = compatibility
-            
-            # 遺伝的アルゴリズム
-            try:
-                genetic_engine = system_state["priority_aware_engines"]["genetic"]
-                genetic_score, genetic_explanation = genetic_engine.evaluate_with_priorities(
-                    student_profile, lab, priorities
-                )
-                ai_scores["genetic"] = genetic_score
-            except:
-                ai_scores["genetic"] = compatibility
-            
-            # 統合スコア計算
-            integrated_score = (
-                0.4 * ai_scores["fuzzy"] + 
-                0.3 * ai_scores["genetic"] + 
-                0.3 * compatibility
-            )
-            
-            # 優先度による追加調整
-            if priorities:
-                priority_boost = calculate_priority_boost(student_profile, lab, priorities)
-                integrated_score = min(1.0, integrated_score + priority_boost)
-            
-            # 詳細スコア計算（優先度考慮）
+            # 詳細スコア計算
             feature_scores = {}
-            for criterion in EVALUATION_CRITERIA:
-                student_val = float(student_profile[criterion])
-                lab_val = float(lab[criterion])
-                priority = priorities.get(criterion, 5.0) if priorities else 5.0
+            for feature in required_features:
+                student_val = float(student_profile.get(feature, 0.5))
+                lab_val = float(lab.get(feature, 0.5))
                 
+                # 10段階評価の場合は正規化
                 if student_val > 1.0:
                     student_val /= 10.0
-                if lab_val > 1.0:
-                    lab_val /= 10.0
                 
-                # 基本適合度
-                base_match = 1.0 - abs(student_val - lab_val)
-                
-                # 優先度重み付け
-                priority_weight = priority / 10.0
-                weighted_match = base_match * (0.5 + 0.5 * priority_weight)
-                
-                feature_scores[criterion] = weighted_match
+                similarity = 1.0 - abs(student_val - lab_val)
+                feature_scores[feature] = similarity
             
             # フロントエンドが期待する形式でレスポンス構築
             lab_result = {
+                # 基本情報
                 "lab_id": lab["id"],
                 "lab_name": lab["name"],
-                "advisor": lab["advisor"],
-                "research_area": lab["research_area"],
-                "category": lab["category"],
-                "professor_name": lab["advisor"],
+                "field": lab.get("field", "Unknown"),
+                "category": lab.get("category", "technology"),
                 
-                # スコア関連（優先度反映）
-                "final_score": float(integrated_score),
-                "compatibility_score": float(integrated_score),
-                "overall_compatibility": float(integrated_score),
-                "priority_adjusted_score": float(integrated_score),
+                # スコア（複数の名前で提供して互換性を確保）
+                "final_score": float(compatibility),
+                "compatibility_score": float(compatibility),
+                "overall_compatibility": float(compatibility),
                 
-                # AI統合スコア（新規）
-                "ai_scores": ai_scores,
-                "base_compatibility": float(compatibility),
-                
+                # 詳細情報
                 "feature_scores": feature_scores,
-                "confidence": min(1.0, integrated_score + random.uniform(0.0, 0.1)),
-                "recommendation": get_priority_recommendation_level(integrated_score, priorities),
-                "recommendation_level": get_priority_recommendation_level(integrated_score, priorities),
-                "explanation": generate_priority_explanation(
-                    student_profile, lab, integrated_score, priorities, ai_scores
-                ),
+                "using_optimized_weights": weights is not None,
+                "confidence": min(1.0, compatibility),
                 
-                # 優先度分析（新規）
-                "priority_analysis": analyze_priority_match(
-                    student_profile, lab, priorities
-                ) if priorities else None
+                # 説明
+                "recommendation": "高推奨" if compatibility > 0.7 else "推奨" if compatibility > 0.5 else "要検討",
+                "explanation": f"総合適合度: {compatibility:.1%}"
             }
             
             lab_results.append(lab_result)
@@ -755,340 +549,287 @@ async def evaluate_compatibility(request: Dict[str, Any]):
         scores = [lab["final_score"] for lab in lab_results]
         summary = {
             "total_labs": len(lab_results),
-            "avg_score": sum(scores) / len(scores) if scores else 0,
-            "max_score": max(scores) if scores else 0,
-            "min_score": min(scores) if scores else 0,
-            "high_compatibility_count": len([s for s in scores if s >= 0.7]),
-            "medium_compatibility_count": len([s for s in scores if 0.4 <= s < 0.7]),
-            "low_compatibility_count": len([s for s in scores if s < 0.4]),
-            "priority_weighting_applied": bool(priorities),
-            "total_priority_items": len(priorities) if priorities else 0,
-            "priority_statistics": calculate_priority_statistics(priorities) if priorities else None
+            "avg_score": sum(scores) / len(scores) if scores else 0.0,
+            "max_score": max(scores) if scores else 0.0,
+            "min_score": min(scores) if scores else 0.0
         }
         
-        # 評価回数増加
         system_state["evaluation_count"] += 1
-        system_state["api_calls"] += 1
-        if priorities:
-            system_state["priority_evaluations"] += 1
         
-        # フロントエンドが期待する形式でレスポンス返却
+        # フロントエンドが期待する形式でレスポンス
         response = {
             "lab_results": lab_results,
             "summary": summary,
-            
-            "student_profile": student_profile,
-            "evaluation_results": lab_results,
-            "total_labs_evaluated": len(lab_results),
-            "evaluation_timestamp": time.time(),
             "metadata": {
                 "processing_time": 0.1,
-                "evaluation_count": system_state["evaluation_count"],
-                "priority_evaluations": system_state["priority_evaluations"],
-                "timestamp": datetime.now().isoformat(),
-                "criteria_used": len(EVALUATION_CRITERIA),
-                "priorities_applied": priorities,
-                "ai_engines_used": ["fuzzy", "genetic"],
-                "calculation_method": "priority_weighted_ai_integrated_compatibility_v5"
+                "timestamp": time.time(),
+                "optimized_weights_used": weights is not None,
+                "evaluation_count": system_state["evaluation_count"]
             }
         }
         
-        print(f"📤 優先度対応評価結果送信: {len(lab_results)}件の研究室")
-        print(f"📊 適合度統計: 平均={summary['avg_score']:.3f}, 最高={summary['max_score']:.3f}")
-        if priorities:
-            print(f"🎯 優先度効果: 平均優先度={sum(priorities.values())/len(priorities):.1f}")
+        print(f"📤 評価結果送信: {len(lab_results)}件")
+        print(f"  最高適合度: {summary['max_score']:.3f}")
+        print(f"  平均適合度: {summary['avg_score']:.3f}")
         
         return response
         
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ 優先度対応評価エラー: {e}")
+        import traceback
+        print(f"❌ 評価エラー: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Priority-aware evaluation error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}")
 
-# ヘルパー関数群
-
-def calculate_priority_weighted_compatibility(
-    student_profile: Dict[str, Any], 
-    lab: Dict[str, Any], 
-    priorities: Dict[str, float]
-) -> float:
-    """優先度を考慮した重み付き適合度計算"""
+@app.post("/api/optimize")
+async def optimize_matching(request: Dict[str, Any]):
+    """遺伝的アルゴリズムによる最適化（フロントエンド互換版）"""
     
-    total_weighted_score = 0.0
-    total_weight = 0.0
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="System not initialized")
     
-    for criterion in EVALUATION_CRITERIA:
-        if criterion in student_profile and criterion in lab:
-            student_val = float(student_profile[criterion])
-            lab_val = float(lab[criterion])
-            
-            # 正規化
-            if student_val > 1.0:
-                student_val /= 10.0
-            if lab_val > 1.0:
-                lab_val /= 10.0
-            
-            # 基本適合度計算
-            base_compatibility = 1.0 - abs(student_val - lab_val)
-            
-            # 優先度による重み付け
-            if priorities and criterion in priorities:
-                priority_weight = priorities[criterion] / 10.0
-            else:
-                priority_weight = 0.5  # デフォルト重み
-            
-            # 重み付きスコア計算
-            weighted_score = base_compatibility * priority_weight
-            total_weighted_score += weighted_score
-            total_weight += priority_weight
-    
-    # 重み付き平均を返す
-    if total_weight > 0:
-        return total_weighted_score / total_weight
-    else:
-        return 0.5
-
-def calculate_priority_boost(
-    student_profile: Dict[str, Any], 
-    lab: Dict[str, Any], 
-    priorities: Dict[str, float]
-) -> float:
-    """優先度による追加ブーストスコア計算"""
-    
-    if not priorities:
-        return 0.0
-    
-    # 最重要項目（優先度8以上）での適合状況をチェック
-    high_priority_items = {k: v for k, v in priorities.items() if v >= 8.0}
-    
-    if not high_priority_items:
-        return 0.0
-    
-    total_boost = 0.0
-    for criterion, priority in high_priority_items.items():
-        if criterion in student_profile and criterion in lab:
-            student_val = float(student_profile[criterion])
-            lab_val = float(lab[criterion])
-            
-            # 正規化
-            if student_val > 1.0:
-                student_val /= 10.0
-            if lab_val > 1.0:
-                lab_val /= 10.0
-            
-            match = 1.0 - abs(student_val - lab_val)
-            
-            # 高優先度項目で高適合の場合はボーナス
-            if match > 0.8:
-                boost = 0.05 * (priority / 10.0) * (match - 0.8) / 0.2
-                total_boost += boost
-    
-    return min(0.15, total_boost)  # 最大15%のブースト
-
-def get_priority_recommendation_level(score: float, priorities: Dict[str, float]) -> str:
-    """優先度を考慮した推薦レベル取得"""
-    
-    base_level = get_recommendation_level(score)
-    
-    if priorities:
-        avg_priority = sum(priorities.values()) / len(priorities)
-        if avg_priority >= 8.0 and score >= 0.8:
-            return "最優先推薦"
-        elif avg_priority >= 7.0 and score >= 0.7:
-            return "優先推薦"
-    
-    return base_level
-
-def get_recommendation_level(compatibility: float) -> str:
-    """推薦レベル取得"""
-    
-    if compatibility >= 0.8:
-        return "強く推薦"
-    elif compatibility >= 0.6:
-        return "推薦"
-    elif compatibility >= 0.4:
-        return "検討可能"
-    else:
-        return "推薦しない"
-
-def generate_priority_explanation(
-    student_profile: Dict[str, Any], 
-    lab: Dict[str, Any], 
-    compatibility: float, 
-    priorities: Dict[str, float],
-    ai_scores: Dict[str, float]
-) -> str:
-    """優先度を考慮した詳細説明生成"""
-    
-    base_explanation = f"統合適合度: {compatibility:.1%}"
-    
-    # AI統合スコア説明
-    ai_explanation = f"（ファジィ: {ai_scores.get('fuzzy', 0):.2f}, 遺伝的: {ai_scores.get('genetic', 0):.2f}）"
-    
-    # 優先度分析
-    if priorities:
-        top_priorities = sorted(priorities.items(), key=lambda x: x[1], reverse=True)[:3]
-        
-        priority_explanations = []
-        for criterion, priority in top_priorities:
-            if criterion in student_profile and criterion in lab:
-                student_val = float(student_profile[criterion])
-                lab_val = float(lab[criterion])
-                
-                if student_val > 1.0:
-                    student_val /= 10.0
-                if lab_val > 1.0:
-                    lab_val /= 10.0
-                
-                match_level = 1.0 - abs(student_val - lab_val)
-                criterion_name = CRITERIA_INFO.get(criterion, {}).get('name', criterion)
-                
-                if match_level > 0.8:
-                    priority_explanations.append(f"重要な{criterion_name}で高適合")
-                elif match_level > 0.6:
-                    priority_explanations.append(f"{criterion_name}で適度な適合")
-                else:
-                    priority_explanations.append(f"重要な{criterion_name}で課題")
-        
-        priority_details = "、".join(priority_explanations)
-        return f"{base_explanation} {ai_explanation} {priority_details}。"
-    else:
-        return f"{base_explanation} {ai_explanation}"
-
-def analyze_priority_match(
-    student_profile: Dict[str, Any], 
-    lab: Dict[str, Any], 
-    priorities: Dict[str, float]
-) -> Dict[str, Any]:
-    """優先度マッチング分析"""
-    
-    if not priorities:
-        return {}
-    
-    # 優先度別分析
-    high_priority = {k: v for k, v in priorities.items() if v >= 8}
-    medium_priority = {k: v for k, v in priorities.items() if 5 <= v < 8}
-    low_priority = {k: v for k, v in priorities.items() if v < 5}
-    
-    # 各レベルでの適合度
-    def calculate_level_match(priority_dict):
-        if not priority_dict:
-            return 0.0
-        
-        total_match = 0.0
-        for criterion in priority_dict:
-            if criterion in student_profile and criterion in lab:
-                student_val = float(student_profile[criterion])
-                lab_val = float(lab[criterion])
-                
-                if student_val > 1.0:
-                    student_val /= 10.0
-                if lab_val > 1.0:
-                    lab_val /= 10.0
-                
-                match = 1.0 - abs(student_val - lab_val)
-                total_match += match
-        
-        return total_match / len(priority_dict)
-    
-    return {
-        "high_priority_match": calculate_level_match(high_priority),
-        "medium_priority_match": calculate_level_match(medium_priority),
-        "low_priority_match": calculate_level_match(low_priority),
-        "priority_distribution": {
-            "high": len(high_priority),
-            "medium": len(medium_priority),
-            "low": len(low_priority)
-        },
-        "weighted_priority_score": sum(
-            priorities[k] * (1.0 - abs(
-                (float(student_profile[k]) if student_profile[k] <= 1.0 else float(student_profile[k])/10.0) -
-                (float(lab[k]) if lab[k] <= 1.0 else float(lab[k])/10.0)
-            ))
-            for k in priorities
-            if k in student_profile and k in lab
-        ) / sum(priorities.values()) if priorities else 0
-    }
-
-def calculate_priority_statistics(priorities: Dict[str, float]) -> Dict[str, Any]:
-    """優先度統計計算"""
-    
-    if not priorities:
-        return {}
-    
-    values = list(priorities.values())
-    
-    return {
-        "average_priority": sum(values) / len(values),
-        "max_priority": max(values),
-        "min_priority": min(values),
-        "priority_variance": sum((v - sum(values)/len(values))**2 for v in values) / len(values),
-        "high_priority_count": len([v for v in values if v >= 8]),
-        "medium_priority_count": len([v for v in values if 5 <= v < 8]),
-        "low_priority_count": len([v for v in values if v < 5]),
-        "top_priorities": sorted(priorities.items(), key=lambda x: x[1], reverse=True)[:5]
-    }
-
-@app.get("/api/system")
-async def get_system_info():
-    """システム情報取得（優先度対応版）"""
-    return {
-        "system_state": system_state,
-        "sample_labs_count": len(SAMPLE_LABS),
-        "criteria_count": len(EVALUATION_CRITERIA),
-        "research_fields_count": len(RESEARCH_FIELDS),
-        "weights": BALANCED_CRITERIA_WEIGHTS,
-        "has_numpy": HAS_NUMPY,
-        "priority_support": True,
-        "priority_features": {
-            "enabled": True,
-            "range": "1-10",
-            "ai_integration": True,
-            "fuzzy_inference": True,
-            "genetic_algorithm": True,
-            "weighted_scoring": True
-        },
-        "ai_engines": {
-            "fuzzy": "PriorityAwareFuzzyEngine",
-            "genetic": "PriorityAwareGeneticEngine"
-        },
-        "version": "5.0.0 - 12項目+優先度+AI統合対応版"
-    }
-
-# システム初期化実行
-initialize_system()
-
-# サーバー起動関数
-def start_server(host: str = "0.0.0.0", port: int = 8000) -> bool:
-    """サーバー起動"""
-    
-    print("\n" + "=" * 100)
-    print("🧬🌳⭐🤖 遺伝的アルゴリズム × ファジィ決定木 × 優先度対応 × AI統合 研究室マッチングシステム v5.0.0")
-    print("=" * 100)
-    print(f"🚀 サーバー起動中...")
-    print(f"📍 URL: http://localhost:{port}")
-    print(f"📚 API文書: http://localhost:{port}/docs")
-    print(f"🔧 システム機能:")
-    print(f"   - 評価基準: {len(EVALUATION_CRITERIA)}項目（各項目に優先度1-10設定可能）")
-    print(f"   - 研究分野: {len(RESEARCH_FIELDS)}分野（18分野対応）")
-    print(f"   - AI統合エンジン: ✅ ファジィ推論 + 遺伝的アルゴリズム")
-    print(f"   - 優先度対応: ✅ 重み付きマッチングアルゴリズム")
-    print(f"   - 研究室データベース: {len(SAMPLE_LABS)}件")
-    print("=" * 100)
-    print("\n📋 評価基準（12項目）+ 優先度:")
-    for i, criterion in enumerate(EVALUATION_CRITERIA, 1):
-        info = CRITERIA_INFO[criterion]
-        print(f"   {i:2d}. {info['name']} ({info['category']}) - 優先度設定可能")
-    print("=" * 100)
+    if not GENETIC_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Genetic algorithm not available")
     
     try:
-        uvicorn.run(app, host=host, port=port)
-        return True
+        # リクエストからデータ取得
+        student_profiles = request.get("student_profiles", [])
+        
+        # 単一プロファイルの場合の対応
+        if not student_profiles:
+            if "student_profile" in request:
+                student_profiles = [request["student_profile"]]
+            elif "evaluation_criteria" in request:
+                student_profiles = [request["evaluation_criteria"]]
+            else:
+                student_profiles = [request]
+        
+        if not student_profiles:
+            raise HTTPException(status_code=400, detail="No student profiles provided")
+        
+        ga_config = request.get("genetic_config", {})
+        
+        print(f"\n🧬 遺伝的アルゴリズム最適化実行")
+        print(f"  学生数: {len(student_profiles)}")
+        print(f"  研究室数: {len(system_state['lab_database'])}")
+        
+        # 遺伝的アルゴリズム実行
+        optimization_result = optimize_with_genetic_algorithm(
+            student_profiles, 
+            system_state["lab_database"],
+            ga_config
+        )
+        
+        # 最適重みを保存
+        system_state["best_weights"] = optimization_result["best_weights"]
+        
+        print(f"✅ 最適化完了")
+        print(f"  最良適応度: {optimization_result['best_fitness']:.6f}")
+        print(f"  実行世代数: {optimization_result['generations']}")
+        
+        # 最適化後の評価を実行（フロントエンド互換形式）
+        optimized_evaluations = []
+        for profile in student_profiles:
+            # 最適化後の評価
+            eval_request = {"student_profile": profile}
+            eval_response = await evaluate_compatibility(eval_request)
+            
+            # トップ3の取得
+            top_3_labs = eval_response["lab_results"][:3]
+            
+            optimized_evaluations.append({
+                "student_profile": profile,
+                "top_matches": top_3_labs,
+                "optimization_applied": True
+            })
+        
+        # フロントエンド互換のレスポンス形式
+        response = {
+            # 最適化情報
+            "optimization_completed": True,
+            "students_processed": len(student_profiles),
+            "genetic_algorithm_info": {
+                "method": "real_genetic_algorithm",
+                "generations": optimization_result["generations"],
+                "population_size": optimization_result["population_size"],
+                "best_fitness": optimization_result["best_fitness"],
+                "convergence_achieved": optimization_result["convergence_achieved"],
+                "processing_time": optimization_result["processing_time"]
+            },
+            
+            # 最適化重み
+            "optimized_weights": optimization_result["best_weights"],
+            "fitness_history": optimization_result["fitness_history"],
+            
+            # 評価結果（フロントエンド互換）
+            "lab_results": optimized_evaluations[0]["top_matches"] if optimized_evaluations else [],
+            "summary": {
+                "total_labs": len(system_state["lab_database"]),
+                "avg_score": sum(r["final_score"] for r in optimized_evaluations[0]["top_matches"]) / 3 if optimized_evaluations else 0,
+                "max_score": max(r["final_score"] for r in optimized_evaluations[0]["top_matches"]) if optimized_evaluations else 0,
+                "min_score": min(r["final_score"] for r in optimized_evaluations[0]["top_matches"]) if optimized_evaluations else 0
+            },
+            
+            # 追加情報
+            "optimization_results": optimized_evaluations,
+            "timestamp": time.time(),
+            
+            # メタデータ
+            "metadata": {
+                "optimization_method": "genetic_algorithm",
+                "weights_optimized": True,
+                "processing_time": optimization_result["processing_time"]
+            }
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"❌ サーバー起動エラー: {e}")
-        return False
+        import traceback
+        print(f"❌ 最適化エラー: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 
+@app.post("/api/explain")
+async def explain_recommendation(request: Dict[str, Any]):
+    """推薦結果の詳細説明（フロントエンド互換版）"""
+    
+    try:
+        # リクエストからデータ取得
+        student_profile = request.get("student_profile", request)
+        lab_id = request.get("lab_id")
+        
+        if not lab_id:
+            raise HTTPException(status_code=400, detail="lab_id is required")
+        
+        # 研究室を取得
+        lab = next((lab for lab in system_state["lab_database"] if lab["id"] == lab_id), None)
+        if not lab:
+            raise HTTPException(status_code=404, detail="Lab not found")
+        
+        # 現在の重みを使用
+        weights = system_state.get("best_weights")
+        
+        # 適合度計算
+        compatibility = calculate_compatibility_with_weights(student_profile, lab, weights)
+        
+        # 評価基準
+        required_features = settings.core_features if SETTINGS_AVAILABLE else [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+        
+        # 特徴量別の詳細分析
+        feature_analysis = {}
+        strengths = []
+        concerns = []
+        
+        for i, feature in enumerate(required_features):
+            student_val = float(student_profile.get(feature, 0.5))
+            lab_val = float(lab.get(feature, 0.5))
+            
+            # 10段階評価の場合は正規化
+            if student_val > 1.0:
+                student_val /= 10.0
+            
+            similarity = 1.0 - abs(student_val - lab_val)
+            weight = weights[i] if weights else 1.0
+            
+            feature_analysis[feature] = {
+                "student_value": student_val,
+                "lab_value": lab_val,
+                "similarity": similarity,
+                "weight": weight,
+                "weighted_score": similarity * weight,
+                "match_level": "高" if similarity > 0.8 else "中" if similarity > 0.6 else "低"
+            }
+            
+            # 強みと懸念点の抽出
+            if similarity > 0.8:
+                strengths.append(f"{feature}の高い適合性（{similarity:.1%}）")
+            elif similarity < 0.5:
+                concerns.append(f"{feature}の適合性が低い（{similarity:.1%}）")
+        
+        # 推奨事項の生成
+        recommendations = []
+        if compatibility > 0.7:
+            recommendations.append("この研究室は高い適合性を示しています")
+            recommendations.append("積極的に検討することをお勧めします")
+        elif compatibility > 0.5:
+            recommendations.append("適度な適合性があります")
+            recommendations.append("研究室訪問で詳細を確認することをお勧めします")
+        else:
+            recommendations.append("他の研究室も検討することをお勧めします")
+        
+        # レスポンス構築
+        response = {
+            "lab_id": lab_id,
+            "lab_info": {
+                "name": lab["name"],
+                "field": lab.get("field", "Unknown"),
+                "category": lab.get("category", "technology")
+            },
+            "overall_compatibility": compatibility,
+            "compatibility_score": compatibility,
+            "final_score": compatibility,
+            
+            "feature_analysis": feature_analysis,
+            "strengths": strengths,
+            "concerns": concerns,
+            "recommendations": recommendations,
+            
+            "optimization_info": {
+                "optimized_weights_available": weights is not None,
+                "weights_used": "optimized" if weights else "default",
+                "weight_values": weights if weights else None
+            },
+            
+            "metadata": {
+                "analysis_timestamp": time.time(),
+                "features_analyzed": len(feature_analysis)
+            }
+        }
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"❌ 説明生成エラー: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Explanation error: {str(e)}")
+
+# サーバー起動
 if __name__ == "__main__":
-    start_server()
+    print("\n" + "=" * 70)
+    print("🚀 FastAPI サーバー起動中...")
+    print("=" * 70)
+    print(f"📍 URL: http://localhost:{settings.port if SETTINGS_AVAILABLE else 8000}")
+    print(f"📚 API文書: http://localhost:{settings.port if SETTINGS_AVAILABLE else 8000}/docs")
+    print(f"🔧 システム状況:")
+    print(f"  - ファジィ推論: {'✅' if FUZZY_AVAILABLE else '❌ (オプション)'}")
+    print(f"  - 遺伝的アルゴリズム: {'✅ 本格実装' if GENETIC_AVAILABLE else '❌'}")
+    print(f"  - 決定木: {'✅' if DECISION_TREE_AVAILABLE else '❌ (オプション)'}")
+    print(f"  - 設定ファイル: {'✅' if SETTINGS_AVAILABLE else '❌ (デフォルト使用)'}")
+    print(f"  - 研究室データ: {len(SAMPLE_LABS)}件")
+    print(f"  - システム初期化: {'✅' if system_state['initialized'] else '❌'}")
+    print(f"\n📡 利用可能なエンドポイント:")
+    print(f"  GET  /health           - ヘルスチェック")
+    print(f"  GET  /api/labs         - 研究室一覧")
+    print(f"  POST /api/evaluate     - 適合度評価")
+    print(f"  POST /api/optimize     - 遺伝的アルゴリズム最適化")
+    print(f"  POST /api/explain      - 推薦理由説明")
+    print("=" * 70)
+    
+    # reloadオプションを使う場合はインポート文字列で指定
+    uvicorn.run(
+        "app:app",  # ← 文字列で指定（重要！）
+        host=settings.host if SETTINGS_AVAILABLE else "0.0.0.0",
+        port=settings.port if SETTINGS_AVAILABLE else 8000,
+        reload=settings.debug if SETTINGS_AVAILABLE else True,
+        log_level="info"
+    )
