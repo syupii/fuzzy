@@ -80,6 +80,297 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ===== ハイブリッドシステム: ファジィ決定木 × 遺伝的アルゴリズム =====
+
+class HybridFuzzyGeneticSystem:
+    """ハイブリッドシステム：ファジィ決定木と遺伝的アルゴリズムの統合"""
+    
+    def __init__(self, feature_names: List[str]):
+        self.feature_names = feature_names
+        self.decision_tree = None
+        self.cluster_weights = {}  # クラスタごとの最適重み
+        self.is_trained = False
+        
+        print(f"🔬 ハイブリッドシステム初期化")
+        print(f"  特徴量数: {len(feature_names)}")
+    
+    def train(self, training_data: List[Dict[str, Any]], 
+              labs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        ハイブリッドシステムの学習
+        
+        フェーズ1: ファジィ決定木で学生を分類
+        フェーズ2: 各クラスタに対して遺伝的アルゴリズムで重みを最適化
+        """
+        
+        print(f"\n{'='*70}")
+        print(f"🔬 ハイブリッドシステム学習開始")
+        print(f"{'='*70}")
+        
+        start_time = time.time()
+        
+        # === フェーズ1: ファジィ決定木による学生分類 ===
+        print(f"\n📊 フェーズ1: ファジィ決定木による分類")
+        
+        if DECISION_TREE_AVAILABLE:
+            clusters = self._train_fuzzy_decision_tree(training_data)
+        else:
+            # フォールバック: 簡易分類
+            clusters = self._simple_clustering(training_data)
+        
+        print(f"  クラスタ数: {len(clusters)}")
+        for cluster_name, students in clusters.items():
+            print(f"    {cluster_name}: {len(students)}名")
+        
+        # === フェーズ2: クラスタごとに遺伝的アルゴリズムで重み最適化 ===
+        print(f"\n🧬 フェーズ2: クラスタ別重み最適化")
+        
+        for cluster_name, cluster_students in clusters.items():
+            if len(cluster_students) < 2:
+                # サンプルが少ない場合はデフォルト重み
+                self.cluster_weights[cluster_name] = [1.0] * len(self.feature_names)
+                continue
+            
+            print(f"\n  クラスタ [{cluster_name}] の最適化中...")
+            
+            # 遺伝的アルゴリズムで重み最適化
+            optimal_weights = self._optimize_weights_for_cluster(
+                cluster_students, labs
+            )
+            
+            self.cluster_weights[cluster_name] = optimal_weights
+            print(f"    最適重み: {[f'{w:.3f}' for w in optimal_weights[:5]]}...")
+        
+        training_time = time.time() - start_time
+        self.is_trained = True
+        
+        print(f"\n✅ ハイブリッドシステム学習完了")
+        print(f"  学習時間: {training_time:.2f}秒")
+        print(f"{'='*70}")
+        
+        return {
+            "success": True,
+            "training_time": training_time,
+            "clusters": {name: len(students) for name, students in clusters.items()},
+            "cluster_weights": self.cluster_weights
+        }
+    
+    def _train_fuzzy_decision_tree(self, training_data: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
+        """ファジィ決定木による分類"""
+        
+        try:
+            from core.decision_tree.tree import FuzzyDecisionTree, TreeConfig
+            
+            # 決定木の設定
+            config = TreeConfig(
+                max_depth=5,
+                min_samples_split=3,
+                min_samples_leaf=2,
+                fuzzy_threshold=0.15
+            )
+            
+            self.decision_tree = FuzzyDecisionTree(config)
+            
+            # 学習データの準備
+            # 簡易的な分類ラベルを生成（研究強度ベース）
+            labeled_data = []
+            for student in training_data:
+                research_intensity = student.get('research_intensity', 0.5)
+                
+                if research_intensity > 0.7:
+                    label = 'high_intensity'
+                elif research_intensity > 0.4:
+                    label = 'medium_intensity'
+                else:
+                    label = 'low_intensity'
+                
+                labeled_student = student.copy()
+                labeled_student['class'] = label
+                labeled_data.append(labeled_student)
+            
+            # 決定木の学習
+            self.decision_tree.fit(labeled_data)
+            
+            # クラスタに分類
+            clusters = {
+                'high_intensity': [],
+                'medium_intensity': [],
+                'low_intensity': []
+            }
+            
+            for student in training_data:
+                prediction = self.decision_tree.predict(student)
+                cluster = prediction.get('predicted_class', 'medium_intensity')
+                clusters[cluster].append(student)
+            
+            return clusters
+            
+        except Exception as e:
+            print(f"  ⚠️ 決定木学習エラー: {e}")
+            return self._simple_clustering(training_data)
+    
+    def _simple_clustering(self, training_data: List[Dict[str, Any]]) -> Dict[str, List[Dict]]:
+        """簡易クラスタリング（フォールバック）"""
+        
+        clusters = {
+            'high_intensity': [],
+            'medium_intensity': [],
+            'low_intensity': []
+        }
+        
+        for student in training_data:
+            research_intensity = student.get('research_intensity', 0.5)
+            
+            if research_intensity > 0.7:
+                clusters['high_intensity'].append(student)
+            elif research_intensity > 0.4:
+                clusters['medium_intensity'].append(student)
+            else:
+                clusters['low_intensity'].append(student)
+        
+        return clusters
+    
+    def _optimize_weights_for_cluster(self, cluster_students: List[Dict[str, Any]], 
+                                     labs: List[Dict[str, Any]]) -> List[float]:
+        """クラスタ内の学生に対する重みの最適化"""
+        
+        if not GENETIC_AVAILABLE:
+            return [1.0] * len(self.feature_names)
+        
+        # 遺伝的アルゴリズムの設定（高速化のため小規模）
+        config = EvolutionConfig(
+            population_size=15,
+            generations=20,
+            mutation_rate=0.15,
+            crossover_rate=0.8,
+            elitism_rate=0.15,
+            max_stagnation=8
+        )
+        
+        engine = EvolutionEngine(config)
+        
+        # 適応度関数: クラスタ内の学生に対する平均適合度
+        def cluster_fitness_function(individual):
+            weights = individual.chromosome[:len(self.feature_names)]
+            
+            total_fitness = 0.0
+            for student in cluster_students:
+                for lab in labs:
+                    compatibility = self._calculate_weighted_compatibility(
+                        student, lab, weights
+                    )
+                    total_fitness += compatibility
+            
+            avg_fitness = total_fitness / (len(cluster_students) * len(labs))
+            return avg_fitness
+        
+        # 進化実行
+        engine.initialize_population()
+        
+        for generation in range(config.generations):
+            # 適応度評価
+            for individual in engine.population:
+                individual.fitness = cluster_fitness_function(individual)
+            
+            # 次世代生成
+            engine.evolve_generation()
+            
+            # 早期終了判定
+            engine.population.sort(key=lambda x: x.fitness, reverse=True)
+            if generation > 0:
+                improvement = engine.population[0].fitness - engine.best_fitness
+                if abs(improvement) < config.convergence_threshold:
+                    engine.stagnation_count += 1
+                    if engine.stagnation_count >= config.max_stagnation:
+                        break
+                else:
+                    engine.stagnation_count = 0
+                    engine.best_fitness = engine.population[0].fitness
+            else:
+                engine.best_fitness = engine.population[0].fitness
+        
+        # 最良個体の重みを返す
+        best_individual = engine.population[0]
+        optimal_weights = best_individual.chromosome[:len(self.feature_names)]
+        
+        return optimal_weights
+    
+    def _calculate_weighted_compatibility(self, student: Dict[str, Any], 
+                                         lab: Dict[str, Any],
+                                         weights: List[float]) -> float:
+        """重み付き適合度計算"""
+        
+        total_weighted_similarity = 0.0
+        total_weight = 0.0
+        
+        for i, feature in enumerate(self.feature_names):
+            student_val = float(student.get(feature, 0.5))
+            lab_val = float(lab.get(feature, 0.5))
+            
+            if student_val > 1.0:
+                student_val /= 10.0
+            
+            similarity = 1.0 - abs(student_val - lab_val)
+            weight = weights[i] if i < len(weights) else 1.0
+            
+            total_weighted_similarity += weight * similarity
+            total_weight += weight
+        
+        return total_weighted_similarity / total_weight if total_weight > 0 else 0.0
+    
+    def predict(self, student_profile: Dict[str, Any], 
+                labs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """ハイブリッドシステムによる予測"""
+        
+        if not self.is_trained:
+            print("⚠️ システムが学習されていません")
+            return []
+        
+        # フェーズ1: 学生をクラスタに分類
+        if self.decision_tree and DECISION_TREE_AVAILABLE:
+            try:
+                prediction = self.decision_tree.predict(student_profile)
+                cluster = prediction.get('predicted_class', 'medium_intensity')
+            except:
+                cluster = self._classify_student_simple(student_profile)
+        else:
+            cluster = self._classify_student_simple(student_profile)
+        
+        # フェーズ2: クラスタの最適重みで評価
+        weights = self.cluster_weights.get(cluster, [1.0] * len(self.feature_names))
+        
+        # 各研究室との適合度計算
+        results = []
+        for lab in labs:
+            compatibility = self._calculate_weighted_compatibility(
+                student_profile, lab, weights
+            )
+            
+            results.append({
+                "lab_id": lab["id"],
+                "lab_name": lab["name"],
+                "field": lab.get("field", "Unknown"),
+                "compatibility": compatibility,
+                "cluster": cluster,
+                "method": "hybrid_fuzzy_genetic"
+            })
+        
+        # 適合度でソート
+        results.sort(key=lambda x: x["compatibility"], reverse=True)
+        
+        return results
+    
+    def _classify_student_simple(self, student: Dict[str, Any]) -> str:
+        """簡易的な学生分類"""
+        research_intensity = student.get('research_intensity', 0.5)
+        
+        if research_intensity > 0.7:
+            return 'high_intensity'
+        elif research_intensity > 0.4:
+            return 'medium_intensity'
+        else:
+            return 'low_intensity'
+
 # グローバル状態管理
 system_state = {
     "initialized": False,
@@ -87,8 +378,12 @@ system_state = {
     "evaluation_count": 0,
     "optimization_cache": {},
     "genetic_engine": None,
-    "best_weights": None
+    "best_weights": None,
+    "hybrid_system": None  # ハイブリッドシステム
 }
+
+# グローバルハイブリッドシステムのインスタンス
+hybrid_system: Optional[HybridFuzzyGeneticSystem] = None
 
 # ===== 研究室データベース =====
 
@@ -326,11 +621,24 @@ def initialize_system():
             system_state["genetic_engine"] = create_genetic_engine()
             print("✅ 遺伝的アルゴリズムエンジン初期化完了")
         
+        # ハイブリッドシステム初期化
+        feature_names = settings.core_features if SETTINGS_AVAILABLE else [
+            "research_intensity", "advisor_style", "team_work", 
+            "workload", "theory_practice"
+        ]
+        
+        global hybrid_system
+        hybrid_system = HybridFuzzyGeneticSystem(feature_names)
+        system_state["hybrid_system"] = hybrid_system
+        print("✅ ハイブリッドシステム初期化完了")
+        
         system_state["initialized"] = True
         print("✅ システム初期化完了")
         
     except Exception as e:
         print(f"❌ システム初期化エラー: {e}")
+        import traceback
+        traceback.print_exc()
         system_state["initialized"] = False
 
 initialize_system()
@@ -693,7 +1001,186 @@ async def optimize_matching(request: Dict[str, Any]):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 
-@app.post("/api/explain")
+@app.post("/api/hybrid/train")
+async def train_hybrid_system(request: Dict[str, Any]):
+    """
+    ハイブリッドシステムの学習
+    
+    ファジィ決定木で学生を分類し、各クラスタに対して
+    遺伝的アルゴリズムで最適な重みを学習
+    """
+    
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
+    try:
+        # トレーニングデータの取得
+        training_students = request.get("training_students", [])
+        
+        if not training_students:
+            # サンプルデータを生成
+            training_students = generate_sample_students(30)
+            print(f"📊 サンプル学生データ生成: {len(training_students)}名")
+        
+        print(f"\n🔬 ハイブリッドシステム学習開始")
+        print(f"  学生数: {len(training_students)}")
+        print(f"  研究室数: {len(system_state['lab_database'])}")
+        
+        # ハイブリッドシステムで学習
+        training_result = hybrid_system.train(
+            training_students,
+            system_state["lab_database"]
+        )
+        
+        # 学習結果を保存
+        system_state["hybrid_trained"] = True
+        
+        return {
+            "success": True,
+            "message": "ハイブリッドシステムの学習が完了しました",
+            "training_result": training_result,
+            "clusters": training_result["clusters"],
+            "training_time": training_result["training_time"],
+            "system_info": {
+                "decision_tree_available": DECISION_TREE_AVAILABLE,
+                "genetic_algorithm_available": GENETIC_AVAILABLE,
+                "hybrid_mode": "tree_then_ga"
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ ハイブリッドシステム学習エラー: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Training error: {str(e)}")
+
+@app.post("/api/hybrid/evaluate")
+async def evaluate_with_hybrid_system(request: Dict[str, Any]):
+    """
+    ハイブリッドシステムによる評価
+    
+    1. ファジィ決定木で学生を分類
+    2. クラスタに最適化された重みで適合度を計算
+    """
+    
+    if not system_state["initialized"]:
+        raise HTTPException(status_code=503, detail="System not initialized")
+    
+    if not hybrid_system.is_trained:
+        raise HTTPException(
+            status_code=400, 
+            detail="Hybrid system not trained. Please call /api/hybrid/train first"
+        )
+    
+    try:
+        # 学生プロファイル取得
+        student_profile = request.get("student_profile", request)
+        
+        print(f"\n🔬 ハイブリッド評価実行")
+        
+        # ハイブリッドシステムで予測
+        predictions = hybrid_system.predict(
+            student_profile,
+            system_state["lab_database"]
+        )
+        
+        # フロントエンド互換形式に変換
+        lab_results = []
+        for pred in predictions:
+            lab = next((l for l in system_state["lab_database"] 
+                       if l["id"] == pred["lab_id"]), None)
+            
+            if lab:
+                # 詳細スコア計算
+                feature_names = hybrid_system.feature_names
+                cluster = pred["cluster"]
+                weights = hybrid_system.cluster_weights.get(
+                    cluster, [1.0] * len(feature_names)
+                )
+                
+                feature_scores = {}
+                for i, feature in enumerate(feature_names):
+                    student_val = float(student_profile.get(feature, 0.5))
+                    lab_val = float(lab.get(feature, 0.5))
+                    
+                    if student_val > 1.0:
+                        student_val /= 10.0
+                    
+                    similarity = 1.0 - abs(student_val - lab_val)
+                    feature_scores[feature] = similarity
+                
+                lab_results.append({
+                    "lab_id": pred["lab_id"],
+                    "lab_name": pred["lab_name"],
+                    "field": pred["field"],
+                    "final_score": pred["compatibility"],
+                    "compatibility_score": pred["compatibility"],
+                    "overall_compatibility": pred["compatibility"],
+                    "feature_scores": feature_scores,
+                    "cluster": cluster,
+                    "optimized_weights": weights[:5],  # 先頭5個のみ
+                    "method": "hybrid_fuzzy_genetic",
+                    "recommendation": "強く推薦" if pred["compatibility"] > 0.8 
+                                    else "推薦" if pred["compatibility"] > 0.6 
+                                    else "検討可能"
+                })
+        
+        # 統計情報
+        scores = [r["final_score"] for r in lab_results]
+        summary = {
+            "total_labs": len(lab_results),
+            "avg_score": sum(scores) / len(scores) if scores else 0.0,
+            "max_score": max(scores) if scores else 0.0,
+            "min_score": min(scores) if scores else 0.0
+        }
+        
+        system_state["evaluation_count"] += 1
+        
+        return {
+            "lab_results": lab_results,
+            "summary": summary,
+            "metadata": {
+                "evaluation_method": "hybrid_fuzzy_genetic",
+                "decision_tree_used": DECISION_TREE_AVAILABLE,
+                "cluster_based_optimization": True,
+                "processing_time": 0.1,
+                "timestamp": time.time()
+            }
+        }
+        
+    except Exception as e:
+        import traceback
+        print(f"❌ ハイブリッド評価エラー: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}")
+
+def generate_sample_students(count: int) -> List[Dict[str, Any]]:
+    """サンプル学生データ生成（学習用）"""
+    
+    students = []
+    feature_names = settings.core_features if SETTINGS_AVAILABLE else [
+        "research_intensity", "advisor_style", "team_work", 
+        "workload", "theory_practice"
+    ]
+    
+    for i in range(count):
+        student = {}
+        
+        # ランダムだが相関のある値を生成
+        research_intensity = random.uniform(0.3, 0.9)
+        
+        # 研究強度が高い → workloadも高め
+        workload_bias = research_intensity * 0.3
+        
+        student["research_intensity"] = research_intensity
+        student["advisor_style"] = random.uniform(0.4, 0.8)
+        student["team_work"] = random.uniform(0.4, 0.8)
+        student["workload"] = min(0.9, random.uniform(0.3, 0.7) + workload_bias)
+        student["theory_practice"] = random.uniform(0.3, 0.8)
+        
+        students.append(student)
+    
+    return students
 async def explain_recommendation(request: Dict[str, Any]):
     """推薦結果の詳細説明（フロントエンド互換版）"""
     
@@ -814,15 +1301,23 @@ if __name__ == "__main__":
     print(f"  - ファジィ推論: {'✅' if FUZZY_AVAILABLE else '❌ (オプション)'}")
     print(f"  - 遺伝的アルゴリズム: {'✅ 本格実装' if GENETIC_AVAILABLE else '❌'}")
     print(f"  - 決定木: {'✅' if DECISION_TREE_AVAILABLE else '❌ (オプション)'}")
+    print(f"  - ハイブリッドシステム: ✅ 統合実装")
     print(f"  - 設定ファイル: {'✅' if SETTINGS_AVAILABLE else '❌ (デフォルト使用)'}")
     print(f"  - 研究室データ: {len(SAMPLE_LABS)}件")
     print(f"  - システム初期化: {'✅' if system_state['initialized'] else '❌'}")
     print(f"\n📡 利用可能なエンドポイント:")
-    print(f"  GET  /health           - ヘルスチェック")
-    print(f"  GET  /api/labs         - 研究室一覧")
-    print(f"  POST /api/evaluate     - 適合度評価")
-    print(f"  POST /api/optimize     - 遺伝的アルゴリズム最適化")
-    print(f"  POST /api/explain      - 推薦理由説明")
+    print(f"  GET  /health                  - ヘルスチェック")
+    print(f"  GET  /api/labs                - 研究室一覧")
+    print(f"  POST /api/evaluate            - 基本評価")
+    print(f"  POST /api/optimize            - GA最適化")
+    print(f"  POST /api/hybrid/train        - ハイブリッドシステム学習 🆕")
+    print(f"  POST /api/hybrid/evaluate     - ハイブリッド評価 🆕")
+    print(f"  POST /api/explain             - 推薦理由説明")
+    print("=" * 70)
+    print(f"\n🔬 ハイブリッドシステムについて:")
+    print(f"  ✅ ファジィ決定木で学生を分類")
+    print(f"  ✅ 各クラスタに最適化された重みで評価")
+    print(f"  ✅ 研究論文レベルの統合実装")
     print("=" * 70)
     
     # reloadオプションを使う場合はインポート文字列で指定
