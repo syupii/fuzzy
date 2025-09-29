@@ -1,493 +1,441 @@
-# core/fuzzy/membership.py - メンバーシップ関数（完全版）
+"""
+ファジィメンバーシップ関数モジュール
+各種メンバーシップ関数の実装
+"""
 
 import numpy as np
+from typing import List, Tuple, Dict, Callable
 import math
-from typing import Dict, List, Tuple, Callable, Any, Optional, Union
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from enum import Enum
-import logging
 
-logger = logging.getLogger(__name__)
 
-class MembershipType(str, Enum):
-    """メンバーシップ関数の種類"""
-    TRIANGULAR = "triangular"
-    TRAPEZOIDAL = "trapezoidal"
-    GAUSSIAN = "gaussian"
-    SIGMOID = "sigmoid"
-    BELL = "bell"
-
-@dataclass
-class MembershipParams:
-    """メンバーシップ関数のパラメータ"""
-    a: float  # 左端または中心
-    b: Optional[float] = None  # 右端または幅
-    c: Optional[float] = None  # 第3パラメータ
-    d: Optional[float] = None  # 第4パラメータ
-
-class MembershipFunction(ABC):
-    """メンバーシップ関数の抽象基底クラス"""
+class MembershipFunction:
+    """メンバーシップ関数の基底クラス"""
     
-    def __init__(self, name: str, params: MembershipParams = None):
-        self.name = name
-        self.params = params or MembershipParams(0.0)
-    
-    @abstractmethod
-    def membership(self, x: float) -> float:
+    def __call__(self, x: float) -> float:
         """メンバーシップ度を計算"""
-        pass
+        raise NotImplementedError
     
-    def batch_membership(self, x_values: List[float]) -> List[float]:
-        """複数値のメンバーシップ度を一括計算"""
-        return [self.membership(x) for x in x_values]
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}()"
+
 
 class TriangularMF(MembershipFunction):
-    """三角形メンバーシップ関数"""
+    """三角型メンバーシップ関数
     
-    def __init__(self, name: str, a: float, b: float, c: float):
+    最も基本的なファジィメンバーシップ関数
+    3つのパラメータ(a, b, c)で定義される
+    """
+    
+    def __init__(self, a: float, b: float, c: float):
         """
         Args:
-            a: 左端
-            b: 頂点
-            c: 右端
+            a: 左端（メンバーシップ度=0）
+            b: 中心（メンバーシップ度=1のピーク）
+            c: 右端（メンバーシップ度=0）
         """
-        super().__init__(name, MembershipParams(a, b, c))
-        self.a, self.b, self.c = a, b, c
+        if not (a <= b <= c):
+            raise ValueError(f"Parameters must satisfy a <= b <= c, got a={a}, b={b}, c={c}")
+        
+        self.a = a
+        self.b = b
+        self.c = c
     
-    def membership(self, x: float) -> float:
-        """三角形メンバーシップ度計算"""
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算
+        
+        Args:
+            x: 入力値
+            
+        Returns:
+            メンバーシップ度 [0, 1]
+        """
         if x <= self.a or x >= self.c:
             return 0.0
-        elif self.a < x <= self.b:
-            return (x - self.a) / (self.b - self.a) if self.b != self.a else 1.0
-        else:  # self.b < x < self.c
-            return (self.c - x) / (self.c - self.b) if self.c != self.b else 1.0
+        elif x == self.b:
+            return 1.0
+        elif x < self.b:
+            return (x - self.a) / (self.b - self.a)
+        else:  # x > self.b
+            return (self.c - x) / (self.c - self.b)
+    
+    def __repr__(self) -> str:
+        return f"TriangularMF(a={self.a}, b={self.b}, c={self.c})"
+
 
 class TrapezoidalMF(MembershipFunction):
-    """台形メンバーシップ関数"""
+    """台形型メンバーシップ関数
     
-    def __init__(self, name: str, a: float, b: float, c: float, d: float):
+    4つのパラメータで定義される
+    平坦な頂上を持つため、より柔軟な表現が可能
+    """
+    
+    def __init__(self, a: float, b: float, c: float, d: float):
         """
         Args:
-            a: 左端
-            b: 左上端
-            c: 右上端
-            d: 右端
+            a: 左端（メンバーシップ度=0）
+            b: 左上端（メンバーシップ度=1の開始）
+            c: 右上端（メンバーシップ度=1の終了）
+            d: 右端（メンバーシップ度=0）
         """
-        super().__init__(name, MembershipParams(a, b, c, d))
-        self.a, self.b, self.c, self.d = a, b, c, d
+        if not (a <= b <= c <= d):
+            raise ValueError(f"Parameters must satisfy a <= b <= c <= d")
+        
+        self.a = a
+        self.b = b
+        self.c = c
+        self.d = d
     
-    def membership(self, x: float) -> float:
-        """台形メンバーシップ度計算"""
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算"""
         if x <= self.a or x >= self.d:
             return 0.0
-        elif self.a < x <= self.b:
-            return (x - self.a) / (self.b - self.a) if self.b != self.a else 1.0
-        elif self.b < x <= self.c:
+        elif self.b <= x <= self.c:
             return 1.0
+        elif self.a < x < self.b:
+            return (x - self.a) / (self.b - self.a)
         else:  # self.c < x < self.d
-            return (self.d - x) / (self.d - self.c) if self.d != self.c else 1.0
+            return (self.d - x) / (self.d - self.c)
+    
+    def __repr__(self) -> str:
+        return f"TrapezoidalMF(a={self.a}, b={self.b}, c={self.c}, d={self.d})"
+
 
 class GaussianMF(MembershipFunction):
-    """ガウシアンメンバーシップ関数"""
+    """ガウス型（正規分布型）メンバーシップ関数
     
-    def __init__(self, name: str, center: float, sigma: float):
+    滑らかな曲線を持つメンバーシップ関数
+    統計的な解釈が可能
+    """
+    
+    def __init__(self, mean: float, sigma: float):
         """
         Args:
-            center: 中心
-            sigma: 標準偏差
+            mean: 平均（中心、メンバーシップ度=1のピーク）
+            sigma: 標準偏差（広がりを制御）
         """
-        super().__init__(name, MembershipParams(center, sigma))
-        self.center = center
+        if sigma <= 0:
+            raise ValueError(f"Sigma must be positive, got {sigma}")
+        
+        self.mean = mean
         self.sigma = sigma
     
-    def membership(self, x: float) -> float:
-        """ガウシアンメンバーシップ度計算"""
-        if self.sigma == 0:
-            return 1.0 if x == self.center else 0.0
-        return math.exp(-0.5 * ((x - self.center) / self.sigma) ** 2)
-
-class SigmoidMF(MembershipFunction):
-    """シグモイドメンバーシップ関数"""
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算"""
+        return math.exp(-0.5 * ((x - self.mean) / self.sigma) ** 2)
     
-    def __init__(self, name: str, a: float, c: float):
+    def __repr__(self) -> str:
+        return f"GaussianMF(mean={self.mean}, sigma={self.sigma})"
+
+
+class GeneralizedBellMF(MembershipFunction):
+    """一般化ベル型メンバーシップ関数
+    
+    3つのパラメータで形状を柔軟に制御できる
+    ガウス関数よりも形状の制御が容易
+    """
+    
+    def __init__(self, a: float, b: float, c: float):
         """
         Args:
-            a: 傾き
-            c: 中心点
+            a: 広がり（大きいほど広い）
+            b: 傾き（大きいほど急峻）
+            c: 中心
         """
-        super().__init__(name, MembershipParams(a, c))
+        if a <= 0:
+            raise ValueError(f"Parameter 'a' must be positive, got {a}")
+        if b <= 0:
+            raise ValueError(f"Parameter 'b' must be positive, got {b}")
+        
+        self.a = a
+        self.b = b
+        self.c = c
+    
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算"""
+        return 1.0 / (1.0 + abs((x - self.c) / self.a) ** (2 * self.b))
+    
+    def __repr__(self) -> str:
+        return f"GeneralizedBellMF(a={self.a}, b={self.b}, c={self.c})"
+
+
+class SigmoidMF(MembershipFunction):
+    """シグモイド型メンバーシップ関数
+    
+    S字カーブを描くメンバーシップ関数
+    単調増加または単調減少の表現に適している
+    """
+    
+    def __init__(self, a: float, c: float):
+        """
+        Args:
+            a: 傾き（正で増加、負で減少）
+            c: 変曲点（S字の中心）
+        """
         self.a = a
         self.c = c
     
-    def membership(self, x: float) -> float:
-        """シグモイドメンバーシップ度計算"""
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算"""
         return 1.0 / (1.0 + math.exp(-self.a * (x - self.c)))
+    
+    def __repr__(self) -> str:
+        return f"SigmoidMF(a={self.a}, c={self.c})"
 
-class BellMF(MembershipFunction):
-    """ベル型メンバーシップ関数"""
-    
-    def __init__(self, name: str, a: float, b: float, c: float):
-        """
-        Args:
-            a: 幅パラメータ
-            b: 形状パラメータ
-            c: 中心
-        """
-        super().__init__(name, MembershipParams(a, b, c))
-        self.a, self.b, self.c = a, b, c
-    
-    def membership(self, x: float) -> float:
-        """ベル型メンバーシップ度計算"""
-        if self.a == 0:
-            return 1.0 if x == self.c else 0.0
-        return 1.0 / (1.0 + abs((x - self.c) / self.a) ** (2 * self.b))
 
 class FuzzySet:
-    """ファジィ集合クラス"""
+    """ファジィ集合
     
-    def __init__(self, name: str, membership_function: MembershipFunction, 
-                 universe: Tuple[float, float] = (0.0, 10.0)):
-        self.name = name
-        self.membership_function = membership_function
-        self.universe = universe  # 議論域
-        
+    メンバーシップ関数と言語ラベルを持つ
+    """
+    
+    def __init__(self, label: str, mf: MembershipFunction):
+        """
+        Args:
+            label: 言語ラベル（例: "低い", "中程度", "高い"）
+            mf: メンバーシップ関数
+        """
+        self.label = label
+        self.mf = mf
+    
     def membership(self, x: float) -> float:
-        """メンバーシップ度を取得"""
-        return self.membership_function.membership(x)
+        """メンバーシップ度を計算"""
+        return self.mf(x)
     
-    def alpha_cut(self, alpha: float, num_points: int = 1000) -> List[float]:
-        """α-カットを計算"""
-        x_range = np.linspace(self.universe[0], self.universe[1], num_points)
-        return [x for x in x_range if self.membership(x) >= alpha]
+    def __call__(self, x: float) -> float:
+        """メンバーシップ度を計算（簡略記法）"""
+        return self.membership(x)
     
-    def support(self, threshold: float = 0.001) -> List[float]:
-        """サポート（台）を計算"""
-        return self.alpha_cut(threshold)
-    
-    def height(self) -> float:
-        """高さ（最大メンバーシップ度）を計算"""
-        x_range = np.linspace(self.universe[0], self.universe[1], 1000)
-        return max(self.membership(x) for x in x_range)
-    
-    def centroid(self, num_points: int = 1000) -> float:
-        """重心を計算"""
-        x_range = np.linspace(self.universe[0], self.universe[1], num_points)
-        numerator = sum(x * self.membership(x) for x in x_range)
-        denominator = sum(self.membership(x) for x in x_range)
-        
-        return numerator / denominator if denominator > 0 else 0.0
+    def __repr__(self) -> str:
+        return f"FuzzySet(label='{self.label}', mf={self.mf})"
+
 
 class FuzzyVariable:
-    """ファジィ変数クラス"""
+    """ファジィ変数
     
-    def __init__(self, name: str, universe: Tuple[float, float] = (0.0, 10.0)):
+    複数のファジィ集合を持つ言語変数
+    例: 研究強度 = {低い, 中程度, 高い}
+    """
+    
+    def __init__(self, name: str, universe: Tuple[float, float]):
+        """
+        Args:
+            name: 変数名
+            universe: 論理領域 (min, max)
+        """
         self.name = name
         self.universe = universe
-        self.sets: Dict[str, FuzzySet] = {}
+        self.fuzzy_sets: Dict[str, FuzzySet] = {}
     
-    def add_set(self, fuzzy_set: FuzzySet):
+    def add_fuzzy_set(self, fuzzy_set: FuzzySet):
         """ファジィ集合を追加"""
-        self.sets[fuzzy_set.name] = fuzzy_set
+        self.fuzzy_sets[fuzzy_set.label] = fuzzy_set
     
-    def get_membership(self, value: float) -> Dict[str, float]:
-        """全ての集合に対するメンバーシップ度を取得"""
-        return {name: fs.membership(value) for name, fs in self.sets.items()}
-    
-    def fuzzify(self, value: float) -> Dict[str, float]:
-        """ファジィ化"""
-        return self.get_membership(value)
-    
-    def defuzzify(self, membership_values: Dict[str, float], 
-                  method: str = "centroid") -> float:
-        """非ファジィ化"""
+    def fuzzify(self, x: float) -> Dict[str, float]:
+        """ファジィ化: crisp値を各ファジィ集合のメンバーシップ度に変換
         
+        Args:
+            x: crisp値
+            
+        Returns:
+            各言語ラベルに対するメンバーシップ度の辞書
+        """
+        return {
+            label: fuzzy_set.membership(x)
+            for label, fuzzy_set in self.fuzzy_sets.items()
+        }
+    
+    def defuzzify(self, memberships: Dict[str, float], method: str = "centroid") -> float:
+        """非ファジィ化: メンバーシップ度をcrisp値に変換
+        
+        Args:
+            memberships: 各言語ラベルのメンバーシップ度
+            method: 非ファジィ化手法 ("centroid", "max", "mean")
+            
+        Returns:
+            crisp値
+        """
         if method == "centroid":
+            # 重心法
             numerator = 0.0
             denominator = 0.0
             
-            for set_name, membership in membership_values.items():
-                if set_name in self.sets and membership > 0:
-                    centroid = self.sets[set_name].centroid()
-                    numerator += membership * centroid
-                    denominator += membership
+            # 論理領域をサンプリング
+            samples = np.linspace(self.universe[0], self.universe[1], 100)
             
-            return numerator / denominator if denominator > 0 else 0.0
+            for x in samples:
+                # 各点での総合メンバーシップ度を計算
+                max_membership = max(
+                    min(memberships.get(label, 0), fuzzy_set.membership(x))
+                    for label, fuzzy_set in self.fuzzy_sets.items()
+                )
+                numerator += x * max_membership
+                denominator += max_membership
+            
+            return numerator / denominator if denominator > 0 else self.universe[0]
         
-        elif method == "weighted_average":
-            total_weight = sum(membership_values.values())
-            if total_weight == 0:
-                return 0.0
+        elif method == "max":
+            # 最大値法（最大メンバーシップ度を持つラベルの中心値）
+            max_label = max(memberships.items(), key=lambda x: x[1])[0]
+            fuzzy_set = self.fuzzy_sets[max_label]
+            
+            # メンバーシップ関数のピーク位置を返す
+            if isinstance(fuzzy_set.mf, TriangularMF):
+                return fuzzy_set.mf.b
+            elif isinstance(fuzzy_set.mf, GaussianMF):
+                return fuzzy_set.mf.mean
+            else:
+                # その他の場合は重心法にフォールバック
+                return self.defuzzify(memberships, method="centroid")
+        
+        elif method == "mean":
+            # 平均値法
+            total = sum(memberships.values())
+            if total == 0:
+                return (self.universe[0] + self.universe[1]) / 2
             
             weighted_sum = 0.0
-            for set_name, membership in membership_values.items():
-                if set_name in self.sets:
-                    # 集合の代表値（重心）を使用
-                    centroid = self.sets[set_name].centroid()
-                    weighted_sum += membership * centroid
+            for label, membership in memberships.items():
+                fuzzy_set = self.fuzzy_sets[label]
+                
+                # 各ファジィ集合の代表値を取得
+                if isinstance(fuzzy_set.mf, TriangularMF):
+                    rep_value = fuzzy_set.mf.b
+                elif isinstance(fuzzy_set.mf, GaussianMF):
+                    rep_value = fuzzy_set.mf.mean
+                else:
+                    rep_value = (self.universe[0] + self.universe[1]) / 2
+                
+                weighted_sum += rep_value * membership
             
-            return weighted_sum / total_weight
-        
-        elif method == "max_membership":
-            # 最大メンバーシップ度を持つ集合の重心
-            max_membership = max(membership_values.values())
-            if max_membership == 0:
-                return 0.0
-            
-            for set_name, membership in membership_values.items():
-                if membership == max_membership and set_name in self.sets:
-                    return self.sets[set_name].centroid()
-            
-            return 0.0
+            return weighted_sum / total
         
         else:
-            raise ValueError(f"未知の非ファジィ化手法: {method}")
+            raise ValueError(f"Unknown defuzzification method: {method}")
     
-    def to_dict(self) -> Dict[str, Any]:
-        """辞書形式で出力"""
-        return {
-            "name": self.name,
-            "universe": self.universe,
-            "sets": {name: {
-                "name": fs.name,
-                "membership_function": fs.membership_function.name,
-                "universe": fs.universe
-            } for name, fs in self.sets.items()}
-        }
+    def __repr__(self) -> str:
+        return f"FuzzyVariable(name='{self.name}', sets={list(self.fuzzy_sets.keys())})"
 
-class MembershipFunctionFactory:
-    """メンバーシップ関数ファクトリ"""
+
+def create_standard_fuzzy_variable(name: str, 
+                                   universe: Tuple[float, float] = (0.0, 1.0),
+                                   n_sets: int = 3) -> FuzzyVariable:
+    """標準的なファジィ変数を作成
     
-    @staticmethod
-    def create_standard_sets(variable_name: str, 
-                           universe: Tuple[float, float] = (1.0, 10.0)) -> FuzzyVariable:
-        """標準的な3分割ファジィ集合を作成（低、中、高）"""
+    Args:
+        name: 変数名
+        universe: 論理領域
+        n_sets: ファジィ集合の数（3, 5, 7のいずれか）
         
-        var = FuzzyVariable(variable_name, universe)
-        min_val, max_val = universe
-        range_val = max_val - min_val
+    Returns:
+        設定済みのファジィ変数
+    """
+    var = FuzzyVariable(name, universe)
+    min_val, max_val = universe
+    
+    if n_sets == 3:
+        # 3分割: 低い、中程度、高い
+        labels = ["low", "medium", "high"]
         
-        # Low, Medium, High の3つの集合
-        low_set = FuzzySet(
+        var.add_fuzzy_set(FuzzySet(
             "low",
-            TriangularMF("low", min_val, min_val, min_val + range_val * 0.5),
-            universe
-        )
-        
-        medium_set = FuzzySet(
-            "medium", 
-            TriangularMF("medium", min_val + range_val * 0.25, 
-                        min_val + range_val * 0.5, min_val + range_val * 0.75),
-            universe
-        )
-        
-        high_set = FuzzySet(
+            TriangularMF(min_val, min_val, (min_val + max_val) / 2)
+        ))
+        var.add_fuzzy_set(FuzzySet(
+            "medium",
+            TriangularMF(min_val, (min_val + max_val) / 2, max_val)
+        ))
+        var.add_fuzzy_set(FuzzySet(
             "high",
-            TriangularMF("high", min_val + range_val * 0.5, max_val, max_val),
-            universe
-        )
-        
-        var.add_set(low_set)
-        var.add_set(medium_set)
-        var.add_set(high_set)
-        
-        return var
+            TriangularMF((min_val + max_val) / 2, max_val, max_val)
+        ))
     
-    @staticmethod
-    def create_five_level_sets(variable_name: str,
-                             universe: Tuple[float, float] = (1.0, 10.0)) -> FuzzyVariable:
-        """5段階ファジィ集合を作成（極低、低、中、高、極高）"""
+    elif n_sets == 5:
+        # 5分割: 非常に低い、低い、中程度、高い、非常に高い
+        step = (max_val - min_val) / 4
         
-        var = FuzzyVariable(variable_name, universe)
-        min_val, max_val = universe
-        range_val = max_val - min_val
-        
-        # Very Low, Low, Medium, High, Very High の5つの集合
-        sets_config = [
-            ("very_low", 0.0, 0.0, 0.25),
-            ("low", 0.0, 0.25, 0.5), 
-            ("medium", 0.25, 0.5, 0.75),
-            ("high", 0.5, 0.75, 1.0),
-            ("very_high", 0.75, 1.0, 1.0)
-        ]
-        
-        for name, start, peak, end in sets_config:
-            fuzzy_set = FuzzySet(
-                name,
-                TriangularMF(
-                    name,
-                    min_val + range_val * start,
-                    min_val + range_val * peak, 
-                    min_val + range_val * end
-                ),
-                universe
-            )
-            var.add_set(fuzzy_set)
-        
-        return var
+        var.add_fuzzy_set(FuzzySet(
+            "very_low",
+            TriangularMF(min_val, min_val, min_val + step)
+        ))
+        var.add_fuzzy_set(FuzzySet(
+            "low",
+            TriangularMF(min_val, min_val + step, min_val + 2*step)
+        ))
+        var.add_fuzzy_set(FuzzySet(
+            "medium",
+            TriangularMF(min_val + step, min_val + 2*step, min_val + 3*step)
+        ))
+        var.add_fuzzy_set(FuzzySet(
+            "high",
+            TriangularMF(min_val + 2*step, min_val + 3*step, max_val)
+        ))
+        var.add_fuzzy_set(FuzzySet(
+            "very_high",
+            TriangularMF(min_val + 3*step, max_val, max_val)
+        ))
     
-    @staticmethod
-    def create_compatibility_variable() -> FuzzyVariable:
-        """適合性用ファジィ変数を作成"""
+    elif n_sets == 7:
+        # 7分割
+        step = (max_val - min_val) / 6
+        labels = ["very_low", "low", "rather_low", "medium", 
+                 "rather_high", "high", "very_high"]
         
-        var = FuzzyVariable("compatibility", (0.0, 1.0))
-        
-        # 不適合, 低適合, 中適合, 高適合, 完全適合
-        sets_config = [
-            ("incompatible", 0.0, 0.0, 0.2),
-            ("low_match", 0.0, 0.2, 0.4),
-            ("medium_match", 0.2, 0.5, 0.8),
-            ("high_match", 0.6, 0.8, 1.0),
-            ("perfect_match", 0.8, 1.0, 1.0)
-        ]
-        
-        for name, start, peak, end in sets_config:
-            fuzzy_set = FuzzySet(
-                name,
-                TriangularMF(name, start, peak, end),
-                (0.0, 1.0)
-            )
-            var.add_set(fuzzy_set)
-        
-        return var
-    
-    @staticmethod
-    def create_research_intensity_variable() -> FuzzyVariable:
-        """研究強度用ファジィ変数を作成"""
-        
-        var = FuzzyVariable("research_intensity", (1.0, 10.0))
-        
-        # 軽い研究, 普通の研究, 集中研究
-        sets_config = [
-            ("light", 1.0, 1.0, 4.0),
-            ("moderate", 2.0, 5.5, 8.0),
-            ("intensive", 6.0, 10.0, 10.0)
-        ]
-        
-        for name, start, peak, end in sets_config:
-            fuzzy_set = FuzzySet(
-                name,
-                TriangularMF(name, start, peak, end),
-                (1.0, 10.0)
-            )
-            var.add_set(fuzzy_set)
-        
-        return var
-    
-    @staticmethod
-    def create_gaussian_sets(variable_name: str, 
-                           universe: Tuple[float, float] = (1.0, 10.0),
-                           num_sets: int = 3) -> FuzzyVariable:
-        """ガウシアンメンバーシップ関数を使用したファジィ集合を作成"""
-        
-        var = FuzzyVariable(variable_name, universe)
-        min_val, max_val = universe
-        range_val = max_val - min_val
-        
-        for i in range(num_sets):
-            center = min_val + (i / (num_sets - 1)) * range_val
-            sigma = range_val / (num_sets * 2)  # 適度な重複
+        for i, label in enumerate(labels):
+            if i == 0:
+                mf = TriangularMF(min_val, min_val, min_val + step)
+            elif i == len(labels) - 1:
+                mf = TriangularMF(min_val + (i-1)*step, max_val, max_val)
+            else:
+                mf = TriangularMF(min_val + (i-1)*step, 
+                                 min_val + i*step, 
+                                 min_val + (i+1)*step)
             
-            set_name = f"gauss_{i}"
-            if num_sets == 3:
-                set_names = ["low", "medium", "high"]
-                set_name = set_names[i]
-            elif num_sets == 5:
-                set_names = ["very_low", "low", "medium", "high", "very_high"]
-                set_name = set_names[i]
-            
-            fuzzy_set = FuzzySet(
-                set_name,
-                GaussianMF(set_name, center, sigma),
-                universe
-            )
-            var.add_set(fuzzy_set)
-        
-        return var
+            var.add_fuzzy_set(FuzzySet(label, mf))
+    
+    else:
+        raise ValueError(f"n_sets must be 3, 5, or 7, got {n_sets}")
+    
+    return var
 
-# 使用例とテスト関数
-def test_membership_functions():
-    """メンバーシップ関数のテスト"""
-    
-    print("🧪 メンバーシップ関数テスト開始")
-    
-    # 三角形関数テスト
-    tri_mf = TriangularMF("test_tri", 2, 5, 8)
-    test_values = [1, 2, 3.5, 5, 6.5, 8, 9]
-    
-    print("\n📐 三角形メンバーシップ関数 (2, 5, 8):")
-    for val in test_values:
-        membership = tri_mf.membership(val)
-        print(f"  x={val}: μ={membership:.3f}")
-    
-    # ガウシアン関数テスト
-    gauss_mf = GaussianMF("test_gauss", 5, 1.5)
-    
-    print("\n🔔 ガウシアンメンバーシップ関数 (center=5, σ=1.5):")
-    for val in test_values:
-        membership = gauss_mf.membership(val)
-        print(f"  x={val}: μ={membership:.3f}")
-    
-    # ファジィ変数テスト
-    print("\n🔢 標準ファジィ変数テスト:")
-    research_intensity = MembershipFunctionFactory.create_standard_sets(
-        "research_intensity", (1.0, 10.0)
-    )
-    
-    test_value = 7.5
-    memberships = research_intensity.fuzzify(test_value)
-    print(f"  値 {test_value} のファジィ化結果:")
-    for set_name, membership in memberships.items():
-        print(f"    {set_name}: {membership:.3f}")
-    
-    # 非ファジィ化テスト
-    defuzzified = research_intensity.defuzzify(memberships, "centroid")
-    print(f"  非ファジィ化結果 (重心法): {defuzzified:.3f}")
-    
-    print("✅ メンバーシップ関数テスト完了")
 
-def create_evaluation_criteria_variables() -> Dict[str, FuzzyVariable]:
-    """評価基準用のファジィ変数群を作成"""
-    
-    variables = {}
-    
-    # 基本項目（5項目）
-    basic_criteria = [
-        "research_intensity", "advisor_style", "team_work", 
-        "workload", "theory_practice"
-    ]
-    
-    for criterion in basic_criteria:
-        variables[criterion] = MembershipFunctionFactory.create_standard_sets(
-            criterion, (1.0, 10.0)
-        )
-    
-    # 拡張項目（5項目）
-    extended_criteria = [
-        "research_field_match", "skill_development", "lab_atmosphere",
-        "flexibility", "publication_opportunity"
-    ]
-    
-    for criterion in extended_criteria:
-        variables[criterion] = MembershipFunctionFactory.create_standard_sets(
-            criterion, (1.0, 10.0)
-        )
-    
-    # 特殊項目（3項目）
-    special_criteria = [
-        "interdisciplinary", "communication_style", "innovation_risk"
-    ]
-    
-    for criterion in special_criteria:
-        variables[criterion] = MembershipFunctionFactory.create_standard_sets(
-            criterion, (1.0, 10.0)
-        )
-    
-    # 適合性変数
-    variables["compatibility"] = MembershipFunctionFactory.create_compatibility_variable()
-    
-    return variables
-
+# 使用例とテスト
 if __name__ == "__main__":
-    test_membership_functions()
+    print("=" * 60)
+    print("ファジィメンバーシップ関数テスト")
+    print("=" * 60)
+    
+    # 三角型メンバーシップ関数
+    print("\n1. 三角型メンバーシップ関数")
+    tri_mf = TriangularMF(0.0, 0.5, 1.0)
+    test_values = [0.0, 0.25, 0.5, 0.75, 1.0]
+    for x in test_values:
+        print(f"  μ({x:.2f}) = {tri_mf(x):.3f}")
+    
+    # ガウス型メンバーシップ関数
+    print("\n2. ガウス型メンバーシップ関数")
+    gauss_mf = GaussianMF(0.5, 0.2)
+    for x in test_values:
+        print(f"  μ({x:.2f}) = {gauss_mf(x):.3f}")
+    
+    # ファジィ変数の作成
+    print("\n3. ファジィ変数（研究強度）")
+    research_intensity = create_standard_fuzzy_variable(
+        "research_intensity", 
+        universe=(0.0, 1.0),
+        n_sets=3
+    )
+    print(f"  変数: {research_intensity}")
+    
+    # ファジィ化
+    print("\n4. ファジィ化（x = 0.65）")
+    memberships = research_intensity.fuzzify(0.65)
+    for label, degree in memberships.items():
+        print(f"  {label}: {degree:.3f}")
+    
+    # 非ファジィ化
+    print("\n5. 非ファジィ化")
+    test_memberships = {"low": 0.2, "medium": 0.7, "high": 0.5}
+    result = research_intensity.defuzzify(test_memberships, method="centroid")
+    print(f"  重心法: {result:.3f}")
+    
+    print("\n" + "=" * 60)
