@@ -40,7 +40,7 @@ import CssBaseline from '@mui/material/CssBaseline';
 
 // コンポーネントのインポート
 import EvaluationForm from './components/EvaluationForm';
-import ResultsList from './components/ResultsList'; // PriorityAwareResultsの代わりにResultsListを使用
+import ResultsList from './components/ResultsList';
 
 // 型定義
 interface EvaluationResponse {
@@ -147,70 +147,60 @@ const App: React.FC = () => {
   const handleEvaluationResults = (response: EvaluationResponse) => {
     setEvaluationResults(response);
     setActiveStep(2);
-    setSnackbarMessage('評価が完了しました！');
+    setSnackbarMessage('評価が完了しました!');
     setSnackbarOpen(true);
   };
 
   // エラーハンドラー
   const handleError = (errorMessage: string) => {
     setError(errorMessage);
-    setSnackbarMessage(`エラー: ${errorMessage}`);
+    setSnackbarMessage(errorMessage);
     setSnackbarOpen(true);
   };
 
-  // 再評価
-  const handleReEvaluate = () => {
+  // リセット処理
+  const handleReset = () => {
+    setActiveStep(0);
     setEvaluationResults(null);
     setError('');
-    setActiveStep(0);
-    setSnackbarMessage('新しい評価を開始してください');
+    setSnackbarMessage('設定をリセットしました');
     setSnackbarOpen(true);
   };
 
   // 結果エクスポート
   const handleExportResults = () => {
-    if (!evaluationResults) return;
-
-    const dataStr = JSON.stringify(evaluationResults, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-
-    const exportFileDefaultName = `research_lab_evaluation_${new Date().toISOString().slice(0, 10)}.json`;
-
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
-
-    setSnackbarMessage('結果をエクスポートしました');
-    setSnackbarOpen(true);
+    if (evaluationResults) {
+      const dataStr = JSON.stringify(evaluationResults, null, 2);
+      const dataBlob = new Blob([dataStr], { type: 'application/json' });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lab-matching-results-${Date.now()}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setSnackbarMessage('結果をエクスポートしました');
+      setSnackbarOpen(true);
+    }
   };
 
-  // 結果共有
-  const handleShareResults = async () => {
-    if (!evaluationResults) return;
+  // 結果シェア
+  const handleShareResults = () => {
+    if (evaluationResults && evaluationResults.lab_results) {
+      const topLabs = evaluationResults.lab_results.slice(0, 3).map(lab => lab.name).join(', ');
+      const shareText = `AI統合研究室マッチング結果:\nトップ3: ${topLabs}`;
 
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: '研究室適合度評価結果',
-          text: `優先度対応AI評価により ${evaluationResults.lab_results.length}件の研究室を評価しました。`,
-          url: window.location.href,
-        });
-        setSnackbarMessage('結果を共有しました');
-        setSnackbarOpen(true);
-      } catch (error) {
-        console.error('共有エラー:', error);
-      }
-    } else {
-      // Web Share APIが利用できない場合はクリップボードにコピー
-      const shareText = `研究室適合度評価結果\n評価対象: ${evaluationResults.lab_results.length}件\n最高適合度: ${(evaluationResults.summary.max_score * 100).toFixed(1)}%\n優先度対応AI統合評価システム使用`;
-
-      try {
-        await navigator.clipboard.writeText(shareText);
+      if (navigator.share) {
+        navigator.share({
+          title: '研究室マッチング結果',
+          text: shareText,
+        }).then(() => {
+          setSnackbarMessage('結果をシェアしました');
+          setSnackbarOpen(true);
+        }).catch(console.error);
+      } else {
+        navigator.clipboard.writeText(shareText);
         setSnackbarMessage('結果をクリップボードにコピーしました');
         setSnackbarOpen(true);
-      } catch (error) {
-        console.error('クリップボードエラー:', error);
       }
     }
   };
@@ -222,65 +212,40 @@ const App: React.FC = () => {
       open={drawerOpen}
       onClose={() => setDrawerOpen(false)}
     >
-      <Box sx={{ width: 250 }} role="presentation">
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" color="primary">
-            🧬 研究室選択支援システム
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            v5.0.0 - 優先度対応版
-          </Typography>
-        </Box>
+      <Box sx={{ width: 250, pt: 2 }}>
+        <Typography variant="h6" sx={{ px: 2, mb: 2 }}>
+          メニュー
+        </Typography>
         <Divider />
-
         <List>
-          <ListItem button onClick={() => setActiveStep(0)}>
+          <ListItem button onClick={() => { setActiveStep(0); setDrawerOpen(false); }}>
             <ListItemIcon><Star /></ListItemIcon>
-            <ListItemText
-              primary="評価基準設定"
-              secondary="12項目 + 優先度"
-            />
+            <ListItemText primary="評価基準設定" />
           </ListItem>
-
-          <ListItem button onClick={() => setActiveStep(1)}>
+          <ListItem button onClick={() => { setActiveStep(1); setDrawerOpen(false); }}>
             <ListItemIcon><Science /></ListItemIcon>
-            <ListItemText
-              primary="研究分野選択"
-              secondary="18分野対応"
-            />
+            <ListItemText primary="研究分野選択" />
           </ListItem>
-
-          <ListItem button onClick={() => setActiveStep(2)} disabled={!evaluationResults}>
-            <ListItemIcon>
-              <Badge badgeContent={evaluationResults?.lab_results?.length || 0} color="primary">
-                <Assessment />
-              </Badge>
-            </ListItemIcon>
-            <ListItemText
-              primary="評価結果"
-              secondary="AI統合評価"
-            />
-          </ListItem>
-        </List>
-
-        <Divider />
-
-        <List>
-          <ListItem button onClick={handleReEvaluate}>
+          {evaluationResults && (
+            <ListItem button onClick={() => { setActiveStep(2); setDrawerOpen(false); }}>
+              <ListItemIcon><Assessment /></ListItemIcon>
+              <ListItemText primary="結果確認" />
+            </ListItem>
+          )}
+          <Divider sx={{ my: 1 }} />
+          <ListItem button onClick={handleReset}>
             <ListItemIcon><Refresh /></ListItemIcon>
-            <ListItemText primary="新しい評価" />
+            <ListItemText primary="リセット" />
           </ListItem>
-
           {evaluationResults && (
             <>
               <ListItem button onClick={handleExportResults}>
                 <ListItemIcon><GetApp /></ListItemIcon>
-                <ListItemText primary="結果をエクスポート" />
+                <ListItemText primary="結果エクスポート" />
               </ListItem>
-
               <ListItem button onClick={handleShareResults}>
                 <ListItemIcon><Share /></ListItemIcon>
-                <ListItemText primary="結果を共有" />
+                <ListItemText primary="結果シェア" />
               </ListItem>
             </>
           )}
@@ -322,7 +287,6 @@ const App: React.FC = () => {
           );
         }
 
-
         return (
           <Box>
             {/* 評価結果サマリー */}
@@ -335,62 +299,76 @@ const App: React.FC = () => {
               <Grid container spacing={3}>
                 <Grid item xs={3}>
                   <Box textAlign="center">
-                    <Typography variant="h4">{evaluationResults.lab_results.length}</Typography>
+                    <Typography variant="h4">
+                      {evaluationResults?.lab_results?.length || 0}
+                    </Typography>
                     <Typography variant="body2">評価対象研究室</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={3}>
                   <Box textAlign="center">
-                    <Typography variant="h4">{evaluationResults.summary?.high_compatibility_count || 0}</Typography>
+                    <Typography variant="h4">
+                      {evaluationResults?.summary?.high_compatibility_count || 0}
+                    </Typography>
                     <Typography variant="body2">高適合研究室</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={3}>
                   <Box textAlign="center">
-                    <Typography variant="h4">{((evaluationResults.summary?.max_score || 0) * 100).toFixed(1)}%</Typography>
-                    <Typography variant="body2">最高適合度</Typography>
+                    <Typography variant="h4">
+                      {evaluationResults?.summary?.avg_compatibility?.toFixed(1) || '0.0'}
+                    </Typography>
+                    <Typography variant="body2">平均適合度</Typography>
                   </Box>
                 </Grid>
                 <Grid item xs={3}>
                   <Box textAlign="center">
-                    <Typography variant="h4">{((evaluationResults.summary?.avg_score || 0) * 100).toFixed(1)}%</Typography>
-                    <Typography variant="body2">平均適合度</Typography>
+                    <Typography variant="h4">
+                      {evaluationResults?.metadata?.processing_time?.toFixed(2) || '0.00'}s
+                    </Typography>
+                    <Typography variant="body2">処理時間</Typography>
                   </Box>
                 </Grid>
               </Grid>
-
-              {evaluationResults.summary?.priority_weighting_applied && (
-                <Alert severity="info" sx={{ mt: 2 }}>
-                  <Typography variant="body2">
-                    優先度による重み付け評価を実行しました。
-                    設定された優先度に基づいてスコアが調整されています。
-                  </Typography>
-                </Alert>
-              )}
             </Paper>
 
-            {/* 研究室結果一覧 */}
-            <ResultsList
-              results={evaluationResults.lab_results}
-              metadata={evaluationResults.metadata}
-              onLabSelected={(lab) => console.log('Selected lab:', lab)}
-            />
+            {/* 結果リスト */}
+            {evaluationResults?.lab_results && (
+              <ResultsList results={evaluationResults.lab_results} />
+            )}
+
+            {/* アクションボタン */}
+            <Box sx={{ mt: 3, display: 'flex', gap: 2, justifyContent: 'center' }}>
+              <Button
+                variant="outlined"
+                onClick={() => setActiveStep(0)}
+                startIcon={<Refresh />}
+              >
+                再評価
+              </Button>
+              <Button
+                variant="contained"
+                onClick={handleExportResults}
+                startIcon={<GetApp />}
+              >
+                結果エクスポート
+              </Button>
+            </Box>
           </Box>
         );
       default:
-        return <div>未知のステップです</div>;
+        return null;
     }
   };
 
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ flexGrow: 1 }}>
-        {/* アプリバー */}
-        <AppBar position="static" elevation={1}>
+      <Box sx={{ flexGrow: 1, minHeight: '100vh', backgroundColor: 'grey.50' }}>
+        {/* ヘッダー */}
+        <AppBar position="static" elevation={0}>
           <Toolbar>
             <IconButton
-              size="large"
               edge="start"
               color="inherit"
               aria-label="menu"
@@ -401,12 +379,12 @@ const App: React.FC = () => {
             </IconButton>
 
             <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-              研究室選択支援システム - 優先度対応AI統合版
+              研究室選択支援システム
             </Typography>
 
             {evaluationResults && (
               <Badge
-                badgeContent={evaluationResults.summary?.high_compatibility_count || 0}
+                badgeContent={evaluationResults?.summary?.high_compatibility_count || 0}
                 color="success"
                 sx={{ mr: 2 }}
               >
@@ -489,10 +467,10 @@ const App: React.FC = () => {
           {activeStep === 0 && (
             <Paper sx={{ p: 3, mt: 4, backgroundColor: 'grey.50' }}>
               <Typography variant="h6" gutterBottom color="primary">
-                🎯 新機能：優先度設定
+                🎯 新機能:優先度設定
               </Typography>
               <Typography variant="body2" paragraph>
-                各評価基準（12項目）について、1-10の段階で重要度（優先度）を設定できます。
+                各評価基準(12項目)について、1-10の段階で重要度(優先度)を設定できます。
                 設定した優先度により、マッチングスコアが重み付けされ、より精度の高い評価が可能です。
               </Typography>
 
@@ -500,10 +478,10 @@ const App: React.FC = () => {
                 🤖 AI統合評価エンジン
               </Typography>
               <Typography variant="body2">
-                • <strong>ファジィ推論</strong>：曖昧な評価基準を自然言語的に処理<br />
-                • <strong>遺伝的アルゴリズム</strong>：最適解を進化的に探索<br />
-                • <strong>決定木</strong>：論理的な判定ルールを適用<br />
-                • <strong>優先度統合</strong>：個人の重視項目を反映した総合評価
+                • <strong>ファジィ推論</strong>:曖昧な評価基準を自然言語的に処理<br />
+                • <strong>遺伝的アルゴリズム</strong>:最適解を進化的に探索<br />
+                • <strong>決定木</strong>:論理的な判定ルールを適用<br />
+                • <strong>優先度統合</strong>:個人の重視項目を反映した総合評価
               </Typography>
             </Paper>
           )}

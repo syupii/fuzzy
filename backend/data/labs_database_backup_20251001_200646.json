@@ -1,6 +1,6 @@
 {
   "version": "3.0.0",
-  "last_updated": "2025-10-01T20:06:46.222725",
+  "last_updated": "2025-09-20",
   "description": "遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム用データベース（完全版）",
   "total_labs": 42,
   "evaluation_criteria": {
