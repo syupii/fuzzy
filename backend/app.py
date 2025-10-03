@@ -1,71 +1,71 @@
-# backend/app.py - 完全統合版
 #!/usr/bin/env python3
 """
 遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム
-完全統合版 - ファジィ + 決定木 + 遺伝的アルゴリズム + 分野マッチング
+シンプル化版 - SimpleFuzzyInferenceEngine削除、labs_database.json対応
 """
 
 import os
 import sys
 import json
-import time
 import uvicorn
-import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Dict, List, Any, Optional
+import time
+import numpy as np
 
 # プロジェクトルートをパスに追加
 project_root = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, project_root)
 
 # ===== モジュールのインポート =====
+
+# 設定
 try:
     from config.settings import settings
     SETTINGS_AVAILABLE = True
 except ImportError:
     SETTINGS_AVAILABLE = False
-    print("⚠️ settings.py が見つかりません")
+    class FallbackSettings:
+        host = "0.0.0.0"
+        port = 8000
+        debug = True
+    settings = FallbackSettings()
 
-try:
-    from core.fuzzy.inference import SimpleFuzzyInferenceEngine
-    FUZZY_AVAILABLE = True
-except ImportError:
-    FUZZY_AVAILABLE = False
-    print("⚠️ ファジィモジュールが利用できません")
-
+# 遺伝的アルゴリズム
 try:
     from core.genetic.evolution import EvolutionEngine, EvolutionConfig
     GENETIC_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     GENETIC_AVAILABLE = False
-    print("⚠️ 遺伝的アルゴリズムが利用できません")
+    print(f"⚠️ 遺伝的アルゴリズムが利用できません: {e}")
 
+# ファジィ決定木
 try:
-    from core.decision_tree.tree import FuzzyDecisionTree, TreeConfig
+    from core.decision_tree import FuzzyDecisionTree, TreeConfig
     DECISION_TREE_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     DECISION_TREE_AVAILABLE = False
-    print("⚠️ 決定木が利用できません")
+    print(f"⚠️ ファジィ決定木が利用できません: {e}")
 
+# 分野マッチング
 try:
     from core.matching.field_matcher import FieldMatcher
     from core.matching.integrated_matcher import IntegratedMatcher
     MATCHING_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     MATCHING_AVAILABLE = False
-    print("⚠️ マッチングモジュールが利用できません")
+    print(f"⚠️ マッチングモジュールが利用できません: {e}")
 
 # ===== FastAPI初期化 =====
 app = FastAPI(
-    title="研究室選択支援システム（統合版）",
-    description="ファジィ推論 + 決定木 + 遺伝的アルゴリズム + 分野マッチング",
+    title="遺伝的アルゴリズムを用いたファジィ決定木 研究室選択支援システム",
+    description="ファジィ決定木 + 遺伝的アルゴリズム + 分野マッチング",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# CORS設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -74,150 +74,73 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== グローバル変数 =====
+# ===== システム状態 =====
 system_state = {
     "initialized": False,
-    "fuzzy_engine": None,
-    "genetic_engine": None,
     "decision_tree": None,
+    "genetic_engine": None,
     "field_matcher": None,
     "integrated_matcher": None,
-    "lab_database": [],
     "optimized_weights": None,
+    "lab_database": [],
     "evaluation_count": 0
 }
 
-# ===== 研究室データベース（field_id追加） =====
-SAMPLE_LABS = [
-    {
-        "id": "ai_lab",
-        "name": "人工知能研究室",
-        "advisor": "田中教授",
-        "field_id": "ai_ml",  # ★追加
-        "research_area": "人工知能・機械学習",
-        "category": "テクノロジー・システム",
-        "description": "機械学習とディープラーニングの研究",
-        "research_intensity": 9.0,
-        "advisor_style": 7.0,
-        "team_work": 8.0,
-        "workload": 8.5,
-        "theory_practice": 6.0,
-        "skill_development": 8.0,
-        "lab_atmosphere": 7.0,
-        "flexibility": 6.0,
-        "publication_opportunity": 9.5,
-        "interdisciplinary": 7.0,
-        "communication_style": 8.0
-    },
-    {
-        "id": "image_lab",
-        "name": "画像処理研究室",
-        "advisor": "佐藤教授",
-        "field_id": "image_processing",  # ★追加
-        "research_area": "画像・映像処理",
-        "category": "テクノロジー・システム",
-        "research_intensity": 8.0,
-        "advisor_style": 6.0,
-        "team_work": 7.0,
-        "workload": 7.5,
-        "theory_practice": 7.0,
-        "skill_development": 7.0,
-        "lab_atmosphere": 6.5,
-        "flexibility": 7.0,
-        "publication_opportunity": 8.0,
-        "interdisciplinary": 6.0,
-        "communication_style": 7.0
-    },
-    {
-        "id": "network_lab",
-        "name": "ネットワークセキュリティ研究室",
-        "advisor": "鈴木教授",
-        "field_id": "network_security",  # ★追加
-        "research_area": "ネットワーク・セキュリティ",
-        "category": "テクノロジー・システム",
-        "research_intensity": 8.5,
-        "advisor_style": 5.0,
-        "team_work": 9.0,
-        "workload": 9.0,
-        "theory_practice": 5.0,
-        "skill_development": 9.0,
-        "lab_atmosphere": 8.0,
-        "flexibility": 5.0,
-        "publication_opportunity": 7.0,
-        "interdisciplinary": 5.0,
-        "communication_style": 9.0
-    },
-    {
-        "id": "web_lab",
-        "name": "Webデザイン研究室",
-        "advisor": "高橋教授",
-        "field_id": "web_design",  # ★追加
-        "research_area": "Webデザイン・UI/UX",
-        "category": "クリエイティブ",
-        "research_intensity": 6.0,
-        "advisor_style": 8.0,
-        "team_work": 8.0,
-        "workload": 6.0,
-        "theory_practice": 9.0,
-        "skill_development": 9.0,
-        "lab_atmosphere": 9.0,
-        "flexibility": 9.0,
-        "publication_opportunity": 5.0,
-        "interdisciplinary": 8.0,
-        "communication_style": 9.0
-    },
-    {
-        "id": "game_lab",
-        "name": "ゲーム開発研究室",
-        "advisor": "山田教授",
-        "field_id": "game_esports",  # ★追加
-        "research_area": "ゲーム開発・eスポーツ",
-        "category": "エンターテイメント",
-        "research_intensity": 7.0,
-        "advisor_style": 7.5,
-        "team_work": 8.5,
-        "workload": 7.0,
-        "theory_practice": 8.5,
-        "skill_development": 9.0,
-        "lab_atmosphere": 8.5,
-        "flexibility": 7.5,
-        "publication_opportunity": 6.0,
-        "interdisciplinary": 7.0,
-        "communication_style": 8.5
-    }
-]
+# ===== 研究室データ読み込み関数 =====
+def load_labs_database():
+    """data/labs_database.jsonから研究室データを読み込む"""
+    json_path = os.path.join(project_root, "data", "labs_database.json")
+    
+    if not os.path.exists(json_path):
+        print(f"⚠️ 研究室データファイルが見つかりません: {json_path}")
+        print(f"   想定パス: backend/data/labs_database.json")
+        return []
+    
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+            # データ形式を判定
+            if isinstance(data, list):
+                # JSONが直接配列の場合: [{"id": "lab1", ...}, ...]
+                labs = data
+                print(f"✅ 研究室データ読み込み成功: {len(labs)}件 (配列形式)")
+            elif isinstance(data, dict):
+                # JSONがオブジェクトの場合: {"labs": [...]}
+                labs = data.get("labs", [])
+                print(f"✅ 研究室データ読み込み成功: {len(labs)}件 (オブジェクト形式)")
+            else:
+                print(f"⚠️ 不明なJSON形式です")
+                return []
+            
+            return labs
+            
+    except json.JSONDecodeError as e:
+        print(f"❌ JSONパースエラー: {e}")
+        return []
+    except Exception as e:
+        print(f"❌ 研究室データ読み込みエラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return []
 
 # ===== システム初期化 =====
 def initialize_system():
-    """統合システムを初期化"""
+    """システム初期化"""
     global system_state
     
-    print("\n" + "="*70)
-    print("🚀 統合システム初期化開始")
-    print("="*70)
-    
     try:
-        # 1. ファジィ推論エンジン
-        if FUZZY_AVAILABLE:
-            system_state["fuzzy_engine"] = SimpleFuzzyInferenceEngine(
-                settings.core_features if SETTINGS_AVAILABLE else [
-                    "research_intensity", "advisor_style", "team_work", 
-                    "workload", "theory_practice"
-                ],
-                "compatibility"
-            )
-            print("✅ ファジィ推論エンジン初期化完了")
+        print("\n" + "="*70)
+        print("🚀 統合システム初期化開始")
+        print("="*70)
         
-        # 2. 決定木
+        # 1. ファジィ決定木
         if DECISION_TREE_AVAILABLE:
-            tree_config = TreeConfig(
-                max_depth=8,  # ★ 8層に変更
-                min_samples_leaf=3
-            )
+            tree_config = TreeConfig(max_depth=5, min_samples_leaf=5)
             system_state["decision_tree"] = FuzzyDecisionTree(tree_config)
-            print("✅ ファジィ決定木初期化完了（8層）")
+            print("✅ ファジィ決定木初期化完了")
         
-        # 3. 遺伝的アルゴリズム
+        # 2. 遺伝的アルゴリズム
         if GENETIC_AVAILABLE:
             evolution_config = EvolutionConfig(
                 population_size=20,
@@ -228,34 +151,38 @@ def initialize_system():
             system_state["genetic_engine"] = EvolutionEngine(evolution_config)
             print("✅ 遺伝的アルゴリズム初期化完了")
         
-        # 4. 分野マッチャー
+        # 3. 分野マッチャー
         if MATCHING_AVAILABLE:
             system_state["field_matcher"] = FieldMatcher()
             print("✅ 分野マッチャー初期化完了")
         
-        # 5. 最適化された重みを読み込み（なければデフォルト）
+        # 4. 最適化された重み（12項目）
         weights_path = getattr(settings, 'optimized_weights_path', 'data/optimized_weights.npy')
         if os.path.exists(weights_path):
-            system_state["optimized_weights"] = np.load(weights_path)
-            print(f"✅ 最適化された重みを読み込み: {weights_path}")
+            loaded_weights = np.load(weights_path)
+            system_state["optimized_weights"] = loaded_weights[:12]
+            print(f"✅ 最適化された重みを読み込み: {weights_path} (12項目)")
         else:
-            # デフォルト重み（14次元: 12基本項目 + 1分野 + 1予備）
-            system_state["optimized_weights"] = np.ones(14) / 14
-            print("⚠️ デフォルト重みを使用")
+            system_state["optimized_weights"] = np.ones(12) / 12
+            print("⚠️ デフォルト重みを使用 (12項目)")
         
-        # 6. 統合マッチャーを作成
+        # 5. 統合マッチャー
         if MATCHING_AVAILABLE:
             system_state["integrated_matcher"] = IntegratedMatcher(
-                fuzzy_engine=system_state["fuzzy_engine"],
+                fuzzy_engine=None,  # SimpleFuzzyInferenceEngine不要
                 decision_tree=system_state["decision_tree"],
                 field_matcher=system_state["field_matcher"],
                 optimized_weights=system_state["optimized_weights"]
             )
             print("✅ 統合マッチャー初期化完了")
         
-        # 7. 研究室データベース
-        system_state["lab_database"] = SAMPLE_LABS
-        print(f"✅ 研究室データベース初期化完了: {len(SAMPLE_LABS)}件")
+        # 6. 研究室データベース（JSONから読み込み）
+        system_state["lab_database"] = load_labs_database()
+        
+        if len(system_state["lab_database"]) == 0:
+            print("⚠️ 研究室データが空です")
+        else:
+            print(f"✅ 研究室データベース初期化完了: {len(system_state['lab_database'])}件")
         
         system_state["initialized"] = True
         print("\n🎉 統合システム初期化完了！")
@@ -267,13 +194,13 @@ def initialize_system():
         traceback.print_exc()
         system_state["initialized"] = False
 
-# ===== API エンドポイント =====
+# ===== APIエンドポイント =====
 
 @app.get("/")
 async def read_root():
     """ルートエンドポイント"""
     return {
-        "message": "遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム（統合版）",
+        "message": "遺伝的アルゴリズムを用いたファジィ決定木研究室選択支援システム",
         "version": "3.0.0",
         "status": "running",
         "endpoints": {
@@ -290,7 +217,6 @@ async def health_check():
     """ヘルスチェック"""
     
     modules_status = {
-        "fuzzy": FUZZY_AVAILABLE,
         "genetic": GENETIC_AVAILABLE,
         "decision_tree": DECISION_TREE_AVAILABLE,
         "matching": MATCHING_AVAILABLE,
@@ -340,7 +266,7 @@ async def evaluate_compatibility(student_profile: Dict[str, Any]):
     
     Args:
         student_profile: 学生プロファイル
-            - 基本項目（12項目）
+            - 基本項目（11項目）
             - research_field_match: 分野重視度（1-10）
             - field_interests: 分野別興味度
     
@@ -381,7 +307,7 @@ async def evaluate_compatibility(student_profile: Dict[str, Any]):
             lab_result = {
                 "lab_id": lab["id"],
                 "lab_name": lab["name"],
-                "advisor": lab["advisor"],
+                "advisor": lab.get("advisor", "不明"),
                 "field_id": lab.get("field_id", "unknown"),
                 "field_name": lab.get("research_area", "不明"),
                 "category": lab.get("category", "不明"),
@@ -437,13 +363,7 @@ async def evaluate_compatibility(student_profile: Dict[str, Any]):
             "total_labs_evaluated": len(results),
             "evaluation_timestamp": time.time(),
             "system_info": {
-                "method": "integrated_fuzzy_genetic_tree_field",
-                "components": [
-                    "fuzzy_inference",
-                    "decision_tree_8layers",
-                    "genetic_optimization",
-                    "field_matching"
-                ],
+                "method": "integrated_fuzzy_genetic_decision_tree",
                 "evaluation_count": system_state["evaluation_count"]
             }
         }
@@ -456,24 +376,13 @@ async def evaluate_compatibility(student_profile: Dict[str, Any]):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Evaluation error: {str(e)}")
 
-def _get_recommendation_level(compatibility: float) -> str:
-    """推薦レベルを取得"""
-    if compatibility >= 0.85:
-        return "strongly_recommended"
-    elif compatibility >= 0.7:
-        return "recommended"
-    elif compatibility >= 0.5:
-        return "consider"
-    else:
-        return "not_recommended"
-
 @app.post("/api/optimize")
-async def optimize_weights(training_data: Optional[List[Dict]] = None):
+async def optimize_weights(training_data: Dict[str, Any]):
     """
-    遺伝的アルゴリズムで重みを最適化
+    遺伝的アルゴリズムによる重み最適化
     
     Args:
-        training_data: 訓練データ（オプション）
+        training_data: トレーニングデータ
     
     Returns:
         最適化結果
@@ -482,43 +391,34 @@ async def optimize_weights(training_data: Optional[List[Dict]] = None):
     if not system_state["initialized"]:
         raise HTTPException(status_code=503, detail="System not initialized")
     
-    if not GENETIC_AVAILABLE or not MATCHING_AVAILABLE:
-        raise HTTPException(status_code=501, detail="Optimization not available")
+    if not GENETIC_AVAILABLE:
+        raise HTTPException(status_code=501, detail="Genetic algorithm not available")
     
     try:
-        print("\n" + "="*70)
-        print("🧬 重み最適化開始（遺伝的アルゴリズム）")
-        print("="*70)
+        print(f"\n{'='*70}")
+        print(f"🧬 重み最適化開始")
+        print(f"{'='*70}")
         
-        # 訓練データを読み込み
-        if training_data is None:
-            training_data_path = getattr(settings, 'training_data_path', 'data/training_data.json')
-            if os.path.exists(training_data_path):
-                with open(training_data_path, 'r', encoding='utf-8') as f:
-                    training_data = json.load(f)
-                print(f"✅ 訓練データ読み込み: {len(training_data)}件")
-            else:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Training data not found. Please provide training data."
-                )
+        training_samples = training_data.get("training_data", [])
         
-        # TODO: 実際の遺伝的アルゴリズムによる最適化を実装
-        # ここでは簡易的なシミュレーション
+        if not training_samples:
+            raise HTTPException(
+                status_code=400,
+                detail="No training data provided"
+            )
         
+        # 簡易的な最適化シミュレーション
         print("⏳ 最適化実行中...")
-        time.sleep(2)  # シミュレーション
+        time.sleep(2)
         
-        # デモ用の最適化された重み
-        optimized_weights = np.array([
-            0.92, 0.45, 0.58, 0.67, 0.39,  # 5項目
-            0.88, 0.54, 0.71, 0.43, 0.95,  # 5項目
-            0.31, 0.52, 0.61, 0.85         # 3項目 + 分野
-        ])
+        # デモ用の最適化された重み（12項目）
+        optimized_weights = np.random.uniform(0.3, 1.0, 12)
+        optimized_weights = optimized_weights / optimized_weights.sum()  # 正規化
         
         # 保存
         system_state["optimized_weights"] = optimized_weights
-        system_state["integrated_matcher"].optimized_weights = optimized_weights
+        if system_state["integrated_matcher"]:
+            system_state["integrated_matcher"].optimized_weights = optimized_weights
         
         weights_path = getattr(settings, 'optimized_weights_path', 'data/optimized_weights.npy')
         os.makedirs(os.path.dirname(weights_path), exist_ok=True)
@@ -531,7 +431,7 @@ async def optimize_weights(training_data: Optional[List[Dict]] = None):
         return {
             "optimization_completed": True,
             "optimized_weights": optimized_weights.tolist(),
-            "training_samples": len(training_data),
+            "training_samples": len(training_samples),
             "algorithm_info": {
                 "method": "genetic_algorithm",
                 "population_size": 20,
@@ -549,6 +449,19 @@ async def optimize_weights(training_data: Optional[List[Dict]] = None):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Optimization error: {str(e)}")
 
+# ===== ヘルパー関数 =====
+
+def _get_recommendation_level(compatibility: float) -> str:
+    """推薦レベルを取得"""
+    if compatibility >= 0.85:
+        return "強く推薦"
+    elif compatibility >= 0.7:
+        return "推薦"
+    elif compatibility >= 0.5:
+        return "検討可能"
+    else:
+        return "要慎重検討"
+
 # ===== システム起動時に初期化 =====
 initialize_system()
 
@@ -557,9 +470,14 @@ if __name__ == "__main__":
     print("\n🚀 FastAPI サーバー起動中...")
     print(f"📍 URL: http://localhost:{getattr(settings, 'port', 8000)}")
     print(f"📚 API文書: http://localhost:{getattr(settings, 'port', 8000)}/docs")
+    print("🔧 システム状況:")
+    print(f"  - ファジィ決定木: {'✅' if DECISION_TREE_AVAILABLE else '❌'}")
+    print(f"  - 遺伝的アルゴリズム: {'✅' if GENETIC_AVAILABLE else '❌'}")
+    print(f"  - 分野マッチング: {'✅' if MATCHING_AVAILABLE else '❌'}")
+    print(f"  - 研究室データ: {len(system_state['lab_database'])}件")
     
     uvicorn.run(
-        app,
+        "app:app",
         host=getattr(settings, 'host', '0.0.0.0'),
         port=getattr(settings, 'port', 8000),
         reload=getattr(settings, 'debug', True),

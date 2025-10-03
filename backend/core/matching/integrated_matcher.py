@@ -1,6 +1,6 @@
 # core/matching/integrated_matcher.py
 """
-統合マッチングシステム
+統合マッチングシステム (修正版)
 ファジィ推論 + 決定木 + 遺伝的アルゴリズム + 分野マッチング
 """
 
@@ -46,27 +46,26 @@ class IntegratedMatcher:
             fuzzy_engine: ファジィ推論エンジン
             decision_tree: ファジィ決定木
             field_matcher: 分野マッチャー
-            optimized_weights: 遺伝的アルゴリズムで最適化された重み
+            optimized_weights: 遺伝的アルゴリズムで最適化された重み (12項目用)
         """
         self.fuzzy_engine = fuzzy_engine
         self.decision_tree = decision_tree
         self.field_matcher = field_matcher or FieldMatcher()
         
-        # 重みが指定されていない場合はデフォルト
+        # 重みが指定されていない場合はデフォルト (12項目のみ)
         if optimized_weights is None:
-            # 13基本項目 + 1分野スコア = 14次元
-            self.optimized_weights = np.ones(14) / 14
+            self.optimized_weights = np.ones(12) / 12
         else:
-            self.optimized_weights = np.array(optimized_weights)
+            # 12項目分の重みのみを使用
+            self.optimized_weights = np.array(optimized_weights[:12])
         
-        # 基本項目のリスト（13項目）
+        # 基本項目のリスト (research_field_matchを除く12項目)
         self.basic_criteria = [
             "research_intensity",
             "advisor_style",
             "team_work",
             "workload",
             "theory_practice",
-            "research_field_match",
             "skill_development",
             "lab_atmosphere",
             "flexibility",
@@ -105,7 +104,7 @@ class IntegratedMatcher:
         detailed_score = self._calculate_detailed_matching(
             student, 
             lab, 
-            self.optimized_weights[:12]  # 12基本項目（research_field_matchを除く）
+            self.optimized_weights  # 12項目
         )
         
         # ===== ステップ4: 基本項目スコアの統合 =====
@@ -115,15 +114,13 @@ class IntegratedMatcher:
         # ===== ステップ5: 分野マッチングスコア =====
         field_score = self._calculate_field_matching(student, lab)
         
-        # ===== ステップ6: 最終統合 =====
+        # ===== ステップ6: 最終統合 (修正版) =====
         field_weight_pref = student.get("research_field_match", 5)
-        alpha = field_weight_pref / 10  # 分野の比重
-        beta = (10 - field_weight_pref) / 10  # 基本項目の比重
+        alpha = field_weight_pref / 10  # 分野の比重 (0.0 ~ 1.0)
+        beta = 1.0 - alpha  # 基本項目の比重
         
-        # 分野スコアにも遺伝的重みを適用
-        field_weight_optimized = self.optimized_weights[13] if len(self.optimized_weights) > 13 else 1.0
-        
-        field_contribution = alpha * field_score * field_weight_optimized
+        # 分野と基本項目を統合 (追加の重みは不要)
+        field_contribution = alpha * field_score
         basic_contribution = beta * basic_score
         
         total_compatibility = field_contribution + basic_contribution
@@ -170,9 +167,6 @@ class IntegratedMatcher:
         fuzzified = {}
         
         for criterion in self.basic_criteria:
-            if criterion == "research_field_match":
-                continue  # これは分野重視度なのでスキップ
-            
             value = profile.get(criterion, 5)
             
             # 三角型メンバーシップ関数
@@ -260,10 +254,7 @@ class IntegratedMatcher:
         total_score = 0.0
         total_weight = 0.0
         
-        # research_field_matchを除く11項目
-        criteria_for_matching = [c for c in self.basic_criteria if c != "research_field_match"]
-        
-        for i, criterion in enumerate(criteria_for_matching):
+        for i, criterion in enumerate(self.basic_criteria):
             if i >= len(weights):
                 break
             
