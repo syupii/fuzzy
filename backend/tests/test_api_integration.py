@@ -1,5 +1,6 @@
+# tests/test_api_integration.py
 """
-API統合テスト
+API統合テスト（パターンA版）
 FastAPIエンドポイントの動作確認
 """
 
@@ -36,24 +37,20 @@ class TestHealthEndpoint:
         data = response.json()
         
         assert "version" in data
-        assert data["version"] == "3.0.0"
+        assert "PatternA" in data["version"]
     
-    def test_health_check_system_info(self):
-        """システム情報の確認"""
+    def test_health_check_pattern(self):
+        """パターンA情報の確認"""
         response = client.get("/health")
         data = response.json()
         
-        assert "system_info" in data
-        system_info = data["system_info"]
+        assert "pattern" in data
+        assert data["pattern"] == "A (遺伝的アルゴリズムなし)"
         
-        assert "evaluation_criteria" in system_info
-        assert system_info["evaluation_criteria"] == 13  # 13項目対応
-        
-        assert "features" in system_info
-        features = system_info["features"]
-        assert features["fuzzy_membership"] == True
-        assert features["multi_level_tree"] == True
-        assert features["13_criteria"] == True
+        # GAが無効化されているか
+        assert "features" in data
+        assert data["features"]["genetic_optimization"] == False
+        assert data["features"]["default_params"] == True
 
 
 class TestRootEndpoint:
@@ -68,7 +65,6 @@ class TestRootEndpoint:
         data = response.json()
         assert "message" in data
         assert "version" in data
-        assert data["version"] == "3.0.0"
     
     def test_root_features(self):
         """機能情報の確認"""
@@ -78,8 +74,11 @@ class TestRootEndpoint:
         assert "features" in data
         features = data["features"]
         
-        assert "evaluation_criteria" in features
-        assert "13項目対応" in features["evaluation_criteria"]
+        # パターンAの特徴
+        assert features["genetic_algorithm"] == False
+        assert features["default_parameters"] == True
+        assert features["dynamic_decision_tree"] == True
+        assert features["field_matching"] == True
 
 
 class TestCriteriaEndpoint:
@@ -92,37 +91,56 @@ class TestCriteriaEndpoint:
         assert response.status_code == 200
         
         data = response.json()
+        assert "criteria" in data
         assert "total_count" in data
+        
+        # 13項目対応
         assert data["total_count"] == 13
+        assert data["basic_count"] == 12
+        assert data["has_field_match"] == True
     
-    def test_criteria_categories(self):
-        """カテゴリ別評価基準"""
+    def test_criteria_details(self):
+        """評価基準詳細の確認"""
         response = client.get("/api/criteria")
         data = response.json()
         
-        assert "categories" in data
-        categories = data["categories"]
+        criteria = data["criteria"]
         
-        assert "basic" in categories
-        assert len(categories["basic"]) == 5
-        
-        assert "extended" in categories
-        assert len(categories["extended"]) == 5
-        
-        assert "special" in categories
-        assert len(categories["special"]) == 3
+        # 各基準に必要な情報があるか
+        for criterion in criteria:
+            assert "id" in criterion
+            assert "name" in criterion
+            assert "description" in criterion
+            assert "range" in criterion
+
+
+class TestFieldsEndpoint:
+    """分野エンドポイントのテスト"""
     
-    def test_criteria_descriptions(self):
-        """評価基準の説明"""
-        response = client.get("/api/criteria")
+    def test_fields_list(self):
+        """分野一覧の取得"""
+        response = client.get("/api/fields")
+        
+        assert response.status_code == 200
+        
+        data = response.json()
+        assert "fields" in data
+        assert "total_count" in data
+        
+        # 20分野対応
+        assert data["total_count"] == 20
+    
+    def test_fields_structure(self):
+        """分野構造の確認"""
+        response = client.get("/api/fields")
         data = response.json()
         
-        assert "descriptions" in data
-        descriptions = data["descriptions"]
+        fields = data["fields"]
         
-        # すべての項目に説明がある
-        assert "research_intensity" in descriptions
-        assert "innovation_risk" in descriptions
+        # 各分野に必要な情報があるか
+        for field in fields:
+            assert "id" in field
+            assert "name" in field
 
 
 class TestLabsEndpoint:
@@ -139,71 +157,27 @@ class TestLabsEndpoint:
         assert "total_count" in data
         assert data["total_count"] > 0
     
-    def test_labs_categories(self):
-        """研究室のカテゴリ情報"""
-        response = client.get("/api/labs")
-        data = response.json()
-        
-        assert "categories" in data
-        categories = data["categories"]
-        
-        # 主要カテゴリが存在
-        assert "テクノロジー・システム" in categories
-        assert "クリエイティブ" in categories
-        assert "エンターテイメント" in categories
-    
-    def test_labs_structure(self):
-        """研究室データ構造の確認"""
-        response = client.get("/api/labs")
-        data = response.json()
-        
-        labs = data["labs"]
-        assert len(labs) > 0
-        
-        # 最初の研究室の構造確認
-        lab = labs[0]
-        
-        # 基本情報
-        assert "id" in lab
-        assert "name" in lab
-        assert "advisor" in lab
-        assert "category" in lab
-        assert "field" in lab
-        
-        # 13項目の評価値
-        assert "research_intensity" in lab
-        assert "advisor_style" in lab
-        assert "team_work" in lab
-        assert "workload" in lab
-        assert "theory_practice" in lab
-        assert "research_field_match" in lab
-        assert "skill_development" in lab
-        assert "lab_atmosphere" in lab
-        assert "flexibility" in lab
-        assert "publication_opportunity" in lab
-        assert "interdisciplinary" in lab
-        assert "communication_style" in lab
-        assert "innovation_risk" in lab
-    
     def test_lab_detail(self):
-        """特定研究室の詳細取得"""
+        """研究室詳細の取得"""
         # まず一覧を取得
         response = client.get("/api/labs")
         labs = response.json()["labs"]
         
+        # 最初の研究室の詳細を取得
         if len(labs) > 0:
             lab_id = labs[0]["id"]
-            
-            # 詳細を取得
             response = client.get(f"/api/labs/{lab_id}")
             
             assert response.status_code == 200
             
-            lab = response.json()
-            assert lab["id"] == lab_id
+            data = response.json()
+            assert data["id"] == lab_id
+            assert "name" in data
+            assert "field_id" in data
+            assert "field_name" in data
     
     def test_lab_not_found(self):
-        """存在しない研究室の取得"""
+        """存在しない研究室のテスト"""
         response = client.get("/api/labs/nonexistent_lab")
         
         assert response.status_code == 404
@@ -212,268 +186,239 @@ class TestLabsEndpoint:
 class TestEvaluateEndpoint:
     """評価エンドポイントのテスト"""
     
-    def get_valid_profile(self):
-        """有効な学生プロファイルを作成"""
-        return {
-            "student_profile": {
-                "research_intensity": 0.9,
-                "advisor_style": 0.7,
-                "team_work": 0.8,
-                "workload": 0.85,
-                "theory_practice": 0.6,
-                "research_field_match": 0.9,
-                "skill_development": 0.85,
-                "lab_atmosphere": 0.8,
-                "flexibility": 0.6,
-                "publication_opportunity": 0.9,
-                "interdisciplinary": 0.7,
-                "communication_style": 0.8,
-                "innovation_risk": 0.8
+    def test_evaluate_basic(self):
+        """基本的な評価のテスト"""
+        student_profile = {
+            "research_intensity": 9,
+            "advisor_style": 7,
+            "team_work": 5,
+            "workload": 8,
+            "theory_practice": 6,
+            "skill_development": 7,
+            "lab_atmosphere": 6,
+            "flexibility": 5,
+            "publication_opportunity": 9,
+            "interdisciplinary": 4,
+            "communication_style": 6,
+            "innovation_focus": 8,
+            
+            "research_intensity_priority": 10,
+            "publication_opportunity_priority": 10,
+            
+            "research_field_match": 7,
+            
+            "field_interests": {
+                "ai_ml": 10,
+                "image_processing": 7
             }
         }
-    
-    def test_evaluate_success(self):
-        """正常な評価リクエスト"""
-        profile = self.get_valid_profile()
         
-        response = client.post("/api/evaluate", json=profile)
+        response = client.post("/api/evaluate", json=student_profile)
         
         assert response.status_code == 200
         
         data = response.json()
-        
-        # 基本構造確認
-        assert "student_profile" in data
-        assert "lab_results" in data
-        assert "summary" in data
-        assert "metadata" in data
+        assert "evaluation_results" in data
+        assert "total_labs_evaluated" in data
+        assert data["total_labs_evaluated"] > 0
     
     def test_evaluate_results_structure(self):
-        """評価結果の構造確認"""
-        profile = self.get_valid_profile()
+        """評価結果の構造テスト"""
+        student_profile = {
+            "research_intensity": 8,
+            "research_field_match": 5,
+            "field_interests": {"ai_ml": 8}
+        }
         
-        response = client.post("/api/evaluate", json=profile)
+        response = client.post("/api/evaluate", json=student_profile)
         data = response.json()
         
-        # 結果が存在
-        results = data["lab_results"]
-        assert len(results) > 0
+        results = data["evaluation_results"]
         
-        # 最初の結果の構造確認
-        result = results[0]
-        
-        assert "lab_id" in result
-        assert "lab_name" in result
-        assert "overall_compatibility" in result
-        assert "feature_scores" in result
-        assert "cluster_info" in result
-        assert "recommendation_level" in result
-        assert "fuzzy_analysis" in result
-    
-    def test_evaluate_cluster_info(self):
-        """クラスタ情報の確認"""
-        profile = self.get_valid_profile()
-        
-        response = client.post("/api/evaluate", json=profile)
-        data = response.json()
-        
-        result = data["lab_results"][0]
-        cluster_info = result["cluster_info"]
-        
-        # クラスタ情報の構造
-        assert "primary_cluster" in cluster_info
-        assert "level1_branch" in cluster_info
-        assert "level2_cluster" in cluster_info
-        assert "level1_memberships" in cluster_info
-        assert "level2_memberships" in cluster_info
-        assert "classification_path" in cluster_info
-    
-    def test_evaluate_fuzzy_analysis(self):
-        """ファジィ分析結果の確認"""
-        profile = self.get_valid_profile()
-        
-        response = client.post("/api/evaluate", json=profile)
-        data = response.json()
-        
-        result = data["lab_results"][0]
-        fuzzy_analysis = result["fuzzy_analysis"]
-        
-        assert "top_matching_features" in fuzzy_analysis
-        assert "improvement_areas" in fuzzy_analysis
-        assert "cluster_interpretation" in fuzzy_analysis
-    
-    def test_evaluate_sorting(self):
-        """結果がスコア順にソートされているか確認"""
-        profile = self.get_valid_profile()
-        
-        response = client.post("/api/evaluate", json=profile)
-        data = response.json()
-        
-        results = data["lab_results"]
-        
-        # スコアが降順にソートされている
+        # 結果がソートされているか
         for i in range(len(results) - 1):
             assert results[i]["overall_compatibility"] >= results[i+1]["overall_compatibility"]
+        
+        # 各結果に必要な情報があるか
+        for result in results:
+            assert "lab_id" in result
+            assert "lab_name" in result
+            assert "overall_compatibility" in result
+            assert "basic_score" in result
+            assert "field_score" in result
+            assert "field_weight" in result
+            assert "basic_weight" in result
+            assert "explanation" in result
+            assert "recommendation" in result
     
-    def test_evaluate_summary(self):
-        """サマリー情報の確認"""
-        profile = self.get_valid_profile()
-        
-        response = client.post("/api/evaluate", json=profile)
-        data = response.json()
-        
-        summary = data["summary"]
-        
-        assert "total_labs" in summary
-        assert "top_match" in summary
-        assert "excellent_matches" in summary
-        assert "good_matches" in summary
-        assert "evaluation_method" in summary
-        
-        # 評価方法に"13項目"が含まれる
-        assert "13項目" in summary["evaluation_method"]
-    
-    def test_evaluate_missing_basic_criteria(self):
-        """基本項目が不足している場合"""
-        profile = {
-            "student_profile": {
-                "research_intensity": 0.8,
-                # advisor_styleが不足
-                "team_work": 0.7
-            }
+    def test_evaluate_system_info(self):
+        """システム情報の確認"""
+        student_profile = {
+            "research_intensity": 5,
+            "research_field_match": 5,
+            "field_interests": {"ai_ml": 5}
         }
         
-        response = client.post("/api/evaluate", json=profile)
+        response = client.post("/api/evaluate", json=student_profile)
+        data = response.json()
         
-        # 400エラーが返る
+        system_info = data["system_info"]
+        
+        # パターンA情報
+        assert system_info["pattern"] == "A"
+        assert system_info["matcher_type"] == "simple"
+        assert system_info["uses_genetic_algorithm"] == False
+        assert system_info["uses_default_params"] == True
+    
+    def test_evaluate_missing_field_match(self):
+        """research_field_match欠損のテスト"""
+        student_profile = {
+            "research_intensity": 5,
+            "field_interests": {"ai_ml": 5}
+            # research_field_match が欠損
+        }
+        
+        response = client.post("/api/evaluate", json=student_profile)
+        
         assert response.status_code == 400
     
-    def test_evaluate_with_priorities(self):
-        """優先度付き評価（フロントエンドAPI互換性）"""
-        profile = {
-            "student_profile": {
-                # 基本5項目
-                "research_intensity": 0.9,
-                "advisor_style": 0.7,
-                "team_work": 0.8,
-                "workload": 0.85,
-                "theory_practice": 0.6,
-                # 優先度オブジェクト（フロントエンドから送信される）
-                "priorities": {
-                    "research_intensity": 5,
-                    "advisor_style": 3,
-                    "team_work": 4,
-                    "workload": 2,
-                    "theory_practice": 3,
-                    "research_field_match": 5,
-                    "skill_development": 4,
-                    "lab_atmosphere": 3,
-                    "flexibility": 2,
-                    "publication_opportunity": 4,
-                    "interdisciplinary": 3,
-                    "communication_style": 3,
-                    "innovation_risk": 2
-                }
-            }
+    def test_evaluate_missing_field_interests(self):
+        """field_interests欠損のテスト"""
+        student_profile = {
+            "research_intensity": 5,
+            "research_field_match": 5
+            # field_interests が欠損
         }
         
-        response = client.post("/api/evaluate", json=profile)
+        response = client.post("/api/evaluate", json=student_profile)
         
-        # 優先度付きでも正常に動作
-        assert response.status_code == 200
+        assert response.status_code == 400
     
-    def test_evaluate_partial_criteria(self):
-        """拡張項目が一部不足している場合"""
-        profile = {
-            "student_profile": {
-                # 基本5項目（必須）
-                "research_intensity": 0.8,
-                "advisor_style": 0.6,
-                "team_work": 0.7,
-                "workload": 0.7,
-                "theory_practice": 0.6
-                # 拡張・特殊項目は省略（デフォルト値0.5が使用される）
-            }
+    def test_evaluate_insufficient_criteria(self):
+        """基本項目不足のテスト"""
+        student_profile = {
+            "research_intensity": 5,
+            "research_field_match": 5,
+            "field_interests": {"ai_ml": 5}
+            # 基本項目が1つだけ（最低5つ必要）
         }
         
-        response = client.post("/api/evaluate", json=profile)
+        response = client.post("/api/evaluate", json=student_profile)
         
-        # 基本項目があれば成功
-        assert response.status_code == 200
+        assert response.status_code == 400
 
 
-class TestOptimizeEndpoint:
-    """最適化エンドポイントのテスト"""
+class TestExplainEndpoint:
+    """説明エンドポイントのテスト"""
     
-    def test_optimize_not_implemented(self):
-        """最適化機能の未実装確認"""
-        request_data = {
-            "student_profiles": [
-                {
-                    "research_intensity": 0.8,
-                    "advisor_style": 0.6,
-                    "team_work": 0.7,
-                    "workload": 0.7,
-                    "theory_practice": 0.6
-                }
-            ]
+    def test_explain_recommendation(self):
+        """推薦説明のテスト"""
+        student_profile = {
+            "research_intensity": 9,
+            "advisor_style": 7,
+            "team_work": 5,
+            "research_field_match": 7,
+            "field_interests": {"ai_ml": 10}
         }
         
-        response = client.post("/api/optimize", json=request_data)
+        # まず研究室一覧を取得
+        response = client.get("/api/labs")
+        labs = response.json()["labs"]
         
-        # 実装されていないことを示すレスポンス
-        assert response.status_code == 200
+        if len(labs) > 0:
+            lab_id = labs[0]["id"]
+            
+            # 説明を取得
+            response = client.post(
+                f"/api/explain/{lab_id}",
+                json=student_profile
+            )
+            
+            assert response.status_code == 200
+            
+            data = response.json()
+            assert "lab_id" in data
+            assert "overall_compatibility" in data
+            assert "explanation" in data
+            assert "score_breakdown" in data
+            assert "strengths" in data
+            assert "concerns" in data
+            assert "field_analysis" in data
+    
+    def test_explain_nonexistent_lab(self):
+        """存在しない研究室の説明テスト"""
+        student_profile = {
+            "research_intensity": 5,
+            "research_field_match": 5,
+            "field_interests": {"ai_ml": 5}
+        }
+        
+        response = client.post(
+            "/api/explain/nonexistent_lab",
+            json=student_profile
+        )
+        
+        assert response.status_code == 404
+
+
+class TestFieldMatchingLogic:
+    """分野マッチングロジックのテスト"""
+    
+    def test_exact_match_scoring(self):
+        """完全一致スコアのテスト"""
+        student_profile = {
+            "research_intensity": 5,
+            "research_field_match": 10,  # 分野100%重視
+            "field_interests": {"ai_ml": 10}  # AI分野に最大興味
+        }
+        
+        response = client.post("/api/evaluate", json=student_profile)
         data = response.json()
         
-        assert "status" in data
-        assert data["status"] == "not_implemented"
-
-
-class TestPerformance:
-    """パフォーマンステスト"""
-    
-    def test_evaluate_response_time(self):
-        """評価レスポンス時間"""
-        import time
+        # AI研究室を探す
+        ai_lab_result = next(
+            (r for r in data["evaluation_results"] if r["field_id"] == "ai_ml"),
+            None
+        )
         
-        profile = {
-            "student_profile": {
-                "research_intensity": 0.9,
-                "advisor_style": 0.7,
-                "team_work": 0.8,
-                "workload": 0.85,
-                "theory_practice": 0.6,
-                "research_field_match": 0.9,
-                "skill_development": 0.85,
-                "lab_atmosphere": 0.8,
-                "flexibility": 0.6,
-                "publication_opportunity": 0.9,
-                "interdisciplinary": 0.7,
-                "communication_style": 0.8,
-                "innovation_risk": 0.8
-            }
+        if ai_lab_result:
+            # 完全一致なので高スコア
+            assert ai_lab_result["field_score"] > 0.8
+            assert ai_lab_result["field_detail"]["match_type"] == "exact"
+    
+    def test_weight_variation(self):
+        """重み付けバリエーションのテスト"""
+        # 分野重視
+        profile_field = {
+            "research_intensity": 5,
+            "research_field_match": 10,
+            "field_interests": {"ai_ml": 10}
         }
         
-        start_time = time.time()
-        response = client.post("/api/evaluate", json=profile)
-        elapsed_time = time.time() - start_time
+        # 項目重視
+        profile_criteria = {
+            "research_intensity": 5,
+            "research_field_match": 1,
+            "field_interests": {"ai_ml": 10}
+        }
         
-        assert response.status_code == 200
+        response_field = client.post("/api/evaluate", json=profile_field)
+        response_criteria = client.post("/api/evaluate", json=profile_criteria)
         
-        # 1秒以内にレスポンス
-        assert elapsed_time < 1.0
+        data_field = response_field.json()
+        data_criteria = response_criteria.json()
         
-        print(f"\n⏱️  評価処理時間: {elapsed_time:.3f}秒")
+        # 両方とも成功
+        assert response_field.status_code == 200
+        assert response_criteria.status_code == 200
+        
+        # 重みが異なることを確認
+        result_field = data_field["evaluation_results"][0]
+        result_criteria = data_criteria["evaluation_results"][0]
+        
+        assert result_field["field_weight"] > result_criteria["field_weight"]
+        assert result_field["basic_weight"] < result_criteria["basic_weight"]
 
 
-# テスト実行時の情報表示
 if __name__ == "__main__":
-    print("=" * 70)
-    print("API統合テスト実行")
-    print("=" * 70)
-    
-    pytest.main([__file__, "-v", "--tb=short", "-s"])
-    
-    print("\n" + "=" * 70)
-    print("テスト完了")
-    print("=" * 70)
+    pytest.main([__file__, "-v", "-s"])

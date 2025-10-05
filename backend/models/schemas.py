@@ -1,265 +1,352 @@
-# models/schemas.py - Pydantic スキーマ定義
+# models/schemas.py
+"""
+データスキーマ定義（パターンA版）
+遺伝的アルゴリズム関連のスキーマを除去
+"""
 
-from typing import Dict, List, Any, Optional, Union
 from pydantic import BaseModel, Field, validator
+from typing import Dict, List, Optional, Any
 from datetime import datetime
 from enum import Enum
 
-class ResearchFieldEnum(str, Enum):
-    """研究分野列挙型"""
-    AI_MACHINE_LEARNING = "ai_machine_learning"
-    IMAGE_VIDEO_PROCESSING = "image_video_processing"
-    NETWORK_SECURITY = "network_security"
-    DATABASE_INFORMATION_SYSTEMS = "database_information_systems"
-    EMBEDDED_IOT = "embedded_iot"
-    WEB_DESIGN_UI_UX = "web_design_ui_ux"
-    DESIGN_VISUAL_EXPRESSION = "design_visual_expression"
-    VIDEO_ANIMATION = "video_animation"
-    COMPUTER_MUSIC_SOUND_ART = "computer_music_sound_art"
-    GAME_DEVELOPMENT_ESPORTS = "game_development_esports"
-    VR_AR_MEDIA_ART = "vr_ar_media_art"
 
-class EvaluationCriteria(BaseModel):
-    """評価基準（13項目）"""
-    
-    # 基本項目（5項目）
-    research_intensity: float = Field(..., ge=1, le=10, description="研究強度（1-10）")
-    advisor_style: float = Field(..., ge=1, le=10, description="指導スタイル（1-10）")
-    team_work: float = Field(..., ge=1, le=10, description="チームワーク（1-10）")
-    workload: float = Field(..., ge=1, le=10, description="ワークロード（1-10）")
-    theory_practice: float = Field(..., ge=1, le=10, description="理論・実践バランス（1-10）")
-    
-    # 拡張項目（5項目）
-    research_field_match: Optional[float] = Field(None, ge=1, le=10, description="研究分野適合性（1-10）")
-    skill_development: Optional[float] = Field(None, ge=1, le=10, description="スキル開発（1-10）")
-    lab_atmosphere: Optional[float] = Field(None, ge=1, le=10, description="研究室雰囲気（1-10）")
-    flexibility: Optional[float] = Field(None, ge=1, le=10, description="柔軟性（1-10）")
-    publication_opportunity: Optional[float] = Field(None, ge=1, le=10, description="論文発表機会（1-10）")
-    
-    # 特殊項目（2項目）
-    interdisciplinary: Optional[float] = Field(None, ge=1, le=10, description="学際性（1-10）")
-    communication_style: Optional[float] = Field(None, ge=1, le=10, description="コミュニケーション（1-10）")
-    
-    @validator('research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice')
-    def validate_required_criteria(cls, v):
-        if v is None:
-            raise ValueError('基本評価項目は必須です')
-        return v
+# ==================== 基本スキーマ ====================
 
-class FieldInterest(BaseModel):
-    """研究分野への興味"""
-    field: ResearchFieldEnum = Field(..., description="研究分野")
-    interest_level: float = Field(..., ge=1, le=10, description="興味レベル（1-10）")
-    priority: int = Field(..., ge=1, description="優先順位")
+class StudentProfileBase(BaseModel):
+    """学生プロファイル基本スキーマ"""
     
-    @validator('interest_level')
-    def validate_interest_level(cls, v):
-        if not 1 <= v <= 10:
-            raise ValueError('興味レベルは1-10の範囲で指定してください')
-        return v
-
-class StudentProfile(BaseModel):
-    """学生プロフィール"""
-    student_id: str = Field(..., description="学生ID")
-    evaluation_criteria: EvaluationCriteria = Field(..., description="評価基準")
-    field_interests: List[FieldInterest] = Field(..., description="研究分野への興味")
+    # 基本12項目（1-10スケール）
+    research_intensity: float = Field(..., ge=1, le=10, description="研究強度")
+    advisor_style: float = Field(..., ge=1, le=10, description="指導スタイル")
+    team_work: float = Field(..., ge=1, le=10, description="チームワーク")
+    workload: float = Field(..., ge=1, le=10, description="ワークロード")
+    theory_practice: float = Field(..., ge=1, le=10, description="理論・実践バランス")
+    skill_development: float = Field(..., ge=1, le=10, description="スキル開発")
+    lab_atmosphere: float = Field(..., ge=1, le=10, description="研究室雰囲気")
+    flexibility: float = Field(..., ge=1, le=10, description="柔軟性")
+    publication_opportunity: float = Field(..., ge=1, le=10, description="論文発表機会")
+    interdisciplinary: float = Field(..., ge=1, le=10, description="学際性")
+    communication_style: float = Field(..., ge=1, le=10, description="コミュニケーション")
+    innovation_focus: float = Field(..., ge=1, le=10, description="革新性重視")
     
-    # 追加情報（オプション）
-    grade: Optional[int] = Field(None, ge=1, le=4, description="学年")
-    gpa: Optional[float] = Field(None, ge=0.0, le=4.0, description="GPA")
-    preferred_lab_size: Optional[str] = Field(None, description="希望研究室サイズ")
-    time_availability: Optional[float] = Field(None, ge=1, le=10, description="時間的余裕")
+    # 優先度（1-10スケール）
+    research_intensity_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    advisor_style_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    team_work_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    workload_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    theory_practice_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    skill_development_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    lab_atmosphere_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    flexibility_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    publication_opportunity_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    interdisciplinary_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    communication_style_priority: Optional[float] = Field(5.0, ge=1, le=10)
+    innovation_focus_priority: Optional[float] = Field(5.0, ge=1, le=10)
     
-    # メタデータ
-    created_at: datetime = Field(default_factory=datetime.now, description="作成日時")
-    updated_at: Optional[datetime] = Field(None, description="更新日時")
+    # 分野重視度
+    research_field_match: float = Field(..., ge=1, le=10, description="分野重視度")
     
-    @validator('field_interests')
+    # 分野興味度
+    field_interests: Dict[str, float] = Field(..., description="分野興味度")
+    
+    @validator("field_interests")
     def validate_field_interests(cls, v):
-        if not v:
-            raise ValueError('最低1つの研究分野への興味を指定してください')
-        
-        # 優先順位の重複チェック
-        priorities = [interest.priority for interest in v]
-        if len(priorities) != len(set(priorities)):
-            raise ValueError('優先順位に重複があります')
-        
+        """分野興味度の検証"""
+        for field_id, interest in v.items():
+            if not (1 <= interest <= 10):
+                raise ValueError(f"Interest level for {field_id} must be between 1 and 10")
         return v
 
-class Faculty(BaseModel):
-    """教員情報"""
-    name: str = Field(..., description="教員名")
-    name_en: Optional[str] = Field(None, description="英語名")
-    title: Optional[str] = Field(None, description="役職")
-    specialties: List[str] = Field(..., description="専門分野")
-    lab_capacity: Optional[int] = Field(None, description="研究室定員")
-    research_style: Optional[str] = Field(None, description="研究スタイル")
 
-class Laboratory(BaseModel):
-    """研究室情報"""
-    lab_id: str = Field(..., description="研究室ID")
-    faculty: Faculty = Field(..., description="指導教員")
-    research_field: ResearchFieldEnum = Field(..., description="研究分野")
+class StudentProfile(StudentProfileBase):
+    """学生プロファイル完全版"""
     
-    # 研究室特性（evaluation_criteriaに対応）
-    characteristics: EvaluationCriteria = Field(..., description="研究室特性")
+    student_id: Optional[str] = Field(None, description="学生ID")
+    name: Optional[str] = Field(None, description="学生名")
+    grade: Optional[int] = Field(None, ge=1, le=4, description="学年")
+    created_at: Optional[datetime] = Field(None, description="作成日時")
+
+
+class LaboratoryBase(BaseModel):
+    """研究室基本スキーマ"""
+    
+    lab_id: str = Field(..., description="研究室ID")
+    name: str = Field(..., description="研究室名")
+    professor: str = Field(..., description="教授名")
+    field_id: str = Field(..., description="分野ID")
+    description: Optional[str] = Field(None, description="研究室説明")
+    
+    # 基本12項目
+    research_intensity: float = Field(..., ge=0, le=10)
+    advisor_style: float = Field(..., ge=0, le=10)
+    team_work: float = Field(..., ge=0, le=10)
+    workload: float = Field(..., ge=0, le=10)
+    theory_practice: float = Field(..., ge=0, le=10)
+    skill_development: float = Field(..., ge=0, le=10)
+    lab_atmosphere: float = Field(..., ge=0, le=10)
+    flexibility: float = Field(..., ge=0, le=10)
+    publication_opportunity: float = Field(..., ge=0, le=10)
+    interdisciplinary: float = Field(..., ge=0, le=10)
+    communication_style: float = Field(..., ge=0, le=10)
+    innovation_focus: float = Field(..., ge=0, le=10)
     
     # 追加情報
-    lab_name: Optional[str] = Field(None, description="研究室名")
-    description: Optional[str] = Field(None, description="研究室説明")
-    recent_achievements: Optional[List[str]] = Field(None, description="最近の成果")
-    required_skills: Optional[List[str]] = Field(None, description="必要スキル")
-    lab_environment: Optional[str] = Field(None, description="研究環境")
+    students_count: Optional[int] = Field(None, ge=0, description="学生数")
+    equipment: Optional[str] = Field(None, description="設備")
+    funding: Optional[str] = Field(None, description="資金状況")
+
+
+class Laboratory(LaboratoryBase):
+    """研究室完全版"""
     
-    # 統計情報
-    current_students: Optional[int] = Field(None, description="現在の学生数")
-    graduation_rate: Optional[float] = Field(None, ge=0.0, le=1.0, description="卒業率")
-    job_placement_rate: Optional[float] = Field(None, ge=0.0, le=1.0, description="就職率")
+    field_name: Optional[str] = Field(None, description="分野名")
+    created_at: Optional[datetime] = Field(None, description="作成日時")
+    updated_at: Optional[datetime] = Field(None, description="更新日時")
+
+
+# ==================== 評価結果スキーマ ====================
 
 class CompatibilityScore(BaseModel):
-    """適合性スコア"""
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="総合適合性スコア")
-    criteria_scores: Dict[str, float] = Field(..., description="各基準の適合性スコア")
-    field_match_score: float = Field(..., ge=0.0, le=1.0, description="分野適合性スコア")
-    confidence: float = Field(..., ge=0.0, le=1.0, description="信頼度")
+    """適合度スコア"""
+    
+    overall_compatibility: float = Field(..., ge=0, le=1, description="総合適合度")
+    basic_score: float = Field(..., ge=0, le=1, description="基本項目スコア")
+    field_score: float = Field(..., ge=0, le=1, description="分野スコア")
+    field_weight_alpha: float = Field(..., ge=0, le=1, description="分野比重")
+    basic_weight_beta: float = Field(..., ge=0, le=1, description="基本項目比重")
 
-class LabResult(BaseModel):
-    """研究室マッチング結果"""
-    laboratory: Laboratory = Field(..., description="研究室情報")
-    compatibility_score: CompatibilityScore = Field(..., description="適合性スコア")
-    ranking: int = Field(..., description="ランキング")
-    reasons: List[str] = Field(..., description="推薦理由")
-    concerns: Optional[List[str]] = Field(None, description="懸念点")
+
+class CriteriaScore(BaseModel):
+    """項目別スコア"""
+    
+    criterion: str = Field(..., description="評価項目名")
+    score: float = Field(..., ge=0, le=1, description="スコア")
+    description: Optional[str] = Field(None, description="説明")
+
+
+class FieldMatchDetail(BaseModel):
+    """分野マッチ詳細"""
+    
+    match_type: str = Field(..., description="マッチタイプ (exact/category/none)")
+    lab_field: str = Field(..., description="研究室分野ID")
+    lab_field_name: Optional[str] = Field(None, description="研究室分野名")
+    message: str = Field(..., description="説明メッセージ")
+    interest_level: Optional[float] = Field(None, description="興味レベル")
+    related_count: Optional[int] = Field(None, description="関連分野数")
+
+
+class LabEvaluationResult(BaseModel):
+    """研究室評価結果"""
+    
+    lab_id: str
+    lab_name: str
+    professor: str
+    field_id: str
+    field_name: str
+    
+    # スコア
+    overall_compatibility: float
+    basic_score: float
+    field_score: float
+    field_weight: float
+    basic_weight: float
+    
+    # 詳細
+    criteria_scores: Dict[str, float]
+    field_detail: Dict[str, Any]
+    tree_layers: List[str]
+    
+    # 説明
+    explanation: str
+    recommendation: str
+    
+    # 研究室情報
+    students_count: Optional[int] = None
+    equipment: Optional[str] = None
+    funding: Optional[str] = None
+
 
 class EvaluationResponse(BaseModel):
     """評価レスポンス"""
-    student_profile: StudentProfile = Field(..., description="学生プロフィール")
-    lab_results: List[LabResult] = Field(..., description="研究室マッチング結果")
     
-    # 処理情報
-    processing_time: float = Field(..., description="処理時間（秒）")
-    algorithm_version: str = Field(..., description="アルゴリズムバージョン")
-    total_labs_evaluated: int = Field(..., description="評価対象研究室数")
-    
-    # 統計情報
-    score_distribution: Dict[str, float] = Field(..., description="スコア分布統計")
-    recommendation_confidence: float = Field(..., ge=0.0, le=1.0, description="推薦信頼度")
-    
-    # メタデータ
-    evaluation_id: str = Field(..., description="評価ID")
-    timestamp: datetime = Field(default_factory=datetime.now, description="評価日時")
+    student_profile: Dict[str, Any]
+    evaluation_results: List[LabEvaluationResult]
+    total_labs_evaluated: int
+    evaluation_timestamp: float
+    system_info: Dict[str, Any]
 
-class OptimizationRequest(BaseModel):
-    """最適化リクエスト"""
-    student_profiles: List[StudentProfile] = Field(..., description="学生プロフィール群")
-    target_labs: List[Laboratory] = Field(..., description="対象研究室群")
-    
-    # 最適化パラメータ
-    population_size: Optional[int] = Field(30, ge=10, le=100, description="集団サイズ")
-    generations: Optional[int] = Field(50, ge=10, le=200, description="世代数")
-    mutation_rate: Optional[float] = Field(0.1, ge=0.01, le=0.5, description="変異率")
-    crossover_rate: Optional[float] = Field(0.8, ge=0.1, le=1.0, description="交叉率")
-    
-    # 実行設定
-    timeout_seconds: Optional[int] = Field(300, ge=30, le=1800, description="タイムアウト（秒）")
-    verbose: Optional[bool] = Field(False, description="詳細ログ出力")
 
-class OptimizationResult(BaseModel):
-    """最適化結果"""
-    request_id: str = Field(..., description="リクエストID")
-    best_weights: Dict[str, float] = Field(..., description="最適重み")
-    best_fitness: float = Field(..., description="最適適応度")
+class ExplanationResponse(BaseModel):
+    """説明レスポンス"""
     
-    # 進化過程
-    generation_history: List[Dict[str, Any]] = Field(..., description="世代別履歴")
-    convergence_generation: int = Field(..., description="収束世代")
+    lab_id: str
+    lab_name: str
+    overall_compatibility: float
+    recommendation: str
+    explanation: str
     
-    # 実行情報
-    execution_time: float = Field(..., description="実行時間（秒）")
-    total_evaluations: int = Field(..., description="総評価回数")
-    success: bool = Field(..., description="成功フラグ")
-    
-    # メタデータ
-    algorithm_config: Dict[str, Any] = Field(..., description="アルゴリズム設定")
-    timestamp: datetime = Field(default_factory=datetime.now, description="実行日時")
+    score_breakdown: Dict[str, float]
+    strengths: List[CriteriaScore]
+    concerns: List[CriteriaScore]
+    field_analysis: Dict[str, Any]
+    decision_tree_layers: List[str]
 
-class SystemStatus(BaseModel):
-    """システム状態"""
-    status: str = Field(..., description="システム状態")
-    version: str = Field(..., description="バージョン")
-    uptime: float = Field(..., description="稼働時間（秒）")
-    
-    # モジュール状態
-    modules: Dict[str, bool] = Field(..., description="モジュール利用可能性")
-    
-    # 統計情報
-    total_evaluations: int = Field(..., description="累計評価回数")
-    active_optimizations: int = Field(..., description="実行中最適化数")
-    
-    # リソース情報
-    memory_usage: Optional[float] = Field(None, description="メモリ使用量")
-    cpu_usage: Optional[float] = Field(None, description="CPU使用率")
 
-# バリデーション関数
-def validate_student_profile(profile: StudentProfile) -> List[str]:
-    """学生プロフィールの詳細バリデーション"""
-    
-    errors = []
-    
-    # 基本評価基準の完全性チェック
-    required_criteria = ['research_intensity', 'advisor_style', 'team_work', 'workload', 'theory_practice']
-    criteria_dict = profile.evaluation_criteria.dict()
-    
-    for criterion in required_criteria:
-        value = criteria_dict.get(criterion)
-        if value is None or not (1 <= value <= 10):
-            errors.append(f"基本評価基準 '{criterion}' が無効です")
-    
-    # 研究分野興味の妥当性チェック
-    if not profile.field_interests:
-        errors.append("最低1つの研究分野への興味が必要です")
-    
-    # 興味レベルの分布チェック
-    interest_levels = [interest.interest_level for interest in profile.field_interests]
-    if interest_levels and max(interest_levels) < 5:
-        errors.append("最低1つの分野に5以上の興味レベルが必要です")
-    
-    return errors
+# ==================== システム情報スキーマ ====================
 
-def validate_laboratory(lab: Laboratory) -> List[str]:
-    """研究室情報の詳細バリデーション"""
+class SystemInfo(BaseModel):
+    """システム情報"""
     
-    errors = []
+    version: str
+    pattern: str
+    status: str
+    uptime_seconds: float
     
-    # 特性値の妥当性チェック
-    characteristics_dict = lab.characteristics.dict()
-    for key, value in characteristics_dict.items():
-        if value is not None and not (1 <= value <= 10):
-            errors.append(f"研究室特性 '{key}' が範囲外です: {value}")
-    
-    # 教員情報の完全性チェック
-    if not lab.faculty.name:
-        errors.append("教員名が必要です")
-    
-    if not lab.faculty.specialties:
-        errors.append("教員の専門分野が必要です")
-    
-    return errors
+    modules: Dict[str, bool]
+    database: Dict[str, Any]
+    features: Dict[str, bool]
 
-# エクスポート用リスト
-__all__ = [
-    'ResearchFieldEnum',
-    'EvaluationCriteria',
-    'FieldInterest', 
-    'StudentProfile',
-    'Faculty',
-    'Laboratory',
-    'CompatibilityScore',
-    'LabResult',
-    'EvaluationResponse',
-    'OptimizationRequest',
-    'OptimizationResult',
-    'SystemStatus',
-    'validate_student_profile',
-    'validate_laboratory'
-]
+
+class HealthResponse(BaseModel):
+    """ヘルスチェックレスポンス"""
+    
+    status: str
+    version: str
+    pattern: str
+    timestamp: float
+    uptime_seconds: float
+    system_initialized: bool
+    
+    modules: Dict[str, bool]
+    database: Dict[str, Any]
+    features: Dict[str, bool]
+
+
+# ==================== 評価基準・分野スキーマ ====================
+
+class CriterionInfo(BaseModel):
+    """評価基準情報"""
+    
+    id: str
+    name: str
+    description: str
+    range: str
+    importance: str
+
+
+class CriteriaResponse(BaseModel):
+    """評価基準レスポンス"""
+    
+    criteria: List[CriterionInfo]
+    total_count: int
+    basic_count: int
+    has_field_match: bool
+
+
+class FieldInfo(BaseModel):
+    """分野情報"""
+    
+    id: str
+    name: str
+
+
+class FieldsResponse(BaseModel):
+    """分野レスポンス"""
+    
+    fields: List[FieldInfo]
+    total_count: int
+
+
+class LabsResponse(BaseModel):
+    """研究室一覧レスポンス"""
+    
+    labs: List[Laboratory]
+    total_count: int
+    last_updated: float
+
+
+# ==================== エラーレスポンス ====================
+
+class ErrorResponse(BaseModel):
+    """エラーレスポンス"""
+    
+    error: str
+    detail: str
+    status_code: int
+    timestamp: float
+
+
+# ==================== バリデーションヘルパー ====================
+
+def validate_student_profile(profile: Dict[str, Any]) -> bool:
+    """学生プロファイルの簡易検証"""
+    
+    required_fields = [
+        "research_field_match",
+        "field_interests"
+    ]
+    
+    for field in required_fields:
+        if field not in profile:
+            return False
+    
+    return True
+
+
+def normalize_profile_values(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """プロファイル値の正規化"""
+    
+    normalized = profile.copy()
+    
+    # 1-10スケールを0-1に正規化（必要な場合）
+    for key, value in normalized.items():
+        if isinstance(value, (int, float)) and value > 1:
+            # 優先度やfield_interestsは維持
+            if not key.endswith("_priority") and key not in ["research_field_match"]:
+                if key in profile.get("field_interests", {}):
+                    continue
+                # その他の項目は正規化しない（1-10のまま維持）
+    
+    return normalized
+
+
+# ==================== 使用例 ====================
+
+if __name__ == "__main__":
+    # 学生プロファイル例
+    student = StudentProfile(
+        student_id="S001",
+        name="山田太郎",
+        grade=3,
+        
+        research_intensity=9,
+        advisor_style=7,
+        team_work=5,
+        workload=8,
+        theory_practice=6,
+        skill_development=7,
+        lab_atmosphere=6,
+        flexibility=5,
+        publication_opportunity=9,
+        interdisciplinary=4,
+        communication_style=6,
+        innovation_focus=8,
+        
+        research_intensity_priority=10,
+        publication_opportunity_priority=10,
+        
+        research_field_match=7,
+        
+        field_interests={
+            "ai_ml": 10,
+            "image_processing": 7
+        },
+        
+        created_at=datetime.now()
+    )
+    
+    print("✅ 学生プロファイル作成成功")
+    print(f"学生ID: {student.student_id}")
+    print(f"研究強度: {student.research_intensity}")
+    print(f"分野重視度: {student.research_field_match}")
+    print(f"興味分野: {list(student.field_interests.keys())}")
