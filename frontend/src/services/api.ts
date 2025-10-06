@@ -1,673 +1,547 @@
-// frontend/src/services/api.ts - 優先度対応版APIサービス
+// frontend/src/services/api.ts
 /**
- * 遺伝的アルゴリズム×ファジィ決定木×優先度対応 研究室選択支援システム
- * APIサービス v5.0.0
+ * API通信サービス v3.0
+ * - 12項目評価基準対応
+ * - 20研究分野対応
+ * - パターンB対応
  */
 
-import axios from 'axios';
+import axios, { AxiosInstance } from 'axios';
 
-// API基本設定
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-const API_TIMEOUT = 30000; // 30秒
+// ===== 型定義 =====
 
-// Axiosインスタンス作成
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: API_TIMEOUT,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// レスポンスインターセプター
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    console.error('API Error:', error);
-
-    if (error.response?.status === 503) {
-      throw new Error('システムが初期化中です。しばらくお待ちください。');
-    } else if (error.response?.status >= 500) {
-      throw new Error('サーバーエラーが発生しました。システム管理者にお問い合わせください。');
-    } else if (error.response?.status === 400) {
-      throw new Error(error.response?.data?.detail || '入力データに問題があります。');
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('リクエストがタイムアウトしました。ネットワーク接続を確認してください。');
-    } else {
-      throw new Error(error.response?.data?.detail || 'APIエラーが発生しました。');
-    }
-  }
-);
-
-// 型定義
-
-// 評価基準（優先度対応）
-export interface EvaluationPreferencesWithPriority {
-  // 評価値（1-10）
+// 学生プロファイル（12項目）
+export interface StudentProfile {
+  // 基本5項目
   research_intensity: number;
   advisor_style: number;
   team_work: number;
   workload: number;
   theory_practice: number;
+
+  // 拡張5項目
+  research_field_match: number;  // 分野重視度（1=基本項目重視, 10=分野重視）
+  skill_development: number;
+  lab_atmosphere: number;
+  flexibility: number;
+  publication_opportunity: number;
+
+  // 特殊2項目
+  interdisciplinary: number;
+  communication_style: number;
+
+  // 優先度（オプショナル）
+  research_intensity_priority?: number;
+  advisor_style_priority?: number;
+  team_work_priority?: number;
+  workload_priority?: number;
+  theory_practice_priority?: number;
+  research_field_match_priority?: number;
+  skill_development_priority?: number;
+  lab_atmosphere_priority?: number;
+  flexibility_priority?: number;
+  publication_opportunity_priority?: number;
+  interdisciplinary_priority?: number;
+  communication_style_priority?: number;
+
+  // 分野興味
+  field_interests?: { [key: string]: number };
+}
+
+// 研究室情報（12項目）
+export interface Laboratory {
+  id: string;
+  name: string;
+  advisor?: string;
+  professor?: string;
+  field_id: string;
+  category?: string;
+  research_area?: string;
+  description?: string;
+
+  // 基本5項目
+  research_intensity: number;
+  advisor_style: number;
+  team_work: number;
+  workload: number;
+  theory_practice: number;
+
+  // 拡張5項目
   research_field_match: number;
   skill_development: number;
   lab_atmosphere: number;
   flexibility: number;
   publication_opportunity: number;
+
+  // 特殊2項目
   interdisciplinary: number;
   communication_style: number;
-
-  // 優先度オブジェクト（新規）
-  priorities: {
-    research_intensity: number;
-    advisor_style: number;
-    team_work: number;
-    workload: number;
-    theory_practice: number;
-    research_field_match: number;
-    skill_development: number;
-    lab_atmosphere: number;
-    flexibility: number;
-    publication_opportunity: number;
-    interdisciplinary: number;
-    communication_style: number;
-  };
-
-  // 研究分野興味
-  field_interests?: { [key: string]: number };
 }
 
-// 学生プロファイル
-export interface StudentProfile extends EvaluationPreferencesWithPriority {
-  profile_name?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-// 優先度分析結果
-export interface PriorityAnalysis {
-  high_priority_match: number;
-  medium_priority_match: number;
-  low_priority_match: number;
-  priority_distribution: {
-    high: number;
-    medium: number;
-    low: number;
-  };
-  weighted_priority_score: number;
-}
-
-// AI統合スコア
-export interface AIScores {
-  fuzzy: number;
-  genetic: number;
-}
-
-// 研究室結果
+// 適合度結果
 export interface LabResult {
-  lab_id: string;
-  lab_name: string;
-  advisor: string;
-  professor_name: string;
-  research_area: string;
-  category: string;
-
-  // スコア関連
-  final_score: number;
-  compatibility_score: number;
+  lab: Laboratory;
+  lab_id?: string;
+  lab_name?: string;
+  field_name?: string;
   overall_compatibility: number;
-  priority_adjusted_score: number;
-  base_compatibility: number;
-
-  // AI統合評価
-  ai_scores: AIScores;
-
-  // 詳細情報
-  feature_scores: { [key: string]: number };
-  confidence: number;
+  basic_score: number;
+  field_score: number;
+  field_weight_alpha?: number;
+  basic_weight_beta?: number;
   recommendation: string;
-  recommendation_level: string;
+  tree_path?: string;
+  tree_layers?: string[];
+  leaf_criteria?: string[];
   explanation: string;
-
-  // 優先度分析
-  priority_analysis: PriorityAnalysis | null;
-
-  // ランキング情報
-  ranking_position?: number;
-}
-
-// 優先度統計
-export interface PriorityStatistics {
-  average_priority: number;
-  max_priority: number;
-  min_priority: number;
-  priority_variance: number;
-  high_priority_count: number;
-  medium_priority_count: number;
-  low_priority_count: number;
-  top_priorities: [string, number][];
-}
-
-// 評価サマリー
-export interface EvaluationSummary {
-  total_labs: number;
-  avg_score: number;
-  max_score: number;
-  min_score: number;
-  high_compatibility_count: number;
-  medium_compatibility_count: number;
-  low_compatibility_count: number;
-  priority_weighting_applied: boolean;
-  total_priority_items: number;
-  priority_statistics: PriorityStatistics | null;
+  criteria_scores?: { [key: string]: number };
+  field_detail?: any;
 }
 
 // 評価レスポンス
 export interface EvaluationResponse {
-  lab_results: LabResult[];
-  summary: EvaluationSummary;
-  student_profile: StudentProfile;
   evaluation_results: LabResult[];
-  total_labs_evaluated: number;
-  evaluation_timestamp: number;
-  metadata: {
-    processing_time: number;
-    evaluation_count: number;
-    priority_evaluations: number;
-    timestamp: string;
-    criteria_used: number;
-    priorities_applied: { [key: string]: number };
-    ai_engines_used: string[];
-    calculation_method: string;
+  summary: {
+    total_labs: number;
+    avg_score: number;
+    best_match?: string;
   };
+  system_info?: any;
 }
 
-// 研究分野
+// 研究分野情報
 export interface ResearchField {
   id: string;
   name: string;
   category: string;
   description?: string;
-  faculty_count?: number;
-  faculty?: string[];
+  faculty_count: number;
+  keywords?: string[];
 }
 
-// 評価基準情報
+// ===== カテゴリ定義 =====
+
+export const FIELD_CATEGORIES = [
+  'テクノロジー・システム',
+  'クリエイティブ',
+  'エンターテイメント',
+  '人文・社会・体育'
+] as const;
+
+// ===== 研究分野データ（20分野） =====
+
+export const RESEARCH_FIELDS: ResearchField[] = [
+  // テクノロジー・システム分野（12分野）
+  {
+    id: 'ai_ml',
+    name: '人工知能・機械学習',
+    category: 'テクノロジー・システム',
+    description: 'AI、機械学習、ディープラーニング、自然言語処理の研究',
+    faculty_count: 7,
+    keywords: ['AI', '機械学習', 'ディープラーニング', 'NLP']
+  },
+  {
+    id: 'image_processing',
+    name: '画像・映像処理',
+    category: 'テクノロジー・システム',
+    description: 'コンピュータビジョン、画像認識、医用画像処理の研究',
+    faculty_count: 6,
+    keywords: ['画像処理', 'CV', 'パターン認識']
+  },
+  {
+    id: 'network_security',
+    name: 'ネットワーク・セキュリティ',
+    category: 'テクノロジー・システム',
+    description: 'ネットワーク技術、情報セキュリティ、暗号化の研究',
+    faculty_count: 3,
+    keywords: ['ネットワーク', 'セキュリティ', '暗号']
+  },
+  {
+    id: 'database_systems',
+    name: 'データベース・情報システム',
+    category: 'テクノロジー・システム',
+    description: 'データベース技術、情報システム、ビッグデータ処理の研究',
+    faculty_count: 3,
+    keywords: ['データベース', '情報システム', 'ビッグデータ']
+  },
+  {
+    id: 'embedded_iot',
+    name: '組込み・IoT',
+    category: 'テクノロジー・システム',
+    description: '組込みシステム、IoT、ユビキタスコンピューティングの研究',
+    faculty_count: 2,
+    keywords: ['組込み', 'IoT', 'ユビキタス']
+  },
+  {
+    id: 'education_linguistics',
+    name: '教育・言語学',
+    category: 'テクノロジー・システム',
+    description: '教育工学、言語処理、eラーニングシステムの研究',
+    faculty_count: 5,
+    keywords: ['教育工学', '言語学', 'eラーニング']
+  },
+  {
+    id: 'natural_science_math',
+    name: '自然科学・数理',
+    category: 'テクノロジー・システム',
+    description: '数理科学、シミュレーション、科学計算の研究',
+    faculty_count: 6,
+    keywords: ['数理科学', 'シミュレーション', '科学計算']
+  },
+  {
+    id: 'tourism_regional',
+    name: '観光情報・地域システム',
+    category: 'テクノロジー・システム',
+    description: '観光情報学、地域活性化、GISの研究',
+    faculty_count: 2,
+    keywords: ['観光情報', '地域システム', 'GIS']
+  },
+  {
+    id: 'business_decision',
+    name: '経営情報・意思決定支援',
+    category: 'テクノロジー・システム',
+    description: '経営情報システム、意思決定支援、データ分析の研究',
+    faculty_count: 3,
+    keywords: ['経営情報', '意思決定', 'データ分析']
+  },
+  {
+    id: 'audio_processing',
+    name: '音声・音響情報処理',
+    category: 'テクノロジー・システム',
+    description: '音声認識、音響信号処理、音楽情報処理の研究',
+    faculty_count: 2,
+    keywords: ['音声処理', '音響', '音楽情報']
+  },
+  {
+    id: 'system_ethics',
+    name: 'システム運用・情報倫理',
+    category: 'テクノロジー・システム',
+    description: 'システム管理、情報倫理、ICT社会論の研究',
+    faculty_count: 3,
+    keywords: ['システム運用', '情報倫理', 'ICT']
+  },
+  {
+    id: 'medical_healthcare',
+    name: '医療情報・ヘルスケア',
+    category: 'テクノロジー・システム',
+    description: '医療情報システム、ヘルスケアIT、遠隔医療の研究',
+    faculty_count: 2,
+    keywords: ['医療情報', 'ヘルスケア', '遠隔医療']
+  },
+
+  // クリエイティブ分野（4分野）
+  {
+    id: 'web_design',
+    name: 'Webデザイン・UI/UX',
+    category: 'クリエイティブ',
+    description: 'Webデザイン、ユーザインタフェース、UX設計の研究',
+    faculty_count: 4,
+    keywords: ['Webデザイン', 'UI/UX', 'インタラクション']
+  },
+  {
+    id: 'design_visual',
+    name: 'デザイン・視覚表現',
+    category: 'クリエイティブ',
+    description: 'グラフィックデザイン、視覚デザイン、ブランディングの研究',
+    faculty_count: 4,
+    keywords: ['デザイン', '視覚表現', 'グラフィック']
+  },
+  {
+    id: 'video_animation',
+    name: '映像・アニメーション',
+    category: 'クリエイティブ',
+    description: '映像制作、アニメーション表現、メディアアートの研究',
+    faculty_count: 2,
+    keywords: ['映像', 'アニメーション', 'メディアアート']
+  },
+  {
+    id: 'computer_music',
+    name: 'コンピュータ音楽・サウンドアート',
+    category: 'クリエイティブ',
+    description: 'コンピュータ音楽、サウンドデザイン、音響芸術の研究',
+    faculty_count: 2,
+    keywords: ['コンピュータ音楽', 'サウンドアート', '音響芸術']
+  },
+
+  // エンターテイメント分野（2分野）
+  {
+    id: 'game_esports',
+    name: 'ゲーム開発・eスポーツ',
+    category: 'エンターテイメント',
+    description: 'ゲーム開発、ゲームデザイン、eスポーツ産業の研究',
+    faculty_count: 2,
+    keywords: ['ゲーム開発', 'eスポーツ', 'ゲームデザイン']
+  },
+  {
+    id: 'vr_ar_media',
+    name: 'VR/AR・メディアアート',
+    category: 'エンターテイメント',
+    description: '仮想現実、拡張現実、インタラクティブアートの研究',
+    faculty_count: 2,
+    keywords: ['VR', 'AR', 'メディアアート']
+  },
+
+  // 人文・社会・体育分野（2分野）
+  {
+    id: 'philosophy_humanities',
+    name: '哲学・人文・環境行動学',
+    category: '人文・社会・体育',
+    description: '哲学、人文科学、環境行動学の研究',
+    faculty_count: 2,
+    keywords: ['哲学', '人文学', '環境行動学']
+  },
+  {
+    id: 'sports_science',
+    name: 'スポーツ・体育科学',
+    category: '人文・社会・体育',
+    description: 'スポーツ科学、体育学、健康科学の研究',
+    faculty_count: 2,
+    keywords: ['スポーツ科学', '体育学', '健康科学']
+  },
+];
+
+// ===== 評価基準情報（13項目） =====
+
 export interface CriteriaInfo {
+  id: string;
   name: string;
   description: string;
   range: string;
   category: 'basic' | 'extended' | 'special';
 }
 
-// システム情報
-export interface SystemInfo {
-  system_state: any;
-  sample_labs_count: number;
-  criteria_count: number;
-  research_fields_count: number;
-  weights: { [key: string]: number };
-  has_numpy: boolean;
-  priority_support: boolean;
-  priority_features: {
-    enabled: boolean;
-    range: string;
-    ai_integration: boolean;
-    fuzzy_inference: boolean;
-    genetic_algorithm: boolean;
-    weighted_scoring: boolean;
-  };
-  ai_engines: {
-    fuzzy: string;
-    genetic: string;
-  };
-  version: string;
-}
-
-// 研究室情報
-export interface Laboratory {
-  id: string;
-  name: string;
-  advisor: string;
-  research_area: string;
-  category: string;
-  description?: string;
-
-  // 評価基準値
-  research_intensity: number;
-  advisor_style: number;
-  team_work: number;
-  workload: number;
-  theory_practice: number;
-  research_field_match: number;
-  skill_development: number;
-  lab_atmosphere: number;
-  flexibility: number;
-  publication_opportunity: number;
-  interdisciplinary: number;
-  communication_style: number;
-}
-
-// フィールドカテゴリ
-export const FIELD_CATEGORIES = [
-  'テクノロジー・システム',
-  'クリエイティブ',
-  'エンターテイメント',
-  '人文・社会・体育'
-];
-
-// 研究分野データ
-export const RESEARCH_FIELDS: ResearchField[] = [
-  // テクノロジー・システム分野（12分野）
-  { id: 'ai_ml', name: '人工知能・機械学習', category: 'テクノロジー・システム', faculty_count: 7 },
-  { id: 'image_processing', name: '画像・映像処理', category: 'テクノロジー・システム', faculty_count: 6 },
-  { id: 'network_security', name: 'ネットワーク・セキュリティ', category: 'テクノロジー・システム', faculty_count: 3 },
-  { id: 'database_systems', name: 'データベース・情報システム', category: 'テクノロジー・システム', faculty_count: 3 },
-  { id: 'embedded_iot', name: '組込み・IoT', category: 'テクノロジー・システム', faculty_count: 2 },
-  { id: 'education_linguistics', name: '教育・言語学', category: 'テクノロジー・システム', faculty_count: 5 },
-  { id: 'natural_science_math', name: '自然科学・数理', category: 'テクノロジー・システム', faculty_count: 6 },
-  { id: 'medical_healthcare', name: '医療情報・ヘルスケア', category: 'テクノロジー・システム', faculty_count: 2 },
-  { id: 'tourism_regional', name: '観光情報・地域システム', category: 'テクノロジー・システム', faculty_count: 2 },
-  { id: 'business_decision', name: '経営情報・意思決定支援', category: 'テクノロジー・システム', faculty_count: 3 },
-  { id: 'audio_processing', name: '音声・音響情報処理', category: 'テクノロジー・システム', faculty_count: 2 },
-  { id: 'system_ethics', name: 'システム運用・情報倫理', category: 'テクノロジー・システム', faculty_count: 3 },
-
-  // クリエイティブ分野（4分野）
-  { id: 'web_design', name: 'Webデザイン・UI/UX', category: 'クリエイティブ', faculty_count: 4 },
-  { id: 'design_visual', name: 'デザイン・視覚表現', category: 'クリエイティブ', faculty_count: 4 },
-  { id: 'video_animation', name: '映像・アニメーション', category: 'クリエイティブ', faculty_count: 2 },
-  { id: 'computer_music', name: 'コンピュータ音楽・サウンドアート', category: 'クリエイティブ', faculty_count: 2 },
-
-  // エンターテイメント分野（2分野）
-  { id: 'game_esports', name: 'ゲーム開発・eスポーツ', category: 'エンターテイメント', faculty_count: 2 },
-  { id: 'vr_ar_media', name: 'VR/AR・メディアアート', category: 'エンターテイメント', faculty_count: 2 },
-
-  // 人文・社会・体育分野（2分野）
-  { id: 'philosophy_humanities', name: '哲学・人文・環境行動学', category: '人文・社会・体育', faculty_count: 2 },
-  { id: 'sports_science', name: 'スポーツ・体育科学', category: '人文・社会・体育', faculty_count: 2 }
-];
-
-// 評価基準情報
-export const CRITERIA_INFO: { [key: string]: CriteriaInfo } = {
-  research_intensity: {
+export const EVALUATION_CRITERIA: CriteriaInfo[] = [
+  // 基本項目（5項目）
+  {
+    id: 'research_intensity',
     name: '研究強度',
     description: '研究にどれだけ集中的に取り組みたいか',
-    range: '1（軽い研究）〜 10（集中研究）',
+    range: '1（軽い研究）～ 10（集中研究）',
     category: 'basic'
   },
-  advisor_style: {
+  {
+    id: 'advisor_style',
     name: '指導スタイル',
     description: '教授からの指導の受け方の好み',
-    range: '1（厳格指導）〜 10（自由指導）',
+    range: '1（厳格指導）～ 10（自由指導）',
     category: 'basic'
   },
-  team_work: {
+  {
+    id: 'team_work',
     name: 'チームワーク',
     description: '研究での他者との協働の程度',
-    range: '1（個人研究）〜 10（チーム研究）',
+    range: '1（個人研究）～ 10（チーム研究）',
     category: 'basic'
   },
-  workload: {
+  {
+    id: 'workload',
     name: 'ワークロード',
     description: '研究活動の忙しさに対する許容度',
-    range: '1（軽い負荷）〜 10（重い負荷）',
+    range: '1（軽い負荷）～ 10（重い負荷）',
     category: 'basic'
   },
-  theory_practice: {
+  {
+    id: 'theory_practice',
     name: '理論・実践バランス',
     description: '理論研究と実践的研究のバランス',
-    range: '1（理論重視）〜 10（実践重視）',
+    range: '1（理論重視）～ 10（実践重視）',
     category: 'basic'
   },
-  research_field_match: {
-    name: '研究分野適合性',
-    description: '自分の興味と研究室の分野の一致度',
-    range: '1（広い分野）〜 10（専門特化）',
+
+  // 拡張項目（5項目）
+  {
+    id: 'research_field_match',
+    name: '分野重視度',
+    description: '分野マッチングと基本項目のどちらに比重を置くか',
+    range: '1（基本項目重視）～ 10（分野重視）',
     category: 'extended'
   },
-  skill_development: {
+  {
+    id: 'skill_development',
     name: 'スキル開発',
     description: '専門性と汎用性のバランス',
-    range: '1（専門特化）〜 10（幅広いスキル）',
+    range: '1（専門特化）～ 10（幅広いスキル）',
     category: 'extended'
   },
-  lab_atmosphere: {
+  {
+    id: 'lab_atmosphere',
     name: '研究室雰囲気',
     description: '研究室の全体的な雰囲気',
-    range: '1（静寂集中）〜 10（活発議論）',
+    range: '1（静寂集中）～ 10（活発議論）',
     category: 'extended'
   },
-  flexibility: {
+  {
+    id: 'flexibility',
     name: '柔軟性',
     description: '研究時間の自由度',
-    range: '1（固定スケジュール）〜 10（柔軟スケジュール）',
+    range: '1（固定スケジュール）～ 10（柔軟スケジュール）',
     category: 'extended'
   },
-  publication_opportunity: {
+  {
+    id: 'publication_opportunity',
     name: '論文発表機会',
     description: '研究成果の論文化機会',
-    range: '1（少ない機会）〜 10（豊富な機会）',
+    range: '1（少ない機会）～ 10（豊富な機会）',
     category: 'extended'
   },
-  interdisciplinary: {
+
+  // 特殊項目（2項目）
+  {
+    id: 'interdisciplinary',
     name: '学際性',
     description: '他分野との連携の程度',
-    range: '1（単一分野）〜 10（学際連携）',
+    range: '1（単一分野）～ 10（学際連携）',
     category: 'special'
   },
-  communication_style: {
+  {
+    id: 'communication_style',
     name: 'コミュニケーション',
     description: '研究室での交流スタイル',
-    range: '1（少人数密接）〜 10（オープン交流）',
+    range: '1（少人数密接）～ 10（オープン交流）',
     category: 'special'
-  }
-};
+  },
+];
 
-// APIサービスクラス
+// ===== APIサービスクラス =====
+
 class ApiService {
+  private api: AxiosInstance;
   private baseURL: string;
 
   constructor() {
-    this.baseURL = API_BASE_URL;
+    // 環境に応じてベースURLを設定
+    this.baseURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+
+    this.api = axios.create({
+      baseURL: this.baseURL,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    // レスポンスインターセプター（エラーハンドリング）
+    this.api.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        console.error('API Error:', error);
+        return Promise.reject(error);
+      }
+    );
+  }
+
+  // 接続テスト
+  async testConnection(): Promise<boolean> {
+    try {
+      const response = await this.api.get('/health');
+      return response.status === 200;
+    } catch (error) {
+      console.error('接続テスト失敗:', error);
+      return false;
+    }
   }
 
   // ヘルスチェック
-  async healthCheck(): Promise<{ status: string; message: string; version: string }> {
+  async getHealth(): Promise<any> {
     try {
-      const response = await apiClient.get('/');
+      const response = await this.api.get('/health');
       return response.data;
     } catch (error) {
-      console.error('Health check failed:', error);
-      throw error;
-    }
-  }
-
-  // システム情報取得
-  async getSystemInfo(): Promise<SystemInfo> {
-    try {
-      const response = await apiClient.get('/api/system');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get system info:', error);
-      throw error;
-    }
-  }
-
-  // 研究分野一覧取得
-  async getResearchFields(): Promise<{ research_fields: any; total_count: number; categories: string[] }> {
-    try {
-      const response = await apiClient.get('/api/fields');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get research fields:', error);
-      throw error;
-    }
-  }
-
-  // 評価基準情報取得
-  async getEvaluationCriteria(): Promise<{
-    criteria: { [key: string]: CriteriaInfo };
-    total_count: number;
-    categories: any;
-    priority_support: boolean;
-    priority_range: string;
-  }> {
-    try {
-      const response = await apiClient.get('/api/criteria');
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get evaluation criteria:', error);
-      throw error;
+      throw new Error('ヘルスチェックに失敗しました');
     }
   }
 
   // 研究室一覧取得
-  async getLaboratories(): Promise<{ labs: Laboratory[]; total_count: number; categories: string[] }> {
+  async getLabs(): Promise<Laboratory[]> {
     try {
-      const response = await apiClient.get('/api/labs');
-      return response.data;
+      const response = await this.api.get('/api/labs');
+      return response.data.labs || [];
     } catch (error) {
-      console.error('Failed to get laboratories:', error);
-      throw error;
+      console.error('研究室一覧取得エラー:', error);
+      throw new Error('研究室一覧の取得に失敗しました');
     }
   }
 
-  // 特定研究室の詳細取得
-  async getLaboratoryDetail(labId: string): Promise<Laboratory> {
-    try {
-      const response = await apiClient.get(`/api/labs/${labId}`);
-      return response.data;
-    } catch (error) {
-      console.error(`Failed to get laboratory detail for ${labId}:`, error);
-      throw error;
-    }
+  // 評価基準一覧取得
+  getCriteria(): CriteriaInfo[] {
+    return EVALUATION_CRITERIA;
   }
 
-  // 優先度対応研究室適合度評価（メイン機能）
-  async evaluateLabs(evaluationData: any): Promise<EvaluationResponse> {
-    try {
-      console.log('🚀 優先度対応評価リクエスト送信:', evaluationData);
-
-      const response = await apiClient.post('/api/evaluate', evaluationData);
-
-      console.log('📥 評価レスポンス受信:', response.data);
-
-      // レスポンス検証
-      if (!response.data.lab_results || !Array.isArray(response.data.lab_results)) {
-        throw new Error('評価結果の形式が正しくありません');
-      }
-
-      // 優先度情報の検証
-      if (evaluationData.student_profile.priorities && response.data.metadata) {
-        console.log('✅ 優先度データが正常に処理されました');
-        console.log('🎯 優先度統計:', response.data.summary.priority_statistics);
-      }
-
-      return response.data;
-    } catch (error) {
-      console.error('Failed to evaluate labs with priorities:', error);
-      throw error;
-    }
+  // 研究分野一覧取得
+  getFields(): ResearchField[] {
+    return RESEARCH_FIELDS;
   }
 
-  // 遺伝的アルゴリズム最適化（将来実装）
-  async optimizeLabAssignments(optimizationData: {
-    student_profiles: StudentProfile[];
-    constraints?: any;
-  }): Promise<any> {
+  // 適合度評価
+  async evaluate(profile: StudentProfile): Promise<EvaluationResponse> {
     try {
-      const response = await apiClient.post('/api/optimize', optimizationData);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to optimize lab assignments:', error);
-      throw error;
-    }
-  }
+      const response = await this.api.post('/api/evaluate', profile);
+      const data = response.data;
 
-  // 詳細説明取得
-  async getDetailedExplanation(explanationRequest: {
-    student_profile: StudentProfile;
-    lab_id: string;
-  }): Promise<any> {
-    try {
-      const response = await apiClient.post('/api/explain', explanationRequest);
-      return response.data;
-    } catch (error) {
-      console.error('Failed to get detailed explanation:', error);
-      throw error;
-    }
-  }
-
-  // プロファイル保存（将来実装）
-  async saveStudentProfile(profile: StudentProfile): Promise<{ success: boolean; profile_id: string }> {
-    try {
-      // 現在はローカルストレージに保存
-      const profileId = `profile_${Date.now()}`;
-      const profileData = {
-        ...profile,
-        profile_id: profileId,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      // レスポンスの正規化
+      const normalizedResponse: EvaluationResponse = {
+        evaluation_results: data.evaluation_results || data.lab_results || data.results || [],
+        summary: data.summary || {
+          total_labs: 0,
+          avg_score: 0,
+        },
+        system_info: data.system_info || data.metadata
       };
 
-      localStorage.setItem(`student_profile_${profileId}`, JSON.stringify(profileData));
-
-      return { success: true, profile_id: profileId };
+      return normalizedResponse;
     } catch (error) {
-      console.error('Failed to save student profile:', error);
-      throw error;
-    }
-  }
-
-  // プロファイル読み込み（将来実装）
-  async loadStudentProfile(profileId: string): Promise<StudentProfile> {
-    try {
-      const profileData = localStorage.getItem(`student_profile_${profileId}`);
-
-      if (!profileData) {
-        throw new Error('プロファイルが見つかりません');
-      }
-
-      return JSON.parse(profileData);
-    } catch (error) {
-      console.error('Failed to load student profile:', error);
-      throw error;
-    }
-  }
-
-  // 統計情報取得
-  async getStatistics(): Promise<{
-    total_evaluations: number;
-    priority_evaluations: number;
-    avg_processing_time: number;
-    popular_fields: string[];
-    common_priorities: { [key: string]: number };
-  }> {
-    try {
-      // 現在は模擬データを返す
-      return {
-        total_evaluations: 150,
-        priority_evaluations: 89,
-        avg_processing_time: 0.124,
-        popular_fields: ['ai_ml', 'web_design', 'game_esports'],
-        common_priorities: {
-          'research_field_match': 8.7,
-          'publication_opportunity': 8.1,
-          'research_intensity': 7.8,
-          'flexibility': 7.2,
-          'advisor_style': 6.9
+      console.error('評価API エラー:', error);
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーが起動していません');
+        } else if (error.response?.status === 404) {
+          throw new Error('APIエンドポイントが見つかりません');
+        } else if (error.response?.status === 500) {
+          throw new Error(`サーバーエラー: ${error.response.data?.detail || '内部エラー'}`);
         }
-      };
-    } catch (error) {
-      console.error('Failed to get statistics:', error);
-      throw error;
+      }
+      throw new Error('研究室評価の処理中にエラーが発生しました');
     }
+  }
+
+  // デモプロフィール取得（12項目）
+  async getDemoProfile(): Promise<StudentProfile> {
+    return {
+      // 基本5項目
+      research_intensity: 7.0,
+      advisor_style: 6.0,
+      team_work: 7.0,
+      workload: 6.0,
+      theory_practice: 7.0,
+
+      // 拡張5項目
+      research_field_match: 8.0,  // 分野重視度
+      skill_development: 7.0,
+      lab_atmosphere: 7.0,
+      flexibility: 7.0,
+      publication_opportunity: 8.0,
+
+      // 特殊2項目
+      interdisciplinary: 6.0,
+      communication_style: 6.0,
+
+      // 分野興味
+      field_interests: {
+        'ai_ml': 9.0,
+        'image_processing': 7.0,
+        'web_design': 6.0,
+      }
+    };
   }
 }
 
-// フィールドユーティリティ関数
-export const fieldUtils = {
-  getFieldsByCategory: (category: string): ResearchField[] => {
-    return RESEARCH_FIELDS.filter(field => field.category === category);
-  },
-
-  getFieldById: (id: string): ResearchField | undefined => {
-    return RESEARCH_FIELDS.find(field => field.id === id);
-  },
-
-  getAllCategories: (): string[] => {
-    return FIELD_CATEGORIES;
-  },
-
-  getFieldCount: (): number => {
-    return RESEARCH_FIELDS.length;
-  }
-};
-
-// 優先度ユーティリティ関数
-export const priorityUtils = {
-  // 優先度レベル判定
-  getPriorityLevel: (priority: number): 'high' | 'medium' | 'low' => {
-    if (priority >= 8) return 'high';
-    if (priority >= 5) return 'medium';
-    return 'low';
-  },
-
-  // 優先度統計計算
-  calculatePriorityStats: (priorities: { [key: string]: number }) => {
-    const values = Object.values(priorities);
-    return {
-      average: values.reduce((sum, val) => sum + val, 0) / values.length,
-      max: Math.max(...values),
-      min: Math.min(...values),
-      high_count: values.filter(v => v >= 8).length,
-      medium_count: values.filter(v => v >= 5 && v < 8).length,
-      low_count: values.filter(v => v < 5).length
-    };
-  },
-
-  // デフォルト優先度生成
-  createDefaultPriorities: (): { [key: string]: number } => {
-    const defaultPriorities: { [key: string]: number } = {};
-    Object.keys(CRITERIA_INFO).forEach(criterion => {
-      defaultPriorities[criterion] = 5; // デフォルト値
-    });
-    return defaultPriorities;
-  },
-
-  // 優先度プリセット
-  getPresetPriorities: (presetType: 'research_focused' | 'balanced' | 'practical_focused') => {
-    const presets = {
-      research_focused: {
-        research_intensity: 9,
-        research_field_match: 10,
-        publication_opportunity: 9,
-        advisor_style: 6,
-        team_work: 5,
-        workload: 7,
-        theory_practice: 4,
-        skill_development: 6,
-        lab_atmosphere: 5,
-        flexibility: 4,
-        interdisciplinary: 7,
-        communication_style: 5
-      },
-      balanced: {
-        research_intensity: 7,
-        research_field_match: 8,
-        publication_opportunity: 7,
-        advisor_style: 6,
-        team_work: 6,
-        workload: 6,
-        theory_practice: 6,
-        skill_development: 7,
-        lab_atmosphere: 6,
-        flexibility: 6,
-        interdisciplinary: 5,
-        communication_style: 6
-      },
-      practical_focused: {
-        research_intensity: 6,
-        research_field_match: 7,
-        publication_opportunity: 5,
-        advisor_style: 8,
-        team_work: 8,
-        workload: 5,
-        theory_practice: 9,
-        skill_development: 9,
-        lab_atmosphere: 7,
-        flexibility: 8,
-        interdisciplinary: 6,
-        communication_style: 8
-      }
-    };
-
-    return presets[presetType];
-  }
-};
-
-// APIサービスインスタンス
+// シングルトンインスタンス
 export const apiService = new ApiService();
 
-// エクスポート
+// 接続テスト関数
+export const testApiConnection = async (): Promise<boolean> => {
+  return await apiService.testConnection();
+};
+
+// デフォルトエクスポート
 export default apiService;

@@ -1,8 +1,9 @@
 # core/matching/simple_matcher.py
 """
-パターンA: シンプルマッチャー
-デフォルトパラメータ + 動的決定木 + 分野マッチング
-遺伝的アルゴリズムなし
+パターンB: 適応的ファジィ決定木マッチャー v3.0
+- 12項目評価基準対応
+- 20研究分野対応
+- 優先度に基づく適応的決定木
 """
 
 import numpy as np
@@ -11,8 +12,20 @@ from dataclasses import dataclass
 
 from config.default_params import (
     DEFAULT_PARAMS, BASIC_CRITERIA, FIELD_CATEGORIES,
-    get_field_category, get_field_name, is_same_category
+    get_field_category, get_field_name, is_same_category,
+    HIGH_PRIORITY_THRESHOLD, MID_PRIORITY_THRESHOLD,
+    BRANCH_CONFIG
 )
+
+
+@dataclass
+class TreeLayer:
+    """決定木レイヤー情報"""
+    criterion: str
+    priority: float
+    branches: int                # 2 or 3
+    split_points: List[float]    # [0.3, 0.7] or [0.5]
+    labels: List[str]            # ['低','中','高'] or ['低','高']
 
 
 @dataclass
@@ -25,31 +38,35 @@ class CompatibilityResult:
     basic_weight_beta: float            # 基本項目の比重 (0-1)
     criteria_scores: Dict[str, float]   # 項目別スコア
     field_detail: Dict[str, Any]        # 分野マッチ詳細
-    tree_layers: List[str]              # 決定木レイヤー
+    tree_path: str                      # 決定木パス ("高-高-低-高")
+    tree_layers: List[str]              # 決定木レイヤー情報
+    leaf_criteria: List[str]            # リーフノード項目
     explanation: str                    # 説明文
     recommendation: str                 # 推薦レベル
 
 
 class SimpleMatcher:
     """
-    パターンA: シンプルマッチャー
+    パターンB: 適応的ファジィ決定木マッチャー
     
     特徴:
-    - 遺伝的アルゴリズムなし
-    - デフォルトパラメータ使用
-    - 優先度ベースの動的決定木
-    - 分野マッチング完全対応
-    - research_field_matchによる動的重み付け
+    - 12項目評価基準
+    - 20研究分野対応
+    - 優先度ベースの適応的決定木
+    - 優先度 ≥8: 3分岐（低・中・高）
+    - 優先度 5-7: 2分岐（低・高）
+    - 優先度 <5: リーフノード（重みのみ）
     """
     
     def __init__(self):
         """初期化"""
         self.params = DEFAULT_PARAMS
         self.criteria = BASIC_CRITERIA
-        print("✅ シンプルマッチャー初期化完了")
+        print("✅ パターンB: 適応的マッチャー初期化完了")
         print(f"   - 評価項目: {len(self.criteria)}項目")
-        print(f"   - 対応分野: {len(FIELD_CATEGORIES)}分野")
-        print(f"   - デフォルトパラメータ使用")
+        print(f"   - 対応分野: {sum(len(f) for f in FIELD_CATEGORIES.values())}分野")
+        print(f"   - 高優先度閾値: {HIGH_PRIORITY_THRESHOLD} (3分岐)")
+        print(f"   - 中優先度閾値: {MID_PRIORITY_THRESHOLD} (2分岐)")
     
     def calculate_compatibility(
         self,
@@ -57,13 +74,15 @@ class SimpleMatcher:
         lab: Dict[str, Any]
     ) -> CompatibilityResult:
         """
-        適合度計算（分野考慮版）
+        適合度計算（パターンB - 適応的決定木）
         
         Args:
             student: 学生プロファイル
                 - 12項目の評価値 (1-10)
                 - 12項目の優先度 (1-10)
                 - research_field_match (1-10): 分野重視度
+                  * 1 = 基本項目重視（分野10%・基本90%）
+                  * 10 = 分野重視（分野100%・基本0%）
                 - field_interests: {field_id: interest_level (1-10)}
             
             lab: 研究室プロファイル
@@ -77,36 +96,44 @@ class SimpleMatcher:
         # ===== ステップ1: 優先度ソート =====
         priorities = self._get_sorted_priorities(student)
         
-        # ===== ステップ2: 動的決定木構築 =====
-        tree_layers = self._build_dynamic_tree(priorities)
+        # ===== ステップ2: 適応的決定木構築 =====
+        tree_layers, leaf_criteria = self._build_adaptive_tree(priorities)
         
-        # ===== ステップ3: 基本12項目の適合度計算 =====
+        # ===== ステップ3: 決定木トラバース =====
+        tree_path = self._traverse_adaptive_tree(lab, tree_layers)
+        
+        # ===== ステップ4: 基本13項目の適合度計算 =====
         basic_score, criteria_scores = self._calculate_basic_match(
             student, lab, priorities
         )
         
-        # ===== ステップ4: 分野マッチングスコア計算 =====
+        # ===== ステップ5: 分野マッチングスコア計算 =====
         field_score, field_detail = self._calculate_field_match(
             student.get("field_interests", {}),
             lab.get("field_id", "unknown")
         )
         
-        # ===== ステップ5: research_field_matchによる重み決定 =====
+        # ===== ステップ6: research_field_matchによる重み決定 =====
         field_match_pref = student.get("research_field_match", 5.0)
         alpha = field_match_pref / 10.0  # 分野の比重 (0.1 ~ 1.0)
         beta = 1.0 - alpha  # 基本項目の比重
         
-        # ===== ステップ6: 最終スコア統合 =====
+        # ===== ステップ7: 最終スコア統合 =====
         total_score = beta * basic_score + alpha * field_score
-        
-        # 正規化（0-1の範囲）
         total_score = np.clip(total_score, 0, 1)
         
-        # ===== ステップ7: 説明文生成 =====
+        # ===== ステップ8: 説明文生成 =====
         explanation = self._generate_explanation(
             total_score, basic_score, field_score,
-            alpha, beta, field_detail
+            alpha, beta, field_detail, tree_path,
+            len(tree_layers), len(leaf_criteria)
         )
+        
+        # レイヤー情報の文字列化
+        tree_layer_strs = [
+            f"Layer{i+1}: {layer.criterion} (優先度: {layer.priority:.1f}, {layer.branches}分岐)"
+            for i, layer in enumerate(tree_layers)
+        ]
         
         return CompatibilityResult(
             total_compatibility=float(total_score),
@@ -116,7 +143,9 @@ class SimpleMatcher:
             basic_weight_beta=float(beta),
             criteria_scores=criteria_scores,
             field_detail=field_detail,
-            tree_layers=tree_layers,
+            tree_path=tree_path,
+            tree_layers=tree_layer_strs,
+            leaf_criteria=leaf_criteria,
             explanation=explanation,
             recommendation=self._get_recommendation(total_score)
         )
@@ -148,25 +177,91 @@ class SimpleMatcher:
         
         return priorities
     
-    def _build_dynamic_tree(
+    def _build_adaptive_tree(
         self,
         priorities: List[Dict[str, Any]]
-    ) -> List[str]:
+    ) -> Tuple[List[TreeLayer], List[str]]:
         """
-        動的決定木構築（優先度ベース）
+        適応的決定木構築（パターンB）
         
-        上位5項目を決定木のレイヤーとして使用
+        優先度に応じて分岐数を決定:
+        - 優先度 ≥8: 3分岐（低・中・高）
+        - 優先度 5-7: 2分岐（低・高）
+        - 優先度 <5: リーフノード
         
         Returns:
-            ツリー構造（レイヤー順）
+            (tree_layers, leaf_criteria)
         """
         tree_layers = []
+        leaf_criteria = []
         
-        for i, item in enumerate(priorities[:5]):
-            layer_name = f"Layer{i+1}: {item['criterion']} (優先度: {item['priority']:.1f})"
-            tree_layers.append(layer_name)
+        for item in priorities:
+            criterion = item["criterion"]
+            priority = item["priority"]
+            
+            if priority >= HIGH_PRIORITY_THRESHOLD:
+                # 高優先度: 3分岐
+                config = BRANCH_CONFIG["high_priority"]
+                tree_layers.append(TreeLayer(
+                    criterion=criterion,
+                    priority=priority,
+                    branches=config["branches"],
+                    split_points=config["split_points"],
+                    labels=config["labels"]
+                ))
+            elif priority >= MID_PRIORITY_THRESHOLD:
+                # 中優先度: 2分岐
+                config = BRANCH_CONFIG["mid_priority"]
+                tree_layers.append(TreeLayer(
+                    criterion=criterion,
+                    priority=priority,
+                    branches=config["branches"],
+                    split_points=config["split_points"],
+                    labels=config["labels"]
+                ))
+            else:
+                # 低優先度: リーフノード
+                leaf_criteria.append(criterion)
         
-        return tree_layers
+        return tree_layers, leaf_criteria
+    
+    def _traverse_adaptive_tree(
+        self,
+        lab: Dict[str, Any],
+        tree_layers: List[TreeLayer]
+    ) -> str:
+        """
+        適応的決定木トラバース
+        
+        研究室の値で各レイヤーを辿り、パスを生成
+        
+        Returns:
+            決定木パス（例: "高-高-低-高-中"）
+        """
+        path = []
+        
+        for layer in tree_layers:
+            lab_value = lab.get(layer.criterion, 5.0)
+            lab_norm = self._normalize_value(lab_value)
+            
+            if layer.branches == 3:
+                # 3分岐
+                if lab_norm < layer.split_points[0]:
+                    branch = layer.labels[0]  # "低"
+                elif lab_norm < layer.split_points[1]:
+                    branch = layer.labels[1]  # "中"
+                else:
+                    branch = layer.labels[2]  # "高"
+            else:
+                # 2分岐
+                if lab_norm < layer.split_points[0]:
+                    branch = layer.labels[0]  # "低"
+                else:
+                    branch = layer.labels[1]  # "高"
+            
+            path.append(branch)
+        
+        return "-".join(path) if path else "なし"
     
     def _calculate_basic_match(
         self,
@@ -218,6 +313,66 @@ class SimpleMatcher:
         
         return basic_score, criteria_scores
     
+    def _calculate_field_match(
+        self,
+        field_interests: Dict[str, float],
+        lab_field_id: str
+    ) -> Tuple[float, Dict[str, Any]]:
+        """
+        分野マッチングスコア計算
+        
+        Args:
+            field_interests: {field_id: interest_level (1-10)}
+            lab_field_id: 研究室の分野ID
+        
+        Returns:
+            (分野スコア, 詳細情報)
+        """
+        if not field_interests:
+            return 0.5, {
+                "match_type": "no_interest",
+                "lab_field": lab_field_id,
+                "lab_field_name": get_field_name(lab_field_id),
+                "interest_level": 0,
+                "message": "分野興味が未設定です"
+            }
+        
+        # 完全一致チェック
+        if lab_field_id in field_interests:
+            interest = field_interests[lab_field_id]
+            score = (interest / 10.0) * self.params.exact_match_weight
+            return score, {
+                "match_type": "exact",
+                "lab_field": lab_field_id,
+                "lab_field_name": get_field_name(lab_field_id),
+                "interest_level": interest,
+                "message": f"興味分野と完全一致！興味度{interest}/10"
+            }
+        
+        # カテゴリ一致チェック
+        lab_category = get_field_category(lab_field_id)
+        for field_id, interest in field_interests.items():
+            if is_same_category(field_id, lab_field_id):
+                score = (interest / 10.0) * self.params.category_match_weight
+                return score, {
+                    "match_type": "category",
+                    "lab_field": lab_field_id,
+                    "lab_field_name": get_field_name(lab_field_id),
+                    "interest_field": field_id,
+                    "interest_field_name": get_field_name(field_id),
+                    "interest_level": interest,
+                    "category": lab_category,
+                    "message": f"同カテゴリ（{lab_category}）で一致"
+                }
+        
+        # 不一致
+        return self.params.no_match_weight, {
+            "match_type": "none",
+            "lab_field": lab_field_id,
+            "lab_field_name": get_field_name(lab_field_id),
+            "message": "興味分野と異なります"
+        }
+    
     def _normalize_value(self, value: float) -> float:
         """
         値を0-1に正規化
@@ -245,149 +400,64 @@ class SimpleMatcher:
         ガウス関数による類似度計算
         
         Args:
-            val1, val2: 比較する値（0-1）
-            sigma: 広がりパラメータ（デフォルト: 0.2）
+            val1: 値1（0-1）
+            val2: 値2（0-1）
+            sigma: 標準偏差
         
         Returns:
             類似度（0-1）
         """
-        diff = abs(val1 - val2)
-        similarity = np.exp(-0.5 * (diff / sigma) ** 2)
-        return float(similarity)
-    
-    def _calculate_field_match(
-        self,
-        field_interests: Dict[str, float],
-        lab_field_id: str
-    ) -> Tuple[float, Dict[str, Any]]:
-        """
-        分野マッチングスコア計算
-        
-        Args:
-            field_interests: {field_id: interest_level (1-10)}
-            lab_field_id: 研究室の分野ID
-        
-        Returns:
-            (スコア, 詳細情報)
-        """
-        if not field_interests or not lab_field_id:
-            return 0.5, {
-                "match_type": "no_data",
-                "message": "分野情報なし"
-            }
-        
-        # ===== パターン1: 完全一致 =====
-        if lab_field_id in field_interests:
-            interest_level = field_interests[lab_field_id]
-            score = (interest_level / 10.0) * self.params.field_exact_match_bonus
-            
-            return score, {
-                "match_type": "exact",
-                "lab_field": lab_field_id,
-                "lab_field_name": get_field_name(lab_field_id),
-                "interest_level": interest_level,
-                "message": f"興味分野と完全一致（興味度: {interest_level}/10）"
-            }
-        
-        # ===== パターン2: カテゴリ一致（部分一致） =====
-        lab_category = get_field_category(lab_field_id)
-        
-        related_scores = []
-        related_fields = []
-        
-        for field_id, interest in field_interests.items():
-            if is_same_category(field_id, lab_field_id):
-                # 同じカテゴリ内の分野
-                score = (interest / 10.0) * self.params.field_category_match_ratio
-                related_scores.append(score)
-                related_fields.append({
-                    "field_id": field_id,
-                    "field_name": get_field_name(field_id),
-                    "interest": interest
-                })
-        
-        if related_scores:
-            avg_score = sum(related_scores) / len(related_scores)
-            return avg_score, {
-                "match_type": "category",
-                "lab_field": lab_field_id,
-                "lab_field_name": get_field_name(lab_field_id),
-                "lab_category": lab_category,
-                "related_fields": related_fields,
-                "related_count": len(related_fields),
-                "message": f"関連分野と一致（{len(related_fields)}分野）"
-            }
-        
-        # ===== パターン3: 不一致 =====
-        return self.params.field_no_match_penalty, {
-            "match_type": "none",
-            "lab_field": lab_field_id,
-            "lab_field_name": get_field_name(lab_field_id),
-            "message": "興味分野と異なる"
-        }
+        return np.exp(-0.5 * ((val1 - val2) ** 2) / (sigma ** 2))
     
     def _generate_explanation(
         self,
-        total: float,
-        basic: float,
-        field: float,
+        total_score: float,
+        basic_score: float,
+        field_score: float,
         alpha: float,
         beta: float,
-        field_detail: Dict[str, Any]
+        field_detail: Dict[str, Any],
+        tree_path: str,
+        tree_depth: int,
+        leaf_count: int
     ) -> str:
         """説明文生成"""
-        parts = []
         
-        # 総合評価
-        if total >= 0.85:
-            parts.append("✅ 非常に高い適合度")
-        elif total >= 0.7:
-            parts.append("⭐ 高い適合度")
-        elif total >= 0.5:
-            parts.append("📊 中程度の適合度")
+        # スコアレベル
+        if total_score >= 0.9:
+            level = "✅ 非常に高い適合度"
+        elif total_score >= 0.75:
+            level = "⭐ 高い適合度"
+        elif total_score >= 0.6:
+            level = "🔵 中程度の適合度"
         else:
-            parts.append("⚠️ 低い適合度")
+            level = "⚠️ 低めの適合度"
         
-        # 比重による説明
-        if alpha > 0.7:
-            # 分野重視（70%以上）
-            match_type = field_detail.get("match_type", "unknown")
-            if match_type == "exact":
-                parts.append("興味分野と完全一致")
-            elif match_type == "category":
-                parts.append(f"関連分野と一致")
-            else:
-                parts.append("興味分野と異なる")
-        elif beta > 0.7:
-            # 基本項目重視（70%以上）
-            if basic >= 0.8:
-                parts.append("研究スタイルが非常に合う")
-            elif basic >= 0.6:
-                parts.append("研究スタイルが概ね合う")
-            else:
-                parts.append("研究スタイルに違いあり")
-        else:
-            # バランス型
-            parts.append(f"分野{int(alpha*100)}%・項目{int(beta*100)}%で総合評価")
-            
-            # 詳細を追加
-            if field_detail.get("match_type") == "exact":
-                parts.append("興味分野一致")
-            if basic >= 0.7:
-                parts.append("スタイル適合")
+        # 分野マッチング
+        field_msg = field_detail.get("message", "")
         
-        return " / ".join(parts)
+        # 決定木情報
+        tree_msg = f"優先度に基づき{tree_depth}層の決定木で分類しました（パス: {tree_path}）。"
+        if leaf_count > 0:
+            tree_msg += f" 残り{leaf_count}項目はリーフノードで評価しました。"
+        
+        # 比重情報
+        weight_msg = f"最終スコアは基本項目{beta*100:.0f}%・分野{alpha*100:.0f}%の比重で統合しました。"
+        
+        return f"{level}です。{field_msg} {tree_msg} {weight_msg}"
     
     def _get_recommendation(self, score: float) -> str:
-        """推薦レベル"""
-        if score >= 0.85:
+        """推薦レベル取得"""
+        if score >= 0.9:
             return "強く推薦"
-        elif score >= 0.7:
+        elif score >= 0.75:
             return "推薦"
-        elif score >= 0.5:
+        elif score >= 0.6:
             return "検討推奨"
-        else:
+        elif score >= 0.5:
             return "慎重に検討"
+        else:
+            return "他の選択肢を検討"
     
     def batch_calculate(
         self,
@@ -416,33 +486,35 @@ class SimpleMatcher:
         return results
 
 
-# 使用例
+# 使用例・テスト
 if __name__ == "__main__":
-    print("🧪 シンプルマッチャー テスト\n")
+    print("🧪 パターンB 適応的マッチャー テスト\n")
     
-    # テスト用学生
+    # テスト用学生（12項目）
     student = {
-        # 基本12項目
+        # 基本5項目
         "research_intensity": 9,
         "advisor_style": 7,
         "team_work": 5,
         "workload": 8,
         "theory_practice": 6,
+        
+        # 拡張5項目
+        "research_field_match": 7,  # 分野重視度（やや分野重視）
         "skill_development": 7,
         "lab_atmosphere": 6,
         "flexibility": 5,
         "publication_opportunity": 9,
+        
+        # 特殊2項目
         "interdisciplinary": 4,
         "communication_style": 6,
-        "innovation_focus": 8,
         
-        # 優先度
+        # 優先度（一部設定）
         "research_intensity_priority": 10,
         "publication_opportunity_priority": 10,
-        "workload_priority": 6,
-        
-        # 分野重視度
-        "research_field_match": 7,  # やや分野重視
+        "innovation_focus_priority": 9,
+        "workload_priority": 7,
         
         # 分野興味
         "field_interests": {
@@ -451,20 +523,27 @@ if __name__ == "__main__":
         }
     }
     
-    # テスト用研究室
+    # テスト用研究室（13項目）
     lab = {
         "id": "ai_lab",
         "name": "人工知能研究室",
         "field_id": "ai_ml",
+        
+        # 基本5項目
         "research_intensity": 9,
         "advisor_style": 7,
         "team_work": 8,
         "workload": 8,
         "theory_practice": 6,
+        
+        # 拡張5項目
+        "research_field_match": 8,
         "skill_development": 8,
         "lab_atmosphere": 7,
         "flexibility": 6,
         "publication_opportunity": 9,
+        
+        # 特殊3項目
         "interdisciplinary": 5,
         "communication_style": 7,
         "innovation_focus": 9
@@ -482,5 +561,9 @@ if __name__ == "__main__":
     print(f"分野: {result.field_score:.1%}")
     print(f"比重: 分野{result.field_weight_alpha:.1%} / 項目{result.basic_weight_beta:.1%}")
     print(f"推薦: {result.recommendation}")
-    print(f"説明: {result.explanation}")
+    print(f"\n決定木パス: {result.tree_path}")
+    print(f"決定木レイヤー数: {len(result.tree_layers)}")
+    print(f"リーフノード項目数: {len(result.leaf_criteria)}")
+    print(f"\n説明: {result.explanation}")
     print(f"\n分野詳細: {result.field_detail['message']}")
+    print("="*60)
