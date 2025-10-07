@@ -3,7 +3,8 @@
 パターンB: 適応的ファジィ決定木マッチャー v3.0
 - 12項目評価基準対応
 - 20研究分野対応
-- 優先度に基づく適応的決定木
+- 優先度に基づく適応的ファジィ決定木
+- 複数パス考慮による真のファジィ評価
 """
 
 import numpy as np
@@ -29,6 +30,14 @@ class TreeLayer:
 
 
 @dataclass
+class FuzzyPath:
+    """ファジィパス情報"""
+    path: List[str]              # ["高", "中", "低"]
+    membership: float            # 所属度（0-1）
+    layer_memberships: List[float]  # 各層での所属度
+
+
+@dataclass
 class CompatibilityResult:
     """適合度計算結果"""
     total_compatibility: float          # 総合適合度 (0-1)
@@ -38,7 +47,8 @@ class CompatibilityResult:
     basic_weight_beta: float            # 基本項目の比重 (0-1)
     criteria_scores: Dict[str, float]   # 項目別スコア
     field_detail: Dict[str, Any]        # 分野マッチ詳細
-    tree_path: str                      # 決定木パス ("高-高-低-高")
+    tree_path: str                      # 主要決定木パス ("高-高-低-高")
+    fuzzy_paths: List[Dict[str, Any]]   # 複数ファジィパス情報
     tree_layers: List[str]              # 決定木レイヤー情報
     leaf_criteria: List[str]            # リーフノード項目
     explanation: str                    # 説明文
@@ -53,20 +63,77 @@ class SimpleMatcher:
     - 12項目評価基準
     - 20研究分野対応
     - 優先度ベースの適応的決定木
+    - 真のファジィ決定木（複数パス考慮）
     - 優先度 ≥8: 3分岐（低・中・高）
     - 優先度 5-7: 2分岐（低・高）
     - 優先度 <5: リーフノード（重みのみ）
     """
     
-    def __init__(self):
-        """初期化"""
+    def __init__(self, fuzzy_threshold: float = 0.1):
+        """
+        初期化
+        
+        Args:
+            fuzzy_threshold: ファジィパスの所属度閾値（これ以下は枝刈り）
+        """
         self.params = DEFAULT_PARAMS
         self.criteria = BASIC_CRITERIA
-        print("✅ パターンB: 適応的マッチャー初期化完了")
+        self.fuzzy_threshold = fuzzy_threshold
+        print("✅ パターンB: 適応的ファジィマッチャー初期化完了")
         print(f"   - 評価項目: {len(self.criteria)}項目")
         print(f"   - 対応分野: {sum(len(f) for f in FIELD_CATEGORIES.values())}分野")
         print(f"   - 高優先度閾値: {HIGH_PRIORITY_THRESHOLD} (3分岐)")
         print(f"   - 中優先度閾値: {MID_PRIORITY_THRESHOLD} (2分岐)")
+        print(f"   - ファジィ閾値: {fuzzy_threshold} (複数パス考慮)")
+    
+    def _membership_low_3branch(self, x: float) -> float:
+        """3分岐での「低い」への所属度"""
+        if x <= 0.3:
+            return 1.0
+        elif x < 0.5:
+            return (0.5 - x) / 0.2
+        else:
+            return 0.0
+    
+    def _membership_medium_3branch(self, x: float) -> float:
+        """3分岐での「中」への所属度"""
+        if x <= 0.3:
+            return 0.0
+        elif x < 0.5:
+            return (x - 0.3) / 0.2
+        elif x <= 0.7:
+            return 1.0
+        elif x < 0.9:
+            return (0.9 - x) / 0.2
+        else:
+            return 0.0
+    
+    def _membership_high_3branch(self, x: float) -> float:
+        """3分岐での「高い」への所属度"""
+        if x < 0.5:
+            return 0.0
+        elif x < 0.7:
+            return (x - 0.5) / 0.2
+        else:
+            return 1.0
+    
+    def _membership_low_2branch(self, x: float) -> float:
+        """2分岐での「低い」への所属度"""
+        if x <= 0.5:
+            return 1.0
+        elif x < 0.7:
+            return (0.7 - x) / 0.2
+        else:
+            return 0.0
+    
+    def _membership_high_2branch(self, x: float) -> float:
+        """2分岐での「高い」への所属度"""
+        if x < 0.3:
+            return 0.0
+        elif x < 0.5:
+            return (x - 0.3) / 0.2
+        else:
+            return 1.0
     
     def calculate_compatibility(
         self,
@@ -107,26 +174,26 @@ class SimpleMatcher:
             student, lab, priorities
         )
         
-        # ===== ステップ5: 分野マッチングスコア計算 =====
+        # ===== ステップ6: 分野マッチングスコア計算 =====
         field_score, field_detail = self._calculate_field_match(
             student.get("field_interests", {}),
             lab.get("field_id", "unknown")
         )
         
-        # ===== ステップ6: research_field_matchによる重み決定 =====
+        # ===== ステップ7: research_field_matchによる重み決定 =====
         field_match_pref = student.get("research_field_match", 5.0)
         alpha = field_match_pref / 10.0  # 分野の比重 (0.1 ~ 1.0)
         beta = 1.0 - alpha  # 基本項目の比重
         
-        # ===== ステップ7: 最終スコア統合 =====
+        # ===== ステップ8: 最終スコア統合 =====
         total_score = beta * basic_score + alpha * field_score
         total_score = np.clip(total_score, 0, 1)
         
-        # ===== ステップ8: 説明文生成 =====
+        # ===== ステップ9: 説明文生成 =====
         explanation = self._generate_explanation(
             total_score, basic_score, field_score,
             alpha, beta, field_detail, tree_path,
-            len(tree_layers), len(leaf_criteria)
+            len(tree_layers), len(leaf_criteria), len(fuzzy_paths)
         )
         
         # レイヤー情報の文字列化
@@ -144,6 +211,7 @@ class SimpleMatcher:
             criteria_scores=criteria_scores,
             field_detail=field_detail,
             tree_path=tree_path,
+            fuzzy_paths=path_scores,  # 複数パス情報
             tree_layers=tree_layer_strs,
             leaf_criteria=leaf_criteria,
             explanation=explanation,
@@ -229,39 +297,71 @@ class SimpleMatcher:
         self,
         lab: Dict[str, Any],
         tree_layers: List[TreeLayer]
-    ) -> str:
+    ) -> List[FuzzyPath]:
         """
-        適応的決定木トラバース
+        適応的ファジィ決定木トラバース（複数パス考慮）
         
-        研究室の値で各レイヤーを辿り、パスを生成
+        研究室の値で各レイヤーを辿り、複数のファジィパスを生成
+        
+        Args:
+            lab: 研究室プロファイル
+            tree_layers: 決定木レイヤーリスト
         
         Returns:
-            決定木パス（例: "高-高-低-高-中"）
+            複数のFuzzyPathのリスト（所属度で重み付け）
         """
-        path = []
+        # 初期状態: 1つの空パス（所属度1.0）
+        current_paths = [FuzzyPath(
+            path=[],
+            membership=1.0,
+            layer_memberships=[]
+        )]
         
+        # 各層を順に処理
         for layer in tree_layers:
             lab_value = lab.get(layer.criterion, 5.0)
             lab_norm = self._normalize_value(lab_value)
             
-            if layer.branches == 3:
-                # 3分岐
-                if lab_norm < layer.split_points[0]:
-                    branch = layer.labels[0]  # "低"
-                elif lab_norm < layer.split_points[1]:
-                    branch = layer.labels[1]  # "中"
-                else:
-                    branch = layer.labels[2]  # "高"
-            else:
-                # 2分岐
-                if lab_norm < layer.split_points[0]:
-                    branch = layer.labels[0]  # "低"
-                else:
-                    branch = layer.labels[1]  # "高"
+            next_paths = []
             
-            path.append(branch)
+            for current_path in current_paths:
+                # この層での各分岐への所属度を計算
+                if layer.branches == 3:
+                    # 3分岐
+                    branches_membership = [
+                        ("低", self._membership_low_3branch(lab_norm)),
+                        ("中", self._membership_medium_3branch(lab_norm)),
+                        ("高", self._membership_high_3branch(lab_norm))
+                    ]
+                else:
+                    # 2分岐
+                    branches_membership = [
+                        ("低", self._membership_low_2branch(lab_norm)),
+                        ("高", self._membership_high_2branch(lab_norm))
+                    ]
+                
+                # 所属度が閾値以上の分岐のみ保持（枝刈り）
+                for branch_label, branch_membership in branches_membership:
+                    if branch_membership >= self.fuzzy_threshold:
+                        # 新しいパスを作成
+                        new_membership = current_path.membership * branch_membership
+                        
+                        new_path = FuzzyPath(
+                            path=current_path.path + [branch_label],
+                            membership=new_membership,
+                            layer_memberships=current_path.layer_memberships + [branch_membership]
+                        )
+                        next_paths.append(new_path)
+            
+            current_paths = next_paths
         
-        return "-".join(path) if path else "なし"
+        # 所属度の合計で正規化
+        total_membership = sum(p.membership for p in current_paths)
+        if total_membership > 0:
+            for path in current_paths:
+                path.membership /= total_membership
+        
+        return current_paths
     
     def _calculate_basic_match(
         self,
@@ -419,7 +519,8 @@ class SimpleMatcher:
         field_detail: Dict[str, Any],
         tree_path: str,
         tree_depth: int,
-        leaf_count: int
+        leaf_count: int,
+        fuzzy_path_count: int
     ) -> str:
         """説明文生成"""
         
@@ -436,8 +537,12 @@ class SimpleMatcher:
         # 分野マッチング
         field_msg = field_detail.get("message", "")
         
-        # 決定木情報
-        tree_msg = f"優先度に基づき{tree_depth}層の決定木で分類しました（パス: {tree_path}）。"
+        # 決定木情報（ファジィ対応）
+        if fuzzy_path_count > 1:
+            tree_msg = f"ファジィ決定木により{fuzzy_path_count}個のパスを考慮し、所属度で重み付けて評価しました（主要パス: {tree_path}）。"
+        else:
+            tree_msg = f"優先度に基づき{tree_depth}層の決定木で分類しました（パス: {tree_path}）。"
+        
         if leaf_count > 0:
             tree_msg += f" 残り{leaf_count}項目はリーフノードで評価しました。"
         
