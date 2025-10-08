@@ -404,18 +404,7 @@ const App: React.FC = () => {
         {/* メインコンテンツ */}
         <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
           {/* システム紹介 */}
-          <Paper sx={{ p: 3, mb: 4, background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white' }}>
-            <Typography variant="h4" gutterBottom>
-              🧬🌳⭐🤖 AI統合研究室マッチングシステム
-            </Typography>
-            <Typography variant="h6" sx={{ opacity: 0.9, mb: 2 }}>
-              遺伝的アルゴリズム × ファジィ推論 × 決定木 × 優先度対応
-            </Typography>
-            <Typography variant="body1" sx={{ opacity: 0.8 }}>
-              12項目の評価基準に優先度を設定し、18分野の研究分野から最適な研究室を見つけます。
-              最新のAI技術により、あなたの希望に最も適合する研究室を高精度で推薦します。
-            </Typography>
-          </Paper>
+
 
           {/* エラー表示 */}
           {error && (

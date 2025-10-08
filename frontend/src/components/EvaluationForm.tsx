@@ -322,7 +322,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         student_profile: studentProfile
       };
 
-      console.log('🚀 送信データ（優先度対応）:', evaluationData);
+      console.log('送信データ（優先度対応）:', evaluationData);
 
       // API呼び出し
       const response = await fetch('/api/evaluate', {
