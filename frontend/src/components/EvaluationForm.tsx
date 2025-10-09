@@ -1,11 +1,9 @@
-// frontend/src/components/EvaluationForm.tsx - 優先度対応版
+// frontend/src/components/EvaluationForm.tsx - 修正版
 import React, { useState } from 'react';
 import {
   Box,
   Button,
   Card,
-  CardContent,
-  Chip,
   Grid,
   Slider,
   Typography,
@@ -18,8 +16,8 @@ import {
   Tab,
   FormControlLabel,
   Checkbox,
-  FormGroup,
-  Divider
+  Chip,
+  Divider,
 } from '@mui/material';
 import {
   ExpandMore,
@@ -30,10 +28,14 @@ import {
   School,
   Timeline,
   Star,
-  TrendingUp
+  TrendingUp,
 } from '@mui/icons-material';
 
-// 型定義の拡張
+// ★★★ 修正点1: api.tsからapiServiceと型をインポート ★★★
+import { apiService, StudentProfile } from '../services/api';
+
+// (EvaluationPreferencesWithPriority, ResearchFieldInterests などの型定義は変更なし)
+// ... (既存の型定義はそのまま)
 interface EvaluationPreferencesWithPriority {
   // 評価値（1-10）
   research_intensity: number;
@@ -68,6 +70,7 @@ interface ResearchFieldInterests {
   [key: string]: number;
 }
 
+
 interface EvaluationFormProps {
   onResults: (response: any) => void;
   onError: (error: string) => void;
@@ -79,6 +82,8 @@ interface TabPanelProps {
   value: number;
 }
 
+// (TabPanel, CRITERIA_INFO, RESEARCH_FIELDS などの定義は変更なし)
+// ... (既存の定義はそのまま)
 function TabPanel(props: TabPanelProps) {
   const { children, value, index, ...other } = props;
   return (
@@ -180,14 +185,14 @@ const RESEARCH_FIELDS = [
   { id: 'sports_science', name: 'スポーツ・体育科学', category: '人文・社会・体育' }
 ];
 
+
 const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) => {
   const [tabValue, setTabValue] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>('');
 
-  // 評価基準の状態（値 + 優先度）
   const [preferences, setPreferences] = useState<EvaluationPreferencesWithPriority>({
-    // 評価値（デフォルト: 5）
+    // ... (stateの初期値は変更なし)
     research_intensity: 5,
     advisor_style: 5,
     team_work: 5,
@@ -200,8 +205,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     publication_opportunity: 5,
     interdisciplinary: 5,
     communication_style: 5,
-
-    // 優先度（デフォルト: 5）
     research_intensity_priority: 5,
     advisor_style_priority: 5,
     team_work_priority: 5,
@@ -216,11 +219,11 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     communication_style_priority: 5
   });
 
-  // 研究分野選択の状態
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [fieldInterests, setFieldInterests] = useState<ResearchFieldInterests>({});
 
-  // 評価基準変更ハンドラー
+  // (handlePreferenceChange, handleFieldToggle, handleFieldInterestChange, handleLoadDemo は変更なし)
+  // ... (既存のハンドラはそのまま)
   const handlePreferenceChange = (key: keyof EvaluationPreferencesWithPriority, value: number) => {
     setPreferences(prev => ({
       ...prev,
@@ -228,7 +231,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     }));
   };
 
-  // 研究分野選択ハンドラー
   const handleFieldToggle = (fieldId: string) => {
     setSelectedFields(prev => {
       const newSet = new Set(prev);
@@ -248,7 +250,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     });
   };
 
-  // 研究分野興味度変更ハンドラー
   const handleFieldInterestChange = (fieldId: string, value: number) => {
     setFieldInterests(prev => ({
       ...prev,
@@ -256,7 +257,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     }));
   };
 
-  // デモデータ読み込み
   const handleLoadDemo = () => {
     setPreferences({
       research_intensity: 8, research_intensity_priority: 9,
@@ -276,14 +276,15 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     setFieldInterests({ 'ai_ml': 9, 'image_processing': 7 });
   };
 
-  // 評価実行
+
+  // ★★★ 修正点2: handleEvaluate関数を全面的に修正 ★★★
   const handleEvaluate = async () => {
     setIsLoading(true);
     setError('');
 
     try {
-      // バックエンド用データ構築
-      const studentProfile = {
+      // バックエンド用データ構築 (StudentProfile型に合わせる)
+      const studentProfile: StudentProfile = {
         // 基本の評価値
         research_intensity: preferences.research_intensity,
         advisor_style: preferences.advisor_style,
@@ -298,48 +299,34 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         interdisciplinary: preferences.interdisciplinary,
         communication_style: preferences.communication_style,
 
-        // 優先度（新規追加）
-        priorities: {
-          research_intensity: preferences.research_intensity_priority,
-          advisor_style: preferences.advisor_style_priority,
-          team_work: preferences.team_work_priority,
-          workload: preferences.workload_priority,
-          theory_practice: preferences.theory_practice_priority,
-          research_field_match: preferences.research_field_match_priority,
-          skill_development: preferences.skill_development_priority,
-          lab_atmosphere: preferences.lab_atmosphere_priority,
-          flexibility: preferences.flexibility_priority,
-          publication_opportunity: preferences.publication_opportunity_priority,
-          interdisciplinary: preferences.interdisciplinary_priority,
-          communication_style: preferences.communication_style_priority
-        },
+        // 優先度 (フラットな構造に修正)
+        research_intensity_priority: preferences.research_intensity_priority,
+        advisor_style_priority: preferences.advisor_style_priority,
+        team_work_priority: preferences.team_work_priority,
+        workload_priority: preferences.workload_priority,
+        theory_practice_priority: preferences.theory_practice_priority,
+        skill_development_priority: preferences.skill_development_priority,
+        lab_atmosphere_priority: preferences.lab_atmosphere_priority,
+        flexibility_priority: preferences.flexibility_priority,
+        publication_opportunity_priority: preferences.publication_opportunity_priority,
+        interdisciplinary_priority: preferences.interdisciplinary_priority,
+        communication_style_priority: preferences.communication_style_priority,
 
         // 研究分野興味
-        field_interests: fieldInterests
+        field_interests: fieldInterests,
       };
 
-      const evaluationData = {
-        student_profile: studentProfile
-      };
+      console.log('送信データ:', studentProfile);
 
-      console.log('送信データ（優先度対応）:', evaluationData);
+      // API呼び出し (apiServiceを使用)
+      const result = await apiService.evaluate(studentProfile);
 
-      // API呼び出し
-      const response = await fetch('/api/evaluate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(evaluationData)
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const result = await response.json();
+      // 親コンポーネントに結果を渡す
       onResults(result);
-      setTabValue(2);
+
+      // ★★★ 修正点3: タブの制御は親コンポーネント(App.tsx)に任せるため削除 ★★★
+      // setTabValue(2); // 削除
+
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '評価処理でエラーが発生しました';
       setError(errorMessage);
@@ -349,7 +336,8 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     }
   };
 
-  // 基本評価基準コンポーネント（優先度対応）
+  // (renderBasicCriteria, renderFieldInterests, renderEvaluationExecute などの描画関数は変更なし)
+  // ... (既存の描画関数はそのまま)
   const renderBasicCriteria = () => (
     <Box>
       <Typography variant="h6" gutterBottom>
@@ -632,6 +620,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
       </Box>
     );
   };
+
 
   return (
     <Box sx={{ width: '100%' }}>
