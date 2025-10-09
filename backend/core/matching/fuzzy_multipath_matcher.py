@@ -179,7 +179,9 @@ class FuzzyMultiPathMatcher:
         fuzzy_paths = self._normalize_path_memberships(fuzzy_paths)
         
         # Step 4: 複数パスの統合
-        basic_score, criteria_scores = self._integrate_fuzzy_paths(fuzzy_paths)
+        basic_score, criteria_scores = self._integrate_fuzzy_paths(
+            fuzzy_paths, student, lab
+        )
         
         # Step 5: 分野マッチング（技術資料 3.6節）
         field_interests = student.get("field_interests", {})
@@ -380,7 +382,9 @@ class FuzzyMultiPathMatcher:
     
     def _integrate_fuzzy_paths(
         self, 
-        fuzzy_paths: List[FuzzyPath]
+        fuzzy_paths: List[FuzzyPath],
+        student: Dict[str, Any],
+        lab: Dict[str, Any]
     ) -> Tuple[float, Dict[str, float]]:
         """
         Step 4: 複数パスの統合（技術資料 3.5節）
@@ -391,12 +395,14 @@ class FuzzyMultiPathMatcher:
         if not fuzzy_paths:
             return 0.5, {}
         
-        # 各パスのスコアを計算（事前に計算されていない場合）
+        # 各パスのスコアを計算
         total_score = 0.0
         all_criteria_scores = {}
         
         for path in fuzzy_paths:
-            path_score, criteria_scores = self._calculate_path_score_placeholder(path)
+            path_score, criteria_scores = self._calculate_path_score(
+                path, student, lab
+            )
             path.score = path_score
             
             # 所属度で重み付け
@@ -418,22 +424,65 @@ class FuzzyMultiPathMatcher:
         
         return total_score, averaged_criteria_scores
     
-    def _calculate_path_score_placeholder(
+    def _calculate_path_score(
         self, 
-        path: FuzzyPath
+        path: FuzzyPath,
+        student: Dict[str, Any],
+        lab: Dict[str, Any]
     ) -> Tuple[float, Dict[str, float]]:
         """
-        パスごとのスコア計算（簡易版）
+        パスごとのスコア計算（技術資料 3.5.1節）
         
-        実際の実装では、このパスが示す「ペルソナ」と
-        学生の希望値を比較してスコアを計算する
+        このパスが示す「ペルソナ」と学生の希望値を
+        ガウス類似度で比較してスコアを算出
         """
-        # TODO: 実際のガウス類似度計算を実装
-        # ここでは簡易的に0.7を返す
-        criteria_scores = {
-            layer[0]: 0.7 for layer in path.layers
-        }
-        return 0.7, criteria_scores
+        criteria_scores = {}
+        weighted_sum = 0.0
+        total_weight = 0.0
+        
+        # パスに含まれる項目
+        path_criteria = {layer[0]: layer[1] for layer in path.layers}
+        
+        # 全ての評価項目について計算
+        for criterion in self.CRITERIA:
+            # 学生の希望値（正規化済み）
+            student_val = self._normalize_value(student.get(criterion, 5.0))
+            
+            # 研究室の値（正規化済み）
+            lab_val = self._normalize_value(lab.get(criterion, 5.0))
+            
+            # ガウス類似度計算
+            similarity = self._calculate_gaussian_similarity(student_val, lab_val)
+            
+            # 優先度取得
+            priority_key = f"{criterion}_priority"
+            priority = student.get(priority_key, 5.0)
+            
+            # 優先度から重みを計算（非線形変換）
+            weight = self._calculate_priority_weight(priority)
+            
+            criteria_scores[criterion] = similarity
+            weighted_sum += similarity * weight
+            total_weight += weight
+        
+        # 重み付け平均
+        path_score = weighted_sum / total_weight if total_weight > 0 else 0.5
+        
+        return path_score, criteria_scores
+    
+    def _calculate_priority_weight(self, priority: float) -> float:
+        """
+        優先度から重みを計算（非線形変換）
+        
+        priority 10 → weight 1.00
+        priority  8 → weight 0.72
+        priority  5 → weight 0.32
+        priority  3 → weight 0.11
+        priority  1 → weight 0.01
+        """
+        normalized = priority / 10.0
+        weight = normalized ** 1.8
+        return weight
     
     def _calculate_gaussian_similarity(
         self,
@@ -511,10 +560,44 @@ class FuzzyMultiPathMatcher:
         }
     
     def _is_same_category(self, field1: str, field2: str) -> bool:
-        """分野が同じカテゴリに属するかチェック（簡易版）"""
-        # TODO: 実際のカテゴリマッピングを実装
-        # ここでは簡易的にFalseを返す
-        return False
+        """分野が同じカテゴリに属するかチェック"""
+        # 分野カテゴリマッピング（簡易版）
+        FIELD_CATEGORIES = {
+            # テクノロジー・システム
+            "technology": [
+                "ai_ml", "image_processing", "network_security",
+                "database_info_system", "embedded_iot", "education_linguistics",
+                "natural_science_math", "tourism_regional_system",
+                "management_decision_support", "audio_processing",
+                "system_operation_ethics"
+            ],
+            # クリエイティブ
+            "creative": [
+                "web_design_ui_ux", "design_visual", "video_animation",
+                "computer_music_sound_art"
+            ],
+            # エンターテイメント
+            "entertainment": [
+                "game_dev_esports", "vr_ar_media_art"
+            ],
+            # 人文・社会・体育
+            "humanities": [
+                "philosophy_humanities", "sports_science"
+            ]
+        }
+        
+        # 各フィールドのカテゴリを検索
+        category1 = None
+        category2 = None
+        
+        for category, fields in FIELD_CATEGORIES.items():
+            if field1 in fields:
+                category1 = category
+            if field2 in fields:
+                category2 = category
+        
+        # 両方のカテゴリが見つかり、一致する場合
+        return category1 is not None and category1 == category2
     
     def _normalize_value(self, value: Any) -> float:
         """値を0-1に正規化（技術資料 2.2節）"""

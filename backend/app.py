@@ -1,4 +1,4 @@
-# backend/app.py - 完全版（技術資料準拠）
+# backend/app.py - 完全版（修正版・バリデーション緩和）
 """
 研究室選択支援システム バックエンドAPI
 
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -73,71 +73,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-# ==================== データモデル ====================
-
-class StudentProfile(BaseModel):
-    """学生プロファイル"""
-    # 基本13項目（1-10）
-    research_intensity: float = Field(5.0, ge=1, le=10)
-    advisor_style: float = Field(5.0, ge=1, le=10)
-    team_work: float = Field(5.0, ge=1, le=10)
-    workload: float = Field(5.0, ge=1, le=10)
-    theory_practice: float = Field(5.0, ge=1, le=10)
-    research_field_match: float = Field(5.0, ge=1, le=10)
-    skill_development: float = Field(5.0, ge=1, le=10)
-    lab_atmosphere: float = Field(5.0, ge=1, le=10)
-    flexibility: float = Field(5.0, ge=1, le=10)
-    publication_opportunity: float = Field(5.0, ge=1, le=10)
-    interdisciplinary: float = Field(5.0, ge=1, le=10)
-    communication_style: float = Field(5.0, ge=1, le=10)
-    
-    # 優先度（1-10）
-    research_intensity_priority: float = Field(5.0, ge=1, le=10)
-    advisor_style_priority: float = Field(5.0, ge=1, le=10)
-    team_work_priority: float = Field(5.0, ge=1, le=10)
-    workload_priority: float = Field(5.0, ge=1, le=10)
-    theory_practice_priority: float = Field(5.0, ge=1, le=10)
-    research_field_match_priority: float = Field(5.0, ge=1, le=10)
-    skill_development_priority: float = Field(5.0, ge=1, le=10)
-    lab_atmosphere_priority: float = Field(5.0, ge=1, le=10)
-    flexibility_priority: float = Field(5.0, ge=1, le=10)
-    publication_opportunity_priority: float = Field(5.0, ge=1, le=10)
-    interdisciplinary_priority: float = Field(5.0, ge=1, le=10)
-    communication_style_priority: float = Field(5.0, ge=1, le=10)
-    
-    # 分野興味（field_id: interest_level）
-    field_interests: Dict[str, float] = Field(default_factory=dict)
-
-
-class EvaluationRequest(BaseModel):
-    """評価リクエスト"""
-    student: StudentProfile
-    matcher_type: Optional[str] = "multipath"  # "multipath" or "simple"
-
-
-class LabEvaluationResponse(BaseModel):
-    """研究室評価レスポンス"""
-    lab_id: str
-    lab_name: str
-    professor: str
-    field_id: str
-    field_name: Optional[str] = None
-    
-    # スコア
-    total_compatibility: float
-    basic_score: float
-    field_score: float
-    
-    # 詳細
-    num_fuzzy_paths: Optional[int] = None
-    explanation: str
-    recommendation: str
-    
-    # 研究室情報
-    description: Optional[str] = None
-    students_count: Optional[int] = None
 
 
 # ==================== グローバル状態 ====================
@@ -445,7 +380,7 @@ async def get_lab_detail(lab_id: str):
 
 
 @app.post("/api/evaluate")
-async def evaluate_labs(request: EvaluationRequest):
+async def evaluate_labs(request: Dict[str, Any] = Body(...)):
     """
     研究室評価API
     
@@ -455,9 +390,47 @@ async def evaluate_labs(request: EvaluationRequest):
     if not system_state.get("initialized"):
         raise HTTPException(status_code=503, detail="システムが初期化されていません")
     
-    # マッチャータイプ選択
-    matcher_type = request.matcher_type or "multipath"
+    # デバッグ: リクエスト全体を出力
+    print(f"\n📥 評価リクエスト受信")
+    print(f"  リクエストキー: {list(request.keys())}")
     
+    # リクエスト形式を柔軟に判定
+    student = None
+    matcher_type = "multipath"
+    
+    if "student" in request:
+        # 形式1: {"student": {...}, "matcher_type": "..."}
+        student = request.get("student", {})
+        matcher_type = request.get("matcher_type", "multipath")
+    elif "student_profile" in request:
+        # 形式2: {"student_profile": {...}}
+        student_data = request.get("student_profile", {})
+        # student_profile の中身を確認
+        if isinstance(student_data, dict):
+            student = student_data
+        else:
+            student = {}
+        matcher_type = request.get("matcher_type", "multipath")
+    else:
+        # 形式3: リクエスト全体が学生データ
+        student = request
+        matcher_type = student.pop("matcher_type", "multipath") if "matcher_type" in student else "multipath"
+    
+    print(f"  マッチャータイプ: {matcher_type}")
+    print(f"  学生データ項目数: {len(student) if student else 0}")
+    if student:
+        print(f"  学生データキー（最初の10個）: {list(student.keys())[:10]}")
+        # 実際の値も確認
+        print(f"  サンプル値:")
+        for key in list(student.keys())[:3]:
+            print(f"    {key}: {student[key]}")
+    
+    # studentがNoneまたは空の場合
+    if not student:
+        print("  ⚠️ 学生データが空です。デフォルト値を使用します。")
+        student = {}
+    
+    # マッチャー選択
     if matcher_type == "multipath":
         matcher = system_state.get("matcher_multipath")
         if not matcher:
@@ -469,6 +442,7 @@ async def evaluate_labs(request: EvaluationRequest):
                     detail="マッチャーが利用できません"
                 )
             matcher_type = "simple"
+            print(f"  ⚠️ FuzzyMultiPathMatcher利用不可、SimpleMatcherにフォールバック")
     else:
         matcher = system_state.get("matcher_simple")
         if not matcher:
@@ -477,8 +451,27 @@ async def evaluate_labs(request: EvaluationRequest):
                 detail="SimpleMatcherが利用できません"
             )
     
-    # 学生プロファイルを辞書に変換
-    student_dict = request.student.dict()
+    # 学生プロファイルにデフォルト値を設定
+    student_profile = {}
+    
+    # 基本13項目（デフォルト: 5.0）
+    for criterion in EVALUATION_CRITERIA:
+        student_profile[criterion] = student.get(criterion, 5.0)
+    
+    # 優先度（デフォルト: 5.0）
+    for criterion in EVALUATION_CRITERIA:
+        priority_key = f"{criterion}_priority"
+        student_profile[priority_key] = student.get(priority_key, 5.0)
+    
+    # 分野興味
+    student_profile["field_interests"] = student.get("field_interests", {})
+    
+    print(f"  処理後の学生プロファイル: {len(student_profile)}項目")
+    
+    # 実際に設定された値を確認（デフォルトでない値のみ）
+    non_default_values = {k: v for k, v in student.items() if v != 5.0 and k in EVALUATION_CRITERIA}
+    if non_default_values:
+        print(f"  デフォルトでない値: {non_default_values}")
     
     # 全研究室を評価
     results = []
@@ -489,7 +482,7 @@ async def evaluate_labs(request: EvaluationRequest):
     for lab in labs:
         try:
             # 適合度計算
-            result = matcher.calculate_compatibility(student_dict, lab)
+            result = matcher.calculate_compatibility(student_profile, lab)
             
             # フィールドマッチャーで分野名取得
             field_name = lab.get("field_id", "不明")
@@ -503,21 +496,23 @@ async def evaluate_labs(request: EvaluationRequest):
             if hasattr(result, 'fuzzy_paths'):
                 num_paths = len(result.fuzzy_paths)
             
-            results.append({
+            result_data = {
                 "lab_id": lab.get("id"),
                 "lab_name": lab.get("name"),
                 "professor": lab.get("professor", ""),
                 "field_id": lab.get("field_id", ""),
                 "field_name": field_name,
-                "total_compatibility": result.total_compatibility,
-                "basic_score": result.basic_score,
-                "field_score": result.field_score,
+                "total_compatibility": float(result.total_compatibility),
+                "basic_score": float(result.basic_score),
+                "field_score": float(result.field_score),
                 "num_fuzzy_paths": num_paths,
                 "explanation": result.explanation,
                 "recommendation": result.recommendation,
                 "description": lab.get("description"),
                 "students_count": lab.get("students_count")
-            })
+            }
+            
+            results.append(result_data)
             
         except Exception as e:
             print(f"⚠️ 研究室 {lab.get('id')} の評価エラー: {e}")
@@ -533,17 +528,27 @@ async def evaluate_labs(request: EvaluationRequest):
     # 統計更新
     system_state["evaluation_count"] += 1
     
-    return {
+    print(f"  ✅ 評価完了: {len(results)}件, {processing_time*1000:.2f}ms")
+    if results:
+        print(f"  TOP3:")
+        for i, r in enumerate(results[:3], 1):
+            print(f"    {i}. {r['lab_name']}: {r['total_compatibility']:.3f}")
+    
+    response_data = {
         "total_labs": len(results),
         "results": results,
         "matcher_type": matcher_type,
         "processing_time_ms": processing_time * 1000,
         "timestamp": datetime.now().isoformat()
     }
+    
+    print(f"  📤 レスポンス送信: {len(results)}件")
+    
+    return response_data
 
 
 @app.post("/api/evaluate/{lab_id}")
-async def evaluate_single_lab(lab_id: str, request: Dict[str, Any]):
+async def evaluate_single_lab(lab_id: str, request: Dict[str, Any] = Body(...)):
     """
     単一研究室の詳細評価
     
@@ -565,11 +570,19 @@ async def evaluate_single_lab(lab_id: str, request: Dict[str, Any]):
     if not matcher:
         raise HTTPException(status_code=500, detail="マッチャーが利用できません")
     
-    # 学生プロファイル
+    # 学生プロファイル（デフォルト値設定）
     student = request.get("student", {})
+    student_profile = {}
+    
+    for criterion in EVALUATION_CRITERIA:
+        student_profile[criterion] = student.get(criterion, 5.0)
+        priority_key = f"{criterion}_priority"
+        student_profile[priority_key] = student.get(priority_key, 5.0)
+    
+    student_profile["field_interests"] = student.get("field_interests", {})
     
     # 適合度計算
-    result = matcher.calculate_compatibility(student, lab)
+    result = matcher.calculate_compatibility(student_profile, lab)
     
     # 詳細情報構築
     response = {
@@ -702,6 +715,28 @@ async def get_criteria_info():
     return {
         "total": len(criteria_info),
         "criteria": criteria_info
+    }
+
+
+@app.post("/api/debug/request")
+async def debug_request(request: Dict[str, Any] = Body(...)):
+    """デバッグ用：リクエスト内容を確認"""
+    
+    print("\n" + "="*60)
+    print("【デバッグ：リクエスト内容】")
+    print("="*60)
+    print(f"リクエストタイプ: {type(request)}")
+    print(f"キー: {list(request.keys())}")
+    print(f"内容:")
+    
+    import json
+    print(json.dumps(request, indent=2, ensure_ascii=False))
+    print("="*60 + "\n")
+    
+    return {
+        "received": request,
+        "keys": list(request.keys()),
+        "type": str(type(request))
     }
 
 
