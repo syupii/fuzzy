@@ -1,0 +1,1004 @@
+{
+    "version": "2.0.0",
+    "last_updated": "2025-10-05T00:00:00",
+    "description": "研究室選択支援システム用研究室データベース - 30研究室",
+    "total_labs": 30,
+    "labs": [
+        {
+            "id": "lab_iijima",
+            "name": "飯嶋美知子研究室",
+            "professor": "飯嶋美知子",
+            "research_area": "教育・言語学",
+            "specialization": "教育工学、言語教育",
+            "research_fields": [
+                "教育・言語学"
+            ],
+            "field_id": "education_linguistics",
+            "description": "教育工学と言語教育の研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 7.5,
+                "team_work": 8.0,
+                "workload": 6.5,
+                "theory_practice": 7.0,
+                "research_field_match": 7.5,
+                "skill_development": 7.0,
+                "lab_atmosphere": 8.0,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 8.0,
+                "communication_style": 8.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_kanegin",
+            "name": "金銀珠研究室",
+            "professor": "金銀珠",
+            "research_area": "教育・言語学",
+            "specialization": "言語学、異文化コミュニケーション",
+            "research_fields": [
+                "教育・言語学"
+            ],
+            "field_id": "education_linguistics",
+            "description": "言語学と異文化コミュニケーションの研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 8.0,
+                "team_work": 7.5,
+                "workload": 6.5,
+                "theory_practice": 6.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.0,
+                "lab_atmosphere": 8.0,
+                "flexibility": 8.0,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 8.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 9,
+                "funding_level": "中",
+                "equipment_rating": 6
+            }
+        },
+        {
+            "id": "lab_tanaka_h",
+            "name": "田中英夫研究室",
+            "professor": "田中英夫",
+            "research_area": "教育・言語学",
+            "specialization": "教育システム、学習支援",
+            "research_fields": [
+                "教育・言語学",
+                "経営情報・意思決定支援"
+            ],
+            "field_id": "education_linguistics",
+            "description": "教育システムと学習支援の研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.0,
+                "team_work": 8.0,
+                "workload": 7.0,
+                "theory_practice": 7.5,
+                "research_field_match": 7.5,
+                "skill_development": 8.0,
+                "lab_atmosphere": 7.5,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.5,
+                "interdisciplinary": 8.5,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 11,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_saito",
+            "name": "齋藤一研究室",
+            "professor": "齋藤一",
+            "research_area": "教育・言語学",
+            "specialization": "観光情報、地域システム",
+            "research_fields": [
+                "教育・言語学",
+                "観光情報・地域システム"
+            ],
+            "field_id": "education_linguistics",
+            "description": "観光情報と地域システムの研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 7.5,
+                "team_work": 8.5,
+                "workload": 6.0,
+                "theory_practice": 7.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 8.5,
+                "flexibility": 8.0,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 9.0,
+                "communication_style": 8.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 8,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_chikazawa",
+            "name": "近澤潤研究室",
+            "professor": "近澤潤",
+            "research_area": "教育・言語学",
+            "specialization": "言語情報処理、自然言語処理",
+            "research_fields": [
+                "教育・言語学",
+                "人工知能・機械学習"
+            ],
+            "field_id": "education_linguistics",
+            "description": "言語情報処理と自然言語処理の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.5,
+                "team_work": 7.0,
+                "workload": 7.5,
+                "theory_practice": 6.0,
+                "research_field_match": 8.0,
+                "skill_development": 8.5,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 8.0,
+                "interdisciplinary": 8.0,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 12,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_kakinami",
+            "name": "柿並義宏研究室",
+            "professor": "柿並義宏",
+            "research_area": "自然科学・数理",
+            "specialization": "数理科学、応用数学",
+            "research_fields": [
+                "自然科学・数理"
+            ],
+            "field_id": "natural_science_math",
+            "description": "数理科学と応用数学の研究",
+            "features": {
+                "research_intensity": 8.5,
+                "advisor_style": 6.0,
+                "team_work": 6.0,
+                "workload": 8.0,
+                "theory_practice": 4.5,
+                "research_field_match": 8.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 6.0,
+                "flexibility": 6.0,
+                "publication_opportunity": 9.0,
+                "interdisciplinary": 6.5,
+                "communication_style": 6.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 4,
+                "recent_publications": 14,
+                "funding_level": "高",
+                "equipment_rating": 6
+            }
+        },
+        {
+            "id": "lab_hokimoto",
+            "name": "甫喜本司研究室",
+            "professor": "甫喜本司",
+            "research_area": "自然科学・数理",
+            "specialization": "数理情報学、最適化",
+            "research_fields": [
+                "自然科学・数理"
+            ],
+            "field_id": "natural_science_math",
+            "description": "数理情報学と最適化の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.5,
+                "team_work": 6.5,
+                "workload": 8.0,
+                "theory_practice": 5.0,
+                "research_field_match": 8.0,
+                "skill_development": 7.5,
+                "lab_atmosphere": 6.5,
+                "flexibility": 6.5,
+                "publication_opportunity": 8.5,
+                "interdisciplinary": 7.0,
+                "communication_style": 6.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 13,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_matsui",
+            "name": "松井伸也研究室",
+            "professor": "松井伸也",
+            "research_area": "自然科学・数理",
+            "specialization": "統計学、データサイエンス",
+            "research_fields": [
+                "自然科学・数理"
+            ],
+            "field_id": "natural_science_math",
+            "description": "統計学とデータサイエンスの研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.0,
+                "team_work": 7.0,
+                "workload": 7.5,
+                "theory_practice": 6.0,
+                "research_field_match": 8.0,
+                "skill_development": 8.0,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 8.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 11,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_araiyama",
+            "name": "新井山亮研究室",
+            "professor": "新井山亮",
+            "research_area": "自然科学・数理",
+            "specialization": "数理科学、計算科学",
+            "research_fields": [
+                "自然科学・数理"
+            ],
+            "field_id": "natural_science_math",
+            "description": "数理科学と計算科学の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.5,
+                "team_work": 6.5,
+                "workload": 8.0,
+                "theory_practice": 5.0,
+                "research_field_match": 8.0,
+                "skill_development": 7.5,
+                "lab_atmosphere": 6.5,
+                "flexibility": 6.0,
+                "publication_opportunity": 8.5,
+                "interdisciplinary": 7.0,
+                "communication_style": 6.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_sasaki",
+            "name": "佐々木洋平研究室",
+            "professor": "佐々木洋平",
+            "research_area": "自然科学・数理",
+            "specialization": "地球流体力学、惑星科学",
+            "research_fields": [
+                "自然科学・数理",
+                "ネットワーク・セキュリティ"
+            ],
+            "field_id": "natural_science_math",
+            "description": "地球流体力学と惑星科学の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.0,
+                "team_work": 6.5,
+                "workload": 8.0,
+                "theory_practice": 5.5,
+                "research_field_match": 7.0,
+                "skill_development": 7.0,
+                "lab_atmosphere": 6.0,
+                "flexibility": 6.0,
+                "publication_opportunity": 8.0,
+                "interdisciplinary": 8.5,
+                "communication_style": 6.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 12,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_yumura",
+            "name": "湯村翼研究室",
+            "professor": "湯村翼",
+            "research_area": "自然科学・数理",
+            "specialization": "計算物理学、シミュレーション",
+            "research_fields": [
+                "自然科学・数理"
+            ],
+            "field_id": "natural_science_math",
+            "description": "計算物理学とシミュレーションの研究",
+            "features": {
+                "research_intensity": 8.5,
+                "advisor_style": 6.0,
+                "team_work": 6.0,
+                "workload": 8.5,
+                "theory_practice": 5.0,
+                "research_field_match": 8.0,
+                "skill_development": 8.0,
+                "lab_atmosphere": 6.0,
+                "flexibility": 6.0,
+                "publication_opportunity": 9.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 6.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 4,
+                "recent_publications": 15,
+                "funding_level": "高",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_ono",
+            "name": "小野亮太研究室",
+            "professor": "小野亮太",
+            "research_area": "観光情報・地域システム",
+            "specialization": "観光情報学、地域活性化",
+            "research_fields": [
+                "観光情報・地域システム"
+            ],
+            "field_id": "tourism_systems",
+            "description": "観光情報学と地域活性化の研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 7.5,
+                "team_work": 8.5,
+                "workload": 6.0,
+                "theory_practice": 7.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 8.0,
+                "flexibility": 8.0,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 8.5,
+                "communication_style": 8.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 7,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_sakata",
+            "name": "坂田圭司研究室",
+            "professor": "坂田圭司",
+            "research_area": "経営情報・意思決定支援",
+            "specialization": "経営情報システム、意思決定支援",
+            "research_fields": [
+                "経営情報・意思決定支援"
+            ],
+            "field_id": "management_systems",
+            "description": "経営情報システムと意思決定支援の研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 8.0,
+                "team_work": 8.0,
+                "workload": 6.0,
+                "theory_practice": 7.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 8.0,
+                "flexibility": 8.5,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 8.0,
+                "communication_style": 8.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 9,
+                "recent_publications": 7,
+                "funding_level": "中",
+                "equipment_rating": 6
+            }
+        },
+        {
+            "id": "lab_mukohara",
+            "name": "向原強研究室",
+            "professor": "向原強",
+            "research_area": "経営情報・意思決定支援",
+            "specialization": "経営戦略、ビジネスインテリジェンス",
+            "research_fields": [
+                "経営情報・意思決定支援"
+            ],
+            "field_id": "management_systems",
+            "description": "経営戦略とビジネスインテリジェンスの研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 7.5,
+                "team_work": 7.5,
+                "workload": 6.5,
+                "theory_practice": 7.0,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 7.5,
+                "flexibility": 8.0,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 8.0,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 9,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_hirooku",
+            "name": "廣奥透研究室",
+            "professor": "廣奥透",
+            "research_area": "音声・音響情報処理",
+            "specialization": "音声情報処理、音響信号処理",
+            "research_fields": [
+                "音声・音響情報処理"
+            ],
+            "field_id": "audio_processing",
+            "description": "音声情報処理と音響信号処理の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 6.5,
+                "team_work": 7.0,
+                "workload": 7.5,
+                "theory_practice": 6.0,
+                "research_field_match": 8.0,
+                "skill_development": 8.5,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 8.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 11,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_mori",
+            "name": "森圭佑研究室",
+            "professor": "森圭佑",
+            "research_area": "音声・音響情報処理",
+            "specialization": "音響工学、サウンドデザイン",
+            "research_fields": [
+                "音声・音響情報処理"
+            ],
+            "field_id": "audio_processing",
+            "description": "音響工学とサウンドデザインの研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.0,
+                "team_work": 7.5,
+                "workload": 7.0,
+                "theory_practice": 6.5,
+                "research_field_match": 7.5,
+                "skill_development": 8.0,
+                "lab_atmosphere": 7.5,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.5,
+                "interdisciplinary": 8.0,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_tagusari",
+            "name": "田鎖次郎研究室",
+            "professor": "田鎖次郎",
+            "research_area": "システム運用・情報倫理",
+            "specialization": "システム運用、ITマネジメント",
+            "research_fields": [
+                "システム運用・情報倫理"
+            ],
+            "field_id": "system_operations",
+            "description": "システム運用とITマネジメントの研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 7.5,
+                "team_work": 7.5,
+                "workload": 6.5,
+                "theory_practice": 7.5,
+                "research_field_match": 7.0,
+                "skill_development": 7.5,
+                "lab_atmosphere": 7.5,
+                "flexibility": 8.0,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 7.0,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 8,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_nakajima",
+            "name": "中島潤研究室",
+            "professor": "中島潤",
+            "research_area": "システム運用・情報倫理",
+            "specialization": "情報セキュリティ、ネットワーク管理",
+            "research_fields": [
+                "システム運用・情報倫理",
+                "ネットワーク・セキュリティ"
+            ],
+            "field_id": "system_operations",
+            "description": "情報セキュリティとネットワーク管理の研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 7.5,
+                "team_work": 7.5,
+                "workload": 7.0,
+                "theory_practice": 6.0,
+                "research_field_match": 7.5,
+                "skill_development": 7.0,
+                "lab_atmosphere": 7.5,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 7.0,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 9,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_miura",
+            "name": "三浦洋研究室",
+            "professor": "三浦洋",
+            "research_area": "システム運用・情報倫理",
+            "specialization": "情報倫理、哲学",
+            "research_fields": [
+                "システム運用・情報倫理",
+                "哲学・人文・環境行動学"
+            ],
+            "field_id": "system_operations",
+            "description": "情報倫理と哲学の研究",
+            "features": {
+                "research_intensity": 6.0,
+                "advisor_style": 8.0,
+                "team_work": 7.0,
+                "workload": 5.5,
+                "theory_practice": 4.5,
+                "research_field_match": 7.0,
+                "skill_development": 6.5,
+                "lab_atmosphere": 8.0,
+                "flexibility": 8.5,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 8.5,
+                "communication_style": 8.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 6,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 6
+            }
+        },
+        {
+            "id": "lab_hayata",
+            "name": "隼田尚彦研究室",
+            "professor": "隼田尚彦",
+            "research_area": "哲学・人文・環境行動学",
+            "specialization": "環境行動学、人間工学",
+            "research_fields": [
+                "哲学・人文・環境行動学"
+            ],
+            "field_id": "philosophy_humanities",
+            "description": "環境行動学と人間工学の研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 7.5,
+                "team_work": 7.5,
+                "workload": 6.0,
+                "theory_practice": 6.5,
+                "research_field_match": 7.0,
+                "skill_development": 7.0,
+                "lab_atmosphere": 7.5,
+                "flexibility": 8.0,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 8.5,
+                "communication_style": 7.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 5,
+                "recent_publications": 8,
+                "funding_level": "中",
+                "equipment_rating": 6
+            }
+        },
+        {
+            "id": "lab_wataya",
+            "name": "綿谷貴志研究室",
+            "professor": "綿谷貴志",
+            "research_area": "スポーツ・体育科学",
+            "specialization": "スポーツ科学、トレーニング理論",
+            "research_fields": [
+                "スポーツ・体育科学"
+            ],
+            "field_id": "sports_science",
+            "description": "スポーツ科学とトレーニング理論の研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 7.5,
+                "team_work": 8.5,
+                "workload": 7.0,
+                "theory_practice": 8.0,
+                "research_field_match": 7.5,
+                "skill_development": 8.0,
+                "lab_atmosphere": 8.5,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 8.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 9,
+                "recent_publications": 9,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_oda",
+            "name": "織田哲研究室",
+            "professor": "織田哲",
+            "research_area": "スポーツ・体育科学",
+            "specialization": "運動生理学、健康科学",
+            "research_fields": [
+                "スポーツ・体育科学"
+            ],
+            "field_id": "sports_science",
+            "description": "運動生理学と健康科学の研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.0,
+                "team_work": 8.0,
+                "workload": 7.0,
+                "theory_practice": 7.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 8.0,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.5,
+                "interdisciplinary": 7.5,
+                "communication_style": 8.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_ai_sample",
+            "name": "人工知能研究室（サンプル）",
+            "professor": "山田太郎",
+            "research_area": "人工知能・機械学習",
+            "specialization": "深層学習、機械学習アルゴリズム",
+            "research_fields": [
+                "人工知能・機械学習"
+            ],
+            "field_id": "ai_machine_learning",
+            "description": "最先端の深層学習と機械学習アルゴリズムの研究",
+            "features": {
+                "research_intensity": 9.0,
+                "advisor_style": 7.0,
+                "team_work": 8.0,
+                "workload": 8.5,
+                "theory_practice": 6.0,
+                "research_field_match": 9.0,
+                "skill_development": 9.0,
+                "lab_atmosphere": 7.5,
+                "flexibility": 6.5,
+                "publication_opportunity": 9.5,
+                "interdisciplinary": 7.5,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 10,
+                "recent_publications": 18,
+                "funding_level": "高",
+                "equipment_rating": 9
+            }
+        },
+        {
+            "id": "lab_cv_sample",
+            "name": "コンピュータビジョン研究室（サンプル）",
+            "professor": "鈴木花子",
+            "research_area": "画像・映像処理",
+            "specialization": "コンピュータビジョン、画像認識",
+            "research_fields": [
+                "画像・映像処理"
+            ],
+            "field_id": "image_video_processing",
+            "description": "画像認識とコンピュータビジョンの先端研究",
+            "features": {
+                "research_intensity": 8.5,
+                "advisor_style": 6.5,
+                "team_work": 7.5,
+                "workload": 8.0,
+                "theory_practice": 6.5,
+                "research_field_match": 8.5,
+                "skill_development": 8.5,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 8.5,
+                "interdisciplinary": 7.0,
+                "communication_style": 6.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 14,
+                "funding_level": "高",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_network_sample",
+            "name": "ネットワークセキュリティ研究室（サンプル）",
+            "professor": "佐藤一郎",
+            "research_area": "ネットワーク・セキュリティ",
+            "specialization": "情報セキュリティ、ネットワーク技術",
+            "research_fields": [
+                "ネットワーク・セキュリティ"
+            ],
+            "field_id": "network_security",
+            "description": "ネットワークセキュリティと暗号技術の研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 7.0,
+                "team_work": 7.0,
+                "workload": 7.5,
+                "theory_practice": 6.5,
+                "research_field_match": 8.0,
+                "skill_development": 8.0,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 7.5,
+                "interdisciplinary": 6.5,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 11,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_web_sample",
+            "name": "Webデザイン研究室（サンプル）",
+            "professor": "高橋美咲",
+            "research_area": "Webデザイン・UI/UX",
+            "specialization": "ユーザーエクスペリエンス、Webデザイン",
+            "research_fields": [
+                "Webデザイン・UI/UX"
+            ],
+            "field_id": "web_ui_ux",
+            "description": "WebデザインとUXの研究",
+            "features": {
+                "research_intensity": 6.5,
+                "advisor_style": 8.0,
+                "team_work": 9.0,
+                "workload": 6.0,
+                "theory_practice": 8.0,
+                "research_field_match": 7.5,
+                "skill_development": 8.5,
+                "lab_atmosphere": 8.5,
+                "flexibility": 8.5,
+                "publication_opportunity": 6.0,
+                "interdisciplinary": 8.5,
+                "communication_style": 9.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 10,
+                "recent_publications": 8,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_game_sample",
+            "name": "ゲーム開発研究室（サンプル）",
+            "professor": "中村健太",
+            "research_area": "ゲーム開発・eスポーツ",
+            "specialization": "ゲームデザイン、インタラクティブコンテンツ",
+            "research_fields": [
+                "ゲーム開発・eスポーツ"
+            ],
+            "field_id": "game_esports",
+            "description": "ゲーム開発とインタラクティブコンテンツの研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.5,
+                "team_work": 8.5,
+                "workload": 7.5,
+                "theory_practice": 7.5,
+                "research_field_match": 8.0,
+                "skill_development": 8.5,
+                "lab_atmosphere": 8.5,
+                "flexibility": 8.0,
+                "publication_opportunity": 6.5,
+                "interdisciplinary": 8.0,
+                "communication_style": 8.5
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 9,
+                "recent_publications": 7,
+                "funding_level": "中",
+                "equipment_rating": 8
+            }
+        },
+        {
+            "id": "lab_vr_sample",
+            "name": "VR/AR研究室（サンプル）",
+            "professor": "小林麻衣",
+            "research_area": "VR/AR・メディアアート",
+            "specialization": "バーチャルリアリティ、拡張現実",
+            "research_fields": [
+                "VR/AR・メディアアート"
+            ],
+            "field_id": "vr_ar_media_art",
+            "description": "VR/ARとメディアアートの研究",
+            "features": {
+                "research_intensity": 8.0,
+                "advisor_style": 7.0,
+                "team_work": 8.0,
+                "workload": 7.5,
+                "theory_practice": 7.0,
+                "research_field_match": 8.5,
+                "skill_development": 9.0,
+                "lab_atmosphere": 8.0,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.5,
+                "interdisciplinary": 9.0,
+                "communication_style": 8.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 7,
+                "recent_publications": 10,
+                "funding_level": "高",
+                "equipment_rating": 9
+            }
+        },
+        {
+            "id": "lab_iot_sample",
+            "name": "IoTシステム研究室（サンプル）",
+            "professor": "伊藤直樹",
+            "research_area": "組込み・IoT",
+            "specialization": "IoTシステム、組込みシステム",
+            "research_fields": [
+                "組込み・IoT"
+            ],
+            "field_id": "embedded_iot",
+            "description": "IoTと組込みシステムの研究",
+            "features": {
+                "research_intensity": 7.5,
+                "advisor_style": 7.0,
+                "team_work": 7.5,
+                "workload": 7.5,
+                "theory_practice": 7.0,
+                "research_field_match": 7.5,
+                "skill_development": 8.0,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.0,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 7.5,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 9,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        },
+        {
+            "id": "lab_db_sample",
+            "name": "データベースシステム研究室（サンプル）",
+            "professor": "渡辺優子",
+            "research_area": "データベース・情報システム",
+            "specialization": "データベース、情報システム",
+            "research_fields": [
+                "データベース・情報システム"
+            ],
+            "field_id": "database_systems",
+            "description": "データベースと情報システムの研究",
+            "features": {
+                "research_intensity": 7.0,
+                "advisor_style": 7.0,
+                "team_work": 7.0,
+                "workload": 7.0,
+                "theory_practice": 6.5,
+                "research_field_match": 7.5,
+                "skill_development": 7.5,
+                "lab_atmosphere": 7.0,
+                "flexibility": 7.5,
+                "publication_opportunity": 7.0,
+                "interdisciplinary": 7.0,
+                "communication_style": 7.0
+            },
+            "metadata": {
+                "faculty_count": 1,
+                "student_count": 8,
+                "recent_publications": 10,
+                "funding_level": "中",
+                "equipment_rating": 7
+            }
+        }
+    ]
+}

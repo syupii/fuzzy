@@ -584,9 +584,9 @@ if __name__ == "__main__":
     
     # reloadを無効化してuvicorn警告を回避
     uvicorn.run(
-        app,
-        host=getattr(settings, 'host', '0.0.0.0'),
-        port=getattr(settings, 'port', 8000),
-        reload=False,  # reload機能を無効化
+        "app:app",  # ← 文字列で指定（修正前: app）
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
         log_level="info"
     )

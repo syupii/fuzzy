@@ -391,7 +391,7 @@ if __name__ == "__main__":
     print("="*60 + "\n")
     
     uvicorn.run(
-        app,
+        "app:app",  # ← 文字列で指定（WARNING回避）
         host="0.0.0.0",
         port=8000,
         reload=True,
