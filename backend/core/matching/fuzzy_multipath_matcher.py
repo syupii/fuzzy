@@ -538,7 +538,7 @@ class FuzzyMultiPathMatcher:
         for interest_field, interest_level in field_interests.items():
             if self._is_same_category(lab_field, interest_field):
                 # ★ 減衰係数 0.7（技術資料 3.6節）
-                category_score = (interest_level / 10.0) * 0.7
+                category_score = (interest_level / 10.0) * 0.8
                 if category_score > best_category_score:
                     best_category_score = category_score
                     best_category_field = interest_field
@@ -553,7 +553,7 @@ class FuzzyMultiPathMatcher:
         
         # 不一致
         # ★ 固定値 0.3（技術資料 3.6節）
-        return 0.3, {
+        return 0.1, {
             "match_type": "none",
             "lab_field": lab_field,
             "message": "興味分野との直接的な関連なし"
