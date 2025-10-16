@@ -11,7 +11,6 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from api.v1.demo import router as demo_router
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +21,10 @@ import uvicorn
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-# マッチャーインポート
+# --- ルーターのインポート ---
+from api.v1.demo import router as demo_router
+
+# --- マッチャーインポート ---
 try:
     from core.matching.fuzzy_multipath_matcher import (
         FuzzyMultiPathMatcher, 
@@ -35,17 +37,14 @@ except ImportError as e:
     print(f"⚠️ FuzzyMultiPathMatcher インポート失敗: {e}")
 
 
-app.include_router(demo_router)
-
-print("✅ デモプロファイルAPI登録完了: /api/demo/*")
-# FastAPIアプリケーション
+# FastAPIアプリケーションのインスタンスを先に作成
 app = FastAPI(
     title="研究室選択支援システム",
     description="ファジィ決定木による高精度マッチングシステム",
     version="3.1.0-fixed"
 )
 
-# CORS設定
+# --- CORS設定 ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -54,7 +53,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# グローバル状態
+# ルーターの登録をインスタンス作成後に移動
+app.include_router(demo_router)
+print("✅ デモプロファイルAPI登録完了: /api/demo/*")
+
+
+# --- グローバル状態 ---
 system_state = {
     "initialized": False,
     "matcher_multipath": None,
@@ -65,18 +69,10 @@ system_state = {
 
 # 12項目評価基準
 EVALUATION_CRITERIA = [
-    "research_intensity",
-    "advisor_style", 
-    "team_work",
-    "workload",
-    "theory_practice",
-    "research_field_match",
-    "skill_development",
-    "lab_atmosphere",
-    "flexibility",
-    "publication_opportunity",
-    "interdisciplinary",
-    "communication_style"
+    "research_intensity", "advisor_style", "team_work",
+    "workload", "theory_practice", "research_field_match",
+    "skill_development", "lab_atmosphere", "flexibility",
+    "publication_opportunity", "interdisciplinary", "communication_style"
 ]
 
 
@@ -97,8 +93,6 @@ def load_labs_database() -> List[Dict[str, Any]]:
                 with open(db_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
                     labs = data.get("labs", [])
-                    
-                    # ★ データ構造の正規化 ★
                     normalized_labs = normalize_lab_data(labs)
                     
                     if normalized_labs:
@@ -113,27 +107,19 @@ def load_labs_database() -> List[Dict[str, Any]]:
 
 
 def normalize_lab_data(labs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    研究室データを正規化
-    
-    ★★★ 重要な修正点 ★★★
-    features内の評価基準をトップレベルに展開
-    """
+    """研究室データを正規化"""
     normalized = []
     
     for lab in labs:
         normalized_lab = lab.copy()
         
-        # featuresがある場合、トップレベルに展開
         if "features" in lab:
             features = lab["features"]
             for criterion in EVALUATION_CRITERIA:
                 if criterion in features:
-                    # 1-10スケールを0-1スケールに正規化
                     value = features[criterion]
-                    normalized_lab[criterion] = value / 10.0
+                    normalized_lab[criterion] = (value - 1) / 9.0 if value > 1 else 0.0
         
-        # field_idがない場合、research_areaから生成
         if "field_id" not in normalized_lab:
             research_area = normalized_lab.get("research_area", "")
             normalized_lab["field_id"] = research_area.lower().replace("・", "_")
@@ -147,18 +133,13 @@ def normalize_lab_data(labs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def initialize_system():
     """システム初期化"""
-    
     print("\n🚀 システム初期化開始...")
-    
     try:
-        # 研究室データベース読み込み
         system_state["lab_database"] = load_labs_database()
-        
         if not system_state["lab_database"]:
             print("❌ 研究室データがありません")
             return False
         
-        # マッチャー初期化
         if FUZZY_MATCHER_AVAILABLE:
             system_state["matcher_multipath"] = FuzzyMultiPathMatcher()
             print("✅ FuzzyMultiPathMatcher 初期化完了")
@@ -168,16 +149,13 @@ def initialize_system():
         
         system_state["initialized"] = True
         system_state["startup_time"] = datetime.now()
-        
         print(f"✅ システム初期化完了: {len(system_state['lab_database'])}研究室")
         return True
-        
     except Exception as e:
         print(f"❌ 初期化エラー: {e}")
         import traceback
         traceback.print_exc()
         return False
-
 
 # 起動時初期化
 initialize_system()
@@ -188,200 +166,114 @@ initialize_system()
 @app.get("/")
 async def root():
     """ルートエンドポイント"""
-    return {
-        "message": "研究室選択支援システム API",
-        "version": "3.1.0-fixed",
-        "status": "running" if system_state["initialized"] else "initializing",
-        "endpoints": {
-            "health": "/api/health",
-            "labs": "/api/labs",
-            "evaluate": "/api/evaluate",
-            "docs": "/docs"
-        }
-    }
+    return { "message": "研究室選択支援システム API", "version": "3.1.0-fixed" }
 
 
 @app.get("/api/health")
 async def health_check():
     """ヘルスチェック"""
-    
     return {
         "status": "healthy" if system_state["initialized"] else "unhealthy",
-        "initialized": system_state["initialized"],
         "lab_count": len(system_state["lab_database"]),
         "evaluation_count": system_state["evaluation_count"],
-        "matcher_status": {
-            "multipath": system_state["matcher_multipath"] is not None
-        },
-        "uptime_seconds": (
-            (datetime.now() - system_state["startup_time"]).total_seconds() 
-            if system_state["startup_time"] else 0
-        )
     }
 
 
 @app.get("/api/labs")
 async def get_labs(field_id: Optional[str] = Query(None)):
     """研究室一覧取得"""
-    
     labs = system_state["lab_database"]
-    
     if field_id:
         labs = [lab for lab in labs if lab.get("field_id") == field_id]
+    return { "total": len(labs), "labs": labs }
+
+
+def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
+    """学生プロファイルを正規化 (1-10スケールを0-1スケールに変換)"""
+    normalized = {}
+    for criterion in EVALUATION_CRITERIA:
+        value = student.get(criterion, 5.0)
+        normalized[criterion] = (value - 1) / 9.0 if value > 1 else 0.0
+        
+        priority_key = f"{criterion}_priority"
+        normalized[priority_key] = student.get(priority_key, 5.0)
     
-    return {
-        "total": len(labs),
-        "labs": labs
+    # ★★★ 修正点: 'field_interests' のデータ構造をリストから辞書に変換 ★★★
+    field_interests_list = student.get("field_interests", [])
+    # リスト（例: [{'field_id': 'ai_ml', 'interest_level': 9}]）を
+    # 辞書（例: {'ai_ml': 0.889}）に変換し、興味度も正規化する
+    normalized["field_interests"] = {
+        item["field_id"]: (item["interest_level"] - 1) / 9.0 if item.get("interest_level", 1) > 1 else 0.0
+        for item in field_interests_list if "field_id" in item
     }
+    
+    return normalized
 
 
 @app.post("/api/evaluate")
 async def evaluate_labs(request: Dict[str, Any] = Body(...)):
-    """
-    研究室評価API
-    
-    ★★★ 修正点 ★★★
-    1. リクエスト形式の柔軟な解析
-    2. 値の正規化処理の追加
-    3. デバッグログの追加
-    """
-    
+    """研究室評価API"""
     if not system_state.get("initialized"):
         raise HTTPException(status_code=503, detail="システムが初期化されていません")
     
-    print(f"\n📥 評価リクエスト受信")
-    print(f"  リクエストキー: {list(request.keys())}")
-    
-    # ★ リクエスト形式の柔軟な判定 ★
-    student = None
-    
-    if "student_profile" in request:
-        # 形式1: {"student_profile": {...}}  ← フロントエンドからの形式
-        student = request.get("student_profile", {})
-    elif "student" in request:
-        # 形式2: {"student": {...}}
-        student = request.get("student", {})
-    else:
-        # 形式3: 直接プロファイル
-        student = request
-    
+    student = request.get("student_profile")
     if not student:
-        raise HTTPException(status_code=400, detail="学生プロファイルがありません")
+        raise HTTPException(status_code=400, detail="学生プロファイルが見つかりません")
     
-    print(f"  学生プロファイル取得: {list(student.keys())[:5]}...")
-    
-    # ★ 値の正規化（1-10 → 0-1） ★
     normalized_student = normalize_student_profile(student)
-    
-    # マッチャー取得
     matcher = system_state.get("matcher_multipath")
     if not matcher:
-        raise HTTPException(status_code=500, detail="マッチャーが利用できません")
-    
-    # 評価実行
-    labs = system_state["lab_database"]
+        raise HTTPException(status_code=500, detail="評価マッチャーが利用できません")
+
+    labs_to_evaluate = system_state["lab_database"]
     results = []
-    
-    print(f"  評価開始: {len(labs)}研究室")
-    
     start_time = time.time()
     
-    for lab in labs:
+    for lab in labs_to_evaluate:
         try:
-            # ★ calculate_compatibilityを呼び出し ★
             result = matcher.calculate_compatibility(normalized_student, lab)
-            
             lab_result = {
                 "lab_id": lab.get("id"),
                 "lab_name": lab.get("name"),
-                "professor": lab.get("professor"),
+                "professor_name": lab.get("professor"),
                 "research_area": lab.get("research_area"),
-                "field_id": lab.get("field_id"),
-                
-                # スコア（0-1スケール）
-                "total_compatibility": result.total_compatibility,
+                "category": lab.get("category"),
+                "final_score": result.total_compatibility,
                 "basic_score": result.basic_score,
                 "field_score": result.field_score,
-                
-                # 重み
-                "field_weight_alpha": result.field_weight_alpha,
-                "basic_weight_beta": result.basic_weight_beta,
-                
-                # 詳細
-                "criteria_scores": result.criteria_scores,
+                "feature_scores": result.criteria_scores,
                 "explanation": result.explanation,
                 "recommendation": result.recommendation,
-                
-                # フロントエンド互換用（パーセント表示）
-                "overall_compatibility": result.total_compatibility,  # 0-1
-                "final_score": result.total_compatibility  # 0-1
+                "priority_analysis": getattr(result, 'priority_analysis', None),
+                "confidence": getattr(result, 'confidence', 0.85),
             }
-            
             results.append(lab_result)
-            
         except Exception as e:
-            print(f"  ⚠️ {lab.get('name')} の評価エラー: {e}")
+            print(f"⚠️ {lab.get('name')} の評価エラー: {e}")
             continue
-    
+            
     processing_time = time.time() - start_time
-    
-    # スコアでソート
-    results.sort(key=lambda x: x["total_compatibility"], reverse=True)
-    
+    results.sort(key=lambda x: x["final_score"], reverse=True)
     system_state["evaluation_count"] += 1
     
-    print(f"  ✅ 評価完了: {len(results)}件 ({processing_time:.2f}秒)")
-    print(f"  最高スコア: {results[0]['total_compatibility']:.3f} ({results[0]['lab_name']})")
-    
-    # サマリー情報
-    high_compatibility = [r for r in results if r["total_compatibility"] >= 0.7]
-    avg_score = sum(r["total_compatibility"] for r in results) / len(results) if results else 0
-    
+    summary = {}
+    if results:
+        summary = {
+            "total_labs": len(results),
+            "high_compatibility_count": len([r for r in results if r["final_score"] >= 0.7]),
+            "avg_score": sum(r["final_score"] for r in results) / len(results),
+            "best_match_lab": results[0]["lab_name"],
+            "best_match_score": results[0]["final_score"]
+        }
+
     return {
         "evaluation_results": results,
-        "summary": {
-            "total_labs": len(results),
-            "high_compatibility_count": len(high_compatibility),
-            "avg_score": avg_score,
-            "best_match_lab": results[0]["lab_name"] if results else None,
-            "best_match_score": results[0]["total_compatibility"] if results else 0
-        },
+        "summary": summary,
         "system_info": {
-            "matcher_type": "fuzzy_multipath",
-            "processing_time_ms": processing_time * 1000,
+            "processing_time": processing_time,
             "timestamp": datetime.now().isoformat()
         }
     }
-
-
-def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    学生プロファイルを正規化
-    
-    ★★★ 重要な修正 ★★★
-    1-10スケールの入力を0-1スケールに変換
-    """
-    normalized = {}
-    
-    for criterion in EVALUATION_CRITERIA:
-        if criterion in student:
-            value = student[criterion]
-            # 1-10 → 0-1 に正規化
-            normalized[criterion] = value / 10.0
-        else:
-            normalized[criterion] = 0.5  # デフォルト値
-        
-        # 優先度も正規化
-        priority_key = f"{criterion}_priority"
-        if priority_key in student:
-            normalized[priority_key] = student[priority_key]
-        else:
-            normalized[priority_key] = 5.0  # デフォルト
-    
-    # 分野興味
-    normalized["field_interests"] = student.get("field_interests", {})
-    
-    return normalized
 
 
 # ==================== サーバー起動 ====================
@@ -390,15 +282,4 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("研究室選択支援システム バックエンド")
     print("="*60)
-    print(f"バージョン: 3.1.0-fixed")
-    print(f"ポート: 8000")
-    print(f"API ドキュメント: http://localhost:8000/docs")
-    print("="*60 + "\n")
-    
-    uvicorn.run(
-        "app:app",  # ← 文字列で指定（WARNING回避）
-        host="0.0.0.0",
-        port=8000,
-        reload=True,
-        log_level="info"
-    )
+    uvicorn.run("app:app", host="0.0.0.0", port=8000, reload=True)
