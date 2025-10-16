@@ -11,6 +11,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
+from api.v1.demo import router as demo_router
 
 from fastapi import FastAPI, HTTPException, Query, Body
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,6 +34,10 @@ except ImportError as e:
     FUZZY_MATCHER_AVAILABLE = False
     print(f"⚠️ FuzzyMultiPathMatcher インポート失敗: {e}")
 
+
+app.include_router(demo_router)
+
+print("✅ デモプロファイルAPI登録完了: /api/demo/*")
 # FastAPIアプリケーション
 app = FastAPI(
     title="研究室選択支援システム",

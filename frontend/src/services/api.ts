@@ -1,10 +1,13 @@
-// frontend/src/services/api.ts - LabResultの型定義を拡張
+// frontend/src/services/api.ts - 完全版（型エラー修正）
 import axios, { AxiosInstance } from 'axios';
 
 // API設定
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
-// ★★★ 修正点1: StudentProfileの型定義を最新化 ★★★
+// ========================================
+// 基本型定義
+// ========================================
+
 export interface StudentProfile {
   research_intensity: number;
   advisor_style: number;
@@ -18,22 +21,38 @@ export interface StudentProfile {
   publication_opportunity: number;
   interdisciplinary: number;
   communication_style: number;
-  field_interests: Record<string, number>;
-  research_intensity_priority?: number;
-  advisor_style_priority?: number;
-  team_work_priority?: number;
-  workload_priority?: number;
-  theory_practice_priority?: number;
-  research_field_match_priority?: number; // `research_field_match`の優先度を追加
-  skill_development_priority?: number;
-  lab_atmosphere_priority?: number;
-  flexibility_priority?: number;
-  publication_opportunity_priority?: number;
-  interdisciplinary_priority?: number;
-  communication_style_priority?: number;
+
+  // すべて必須フィールドに変更
+  research_intensity_priority: number;
+  advisor_style_priority: number;
+  team_work_priority: number;
+  workload_priority: number;
+  theory_practice_priority: number;
+  research_field_match_priority: number;
+  skill_development_priority: number;
+  lab_atmosphere_priority: number;
+  flexibility_priority: number;
+  publication_opportunity_priority: number;
+  interdisciplinary_priority: number;
+  communication_style_priority: number;
+
+  field_interests: FieldInterest[];
 }
 
-// ★★★ 修正点2: LabResultの型定義を拡張 ★★★
+export interface FieldInterest {
+  field_id: string;
+  interest_level: number;
+}
+
+export interface Laboratory {
+  id: string;
+  name: string;
+  professor: string;
+  research_area: string;
+  specialization: string;
+  description?: string;
+}
+
 export interface LabResult {
   lab_id: string;
   lab_name: string;
@@ -80,6 +99,48 @@ export interface EvaluationResponse {
   total_labs_evaluated?: number;
 }
 
+// ========================================
+// デモプロファイル関連の型定義
+// ========================================
+
+export interface DemoProfileInfo {
+  description: string;
+  characteristics: string[];
+}
+
+export interface DemoProfileWithMetadata {
+  name: string;
+  description: string;
+  characteristics: string[];
+  profile: StudentProfile;
+}
+
+export interface DemoProfilesResponse {
+  profiles: {
+    [key: string]: DemoProfileInfo;
+  };
+  count: number;
+  message: string;
+}
+
+export interface DemoProfileNamesResponse {
+  names: string[];
+  count: number;
+  message: string;
+}
+
+export interface DemoStatsResponse {
+  total_profiles: number;
+  profile_types: {
+    [key: string]: number;
+  };
+  message: string;
+}
+
+// ========================================
+// APIサービスクラス
+// ========================================
+
 class ApiService {
   private api: AxiosInstance;
 
@@ -92,6 +153,7 @@ class ApiService {
       },
     });
 
+    // リクエストインターセプター
     this.api.interceptors.request.use(
       (config) => {
         console.log('🚀 API リクエスト:', config.method?.toUpperCase(), config.url);
@@ -104,6 +166,7 @@ class ApiService {
       }
     );
 
+    // レスポンスインターセプター
     this.api.interceptors.response.use(
       (response) => {
         console.log('✅ API レスポンス:', response.status);
@@ -117,23 +180,225 @@ class ApiService {
     );
   }
 
-  async evaluate(profile: any): Promise<EvaluationResponse> { // profileの型をanyに緩和
+  // ========================================
+  // 基本API
+  // ========================================
+
+  /**
+   * 研究室評価を実行
+   * 
+   * @param profile - 学生プロファイル
+   * @returns 評価結果
+   * @throws エラーメッセージ
+   */
+  async evaluate(profile: any): Promise<EvaluationResponse> {
     try {
-      const response = await this.api.post('/api/evaluate', { student_profile: profile });
+      const response = await this.api.post('/api/evaluate', {
+        student_profile: profile
+      });
       return response.data;
     } catch (error) {
       console.error('❌ 評価API エラー:', error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーに接続できません。サーバーが起動しているか確認してください。');
+        } else if (error.response) {
+          const status = error.response.status;
+          const detail = error.response.data?.detail || '内部エラー';
+          throw new Error(`サーバーエラー (${status}): ${detail}`);
+        }
+      }
+
+      throw new Error('研究室評価の処理中に不明なエラーが発生しました。');
+    }
+  }
+
+  /**
+   * ヘルスチェック
+   * 
+   * @returns サーバーが正常に動作している場合true
+   */
+  async healthCheck(): Promise<boolean> {
+    try {
+      const response = await this.api.get('/health', { timeout: 5000 });
+      return response.status === 200;
+    } catch (error) {
+      console.error('ヘルスチェック失敗:', error);
+      return false;
+    }
+  }
+
+  /**
+   * 研究室一覧を取得
+   * 
+   * @returns 研究室一覧
+   */
+  async getLabs(): Promise<Laboratory[]> {
+    try {
+      const response = await this.api.get('/api/labs');
+      return response.data.labs || [];
+    } catch (error) {
+      console.error('研究室一覧取得エラー:', error);
+      throw new Error('研究室一覧の取得に失敗しました');
+    }
+  }
+
+  // ========================================
+  // デモプロファイルAPI
+  // ========================================
+
+  /**
+   * デモプロファイル一覧を取得
+   * 
+   * @returns デモプロファイル一覧（説明と特徴のみ）
+   * @throws エラーメッセージ
+   */
+  async getDemoProfiles(): Promise<DemoProfilesResponse> {
+    try {
+      const response = await this.api.get('/api/demo/profiles');
+      return response.data;
+    } catch (error) {
+      console.error('デモプロファイル一覧の取得に失敗:', error);
+
       if (axios.isAxiosError(error)) {
         if (error.code === 'ECONNREFUSED') {
           throw new Error('バックエンドサーバーに接続できません。');
         } else if (error.response) {
-          throw new Error(`サーバーエラー: ${error.response.status} ${error.response.data?.detail || '内部エラー'}`);
+          throw new Error(`HTTPエラー: ${error.response.status}`);
         }
       }
-      throw new Error('研究室評価の処理中に不明なエラーが発生しました。');
+
+      throw new Error('デモプロファイル一覧の取得に失敗しました');
+    }
+  }
+
+  /**
+   * デモプロファイル名一覧を取得
+   * 
+   * @returns プロファイル名の配列
+   * @throws エラーメッセージ
+   */
+  async getDemoProfileNames(): Promise<string[]> {
+    try {
+      const response = await this.api.get('/api/demo/profiles/names');
+      const data: DemoProfileNamesResponse = response.data;
+      return data.names;
+    } catch (error) {
+      console.error('デモプロファイル名一覧の取得に失敗:', error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーに接続できません。');
+        } else if (error.response) {
+          throw new Error(`HTTPエラー: ${error.response.status}`);
+        }
+      }
+
+      throw new Error('デモプロファイル名一覧の取得に失敗しました');
+    }
+  }
+
+  /**
+   * 特定のデモプロファイルを取得（メタデータ付き）
+   * 
+   * @param profileName - プロファイル名
+   * @returns メタデータを含むプロファイルデータ
+   * @throws エラーメッセージ
+   */
+  async getDemoProfile(profileName: string): Promise<DemoProfileWithMetadata> {
+    try {
+      const encodedName = encodeURIComponent(profileName);
+      const response = await this.api.get(`/api/demo/profiles/${encodedName}`);
+      return response.data;
+    } catch (error) {
+      console.error(`デモプロファイル '${profileName}' の取得に失敗:`, error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 404) {
+          throw new Error(`プロファイル '${profileName}' が見つかりません`);
+        } else if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーに接続できません。');
+        } else if (error.response) {
+          throw new Error(`HTTPエラー: ${error.response.status}`);
+        }
+      }
+
+      throw new Error(`デモプロファイル '${profileName}' の取得に失敗しました`);
+    }
+  }
+
+  /**
+   * 特定のデモプロファイルを取得（プロファイルデータのみ）
+   * 
+   * @param profileName - プロファイル名
+   * @returns プロファイルデータ（StudentProfile形式）
+   * @throws エラーメッセージ
+   */
+  async getDemoProfileSimple(profileName: string): Promise<StudentProfile> {
+    try {
+      const encodedName = encodeURIComponent(profileName);
+      const response = await this.api.get(`/api/demo/profiles/${encodedName}/simple`);
+      return response.data;
+    } catch (error) {
+      console.error(`デモプロファイル '${profileName}' の取得に失敗:`, error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 404) {
+          throw new Error(`プロファイル '${profileName}' が見つかりません`);
+        } else if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーに接続できません。');
+        } else if (error.response) {
+          throw new Error(`HTTPエラー: ${error.response.status}`);
+        }
+      }
+
+      throw new Error(`デモプロファイル '${profileName}' の取得に失敗しました`);
+    }
+  }
+
+  /**
+   * デモプロファイル統計情報を取得
+   * 
+   * @returns 統計情報（総数、タイプ別カウント）
+   * @throws エラーメッセージ
+   */
+  async getDemoStats(): Promise<DemoStatsResponse> {
+    try {
+      const response = await this.api.get('/api/demo/stats');
+      return response.data;
+    } catch (error) {
+      console.error('デモプロファイル統計情報の取得に失敗:', error);
+
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNREFUSED') {
+          throw new Error('バックエンドサーバーに接続できません。');
+        } else if (error.response) {
+          throw new Error(`HTTPエラー: ${error.response.status}`);
+        }
+      }
+
+      throw new Error('デモプロファイル統計情報の取得に失敗しました');
     }
   }
 }
 
+// ========================================
+// シングルトンインスタンスをエクスポート
+// ========================================
+
 export const apiService = new ApiService();
 export default apiService;
+
+// ========================================
+// ユーティリティ関数
+// ========================================
+
+/**
+ * API接続テスト
+ * 
+ * @returns サーバーが正常に動作している場合true
+ */
+export const testApiConnection = async (): Promise<boolean> => {
+  return await apiService.healthCheck();
+};
