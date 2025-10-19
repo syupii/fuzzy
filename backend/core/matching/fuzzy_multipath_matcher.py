@@ -1,6 +1,6 @@
 # backend/core/matching/fuzzy_multipath_matcher.py
 """
-ファジィ決定木マッチャー - 技術資料完全準拠版
+ファジィ決定木マッチャー - 技術資料完全準拠版（分野重視改善版）
 
 【パラメータ調整ガイド】
 ====================================
@@ -31,9 +31,11 @@
    - 標準値(0.01): バランスが良い
    - 大きい値(0.02-0.05): 少ないパスで評価（高速、やや精度低下）
 
-4. 分野マッチング
-   CATEGORY_DECAY = 0.7  ← この値は技術資料準拠（変更非推奨）
-   NO_MATCH_PENALTY = 0.3
+4. 分野マッチング（★改善版パラメータ★）
+   FIELD_EXACT_BONUS = 0.15        ← 完全一致ボーナス係数
+   FIELD_MISMATCH_PENALTY = 0.15   ← 不一致ペナルティ係数
+   CATEGORY_DECAY = 0.7            ← カテゴリ一致時の減衰係数
+   NO_MATCH_PENALTY = 0.3          ← 不一致時のベーススコア
 ====================================
 """
 
@@ -154,13 +156,13 @@ class MembershipFunctions:
 
 class FuzzyMultiPathMatcher:
     """
-    ファジィ決定木マッチャー（技術資料完全準拠版）
+    ファジィ決定木マッチャー（分野重視改善版）
     
     主な機能:
     1. 優先度に基づく適応的決定木構築
     2. 複数パスの探索とメンバーシップ度計算
     3. 所属度による重み付け統合
-    4. 技術資料通りの分野マッチング（減衰係数0.7）
+    4. 改善版の分野マッチング（ボーナス/ペナルティ付き）
     """
     
     # 評価基準（12項目 + 分野重視度）
@@ -177,43 +179,31 @@ class FuzzyMultiPathMatcher:
     
     # 1. 類似度計算パラメータ（技術資料 3.5.2節）
     SIMILARITY_SIGMA = 0.2  # ガウス類似度のσ
-    # 小さい値(0.1-0.15): 厳しい評価
-    # 標準値(0.2): バランス
-    # 大きい値(0.25-0.3): 緩い評価
     
     # 2. 枝刈り閾値
     PRUNING_THRESHOLD = 0.01  # 枝刈り閾値
-    # 小さい値(0.005): 高精度だが遅い
-    # 標準値(0.01): バランス
-    # 大きい値(0.02-0.05): 高速だが精度低下
     
     # 3. 優先度閾値（層数に影響）★★★ 最も重要 ★★★
     HIGH_PRIORITY_THRESHOLD = 8.0  # 高優先度閾値
     MID_PRIORITY_THRESHOLD = 5.0   # 中優先度閾値
     
-    # 【推奨設定】
-    # バランス型（推奨）: HIGH=7.0, MID=4.0
-    #   → 層数10-12、精度90-92%、計算時間80-100ms
-    #
-    # 高精度型: HIGH=6.0, MID=3.0
-    #   → 層数12-13、精度92-94%、計算時間120-150ms
-    #
-    # 軽量型（現在）: HIGH=8.0, MID=5.0
-    #   → 層数8-9、精度88%、計算時間50ms
-    
-    # 4. 分野マッチングパラメータ（技術資料 3.6節）
-    CATEGORY_DECAY = 0.7    # カテゴリ一致時の減衰係数
-    NO_MATCH_PENALTY = 0.3  # 不一致時のペナルティ
+    # 4. 分野マッチングパラメータ（★改善版★）
+    FIELD_EXACT_BONUS = 0.15        # 完全一致時のボーナス係数
+    FIELD_MISMATCH_PENALTY = 0.15   # 不一致時のペナルティ係数
+    CATEGORY_DECAY = 0.7            # カテゴリ一致時の減衰係数
+    NO_MATCH_PENALTY = 0.3          # 不一致時のベーススコア
     
     # ============================================================
     
     def __init__(self):
-        print("✅ FuzzyMultiPathMatcher 初期化完了（技術資料完全準拠版）")
-        print(f"   - σ = {self.SIMILARITY_SIGMA} （技術資料 3.5.2節）")
+        print("✅ FuzzyMultiPathMatcher 初期化完了（分野重視改善版）")
+        print(f"   - σ = {self.SIMILARITY_SIGMA}")
         print(f"   - 高優先度閾値 = {self.HIGH_PRIORITY_THRESHOLD}")
         print(f"   - 中優先度閾値 = {self.MID_PRIORITY_THRESHOLD}")
         print(f"   - 枝刈り閾値 = {self.PRUNING_THRESHOLD}")
-        print(f"   - 分野減衰係数 = {self.CATEGORY_DECAY} （技術資料 3.6節）")
+        print(f"   - 分野減衰係数 = {self.CATEGORY_DECAY}")
+        print(f"   - 完全一致ボーナス = {self.FIELD_EXACT_BONUS}")
+        print(f"   - 不一致ペナルティ = {self.FIELD_MISMATCH_PENALTY}")
     
     def calculate_compatibility(
         self,
@@ -221,44 +211,183 @@ class FuzzyMultiPathMatcher:
         lab: Dict[str, Any]
     ) -> CompatibilityResult:
         """
-        適合度計算（技術資料 3章 完全準拠）
+        適合度計算（改善版）
         
         Step 1 & 2: 優先度ソート + 決定木構築
         Step 3: 複数パスの導出
         Step 4: 複数パスの統合（基本項目スコア）
         Step 5: 分野マッチング
-        Step 6: 最終スコア統合
+        Step 6: 改善版の最終スコア統合（非線形alpha + ボーナス/ペナルティ）
         """
         
+        print(f"\n{'#'*70}")
+        print(f"### 適合度計算開始 ###")
+        print(f"{'#'*70}")
+        
         # Step 1 & 2: 優先度ソート + 決定木構築
+        print(f"\n📝 Step 1 & 2: 優先度ソート + 決定木構築")
         priorities = self._get_sorted_priorities(student)
         tree_layers = self._build_fuzzy_tree(priorities)
+        print(f"   高優先度項目数: {sum(1 for p in priorities if p['priority'] >= self.HIGH_PRIORITY_THRESHOLD)}")
+        print(f"   中優先度項目数: {sum(1 for p in priorities if self.MID_PRIORITY_THRESHOLD <= p['priority'] < self.HIGH_PRIORITY_THRESHOLD)}")
+        print(f"   決定木レイヤー数: {len(tree_layers)}")
         
         # Step 3: 複数パスの導出
+        print(f"\n🌳 Step 3: 複数パスの導出")
         fuzzy_paths = self._explore_fuzzy_paths(tree_layers, student, lab)
+        print(f"   生成パス数（枝刈り前）: {len(fuzzy_paths)}")
         
         # 枝刈り後の正規化
         fuzzy_paths = self._normalize_path_memberships(fuzzy_paths)
+        print(f"   有効パス数（枝刈り後）: {len(fuzzy_paths)}")
+        if fuzzy_paths:
+            print(f"   最大所属度: {max(p.total_membership for p in fuzzy_paths):.4f}")
+            print(f"   最小所属度: {min(p.total_membership for p in fuzzy_paths):.4f}")
         
         # Step 4: 複数パスの統合
+        print(f"\n🔀 Step 4: 複数パスの統合")
         basic_score, criteria_scores = self._integrate_fuzzy_paths(
             fuzzy_paths, student, lab
         )
+        print(f"   基本スコア: {basic_score:.4f}")
+        print(f"   項目別スコア:")
+        for i, (criterion, score) in enumerate(sorted(criteria_scores.items(), key=lambda x: x[1], reverse=True)[:5], 1):
+            print(f"     {i}. {criterion}: {score:.4f}")
         
-        # Step 5: 分野マッチング（技術資料 3.6節）
+        # Step 5: 分野マッチング
+        print(f"\n🎯 Step 5: 分野マッチング")
         field_interests = student.get("field_interests", {})
         lab_field = lab.get("field_id", "")
         field_score, field_detail = self._calculate_field_match(
             field_interests, lab_field
         )
+        print(f"   研究室分野: {lab_field}")
+        print(f"   学生の興味: {list(field_interests.keys()) if field_interests else 'なし'}")
+        print(f"   マッチタイプ: {field_detail.get('match_type', 'unknown')}")
+        print(f"   分野スコア: {field_score:.4f}")
         
-        # Step 6: 最終スコア統合（技術資料 3.7節）
+        # ========================================
+        # ★★★ Step 6: 改善版の最終スコア統合 ★★★
+        # ========================================
+        
         rfm = student.get("research_field_match", 5.0)
-        alpha = rfm / 10.0  # 分野の比重
-        beta = 1.0 - alpha  # 基本項目の比重
         
-        total = beta * basic_score + alpha * field_score
+        print(f"\n{'='*70}")
+        print(f"🔍 【Step 6: 最終スコア統合 - デバッグ出力】")
+        print(f"{'='*70}")
+        
+        # 【改善】非線形alpha計算（分野重視度を強化）
+        print(f"\n📊 Step 6-1: alpha/beta計算")
+        print(f"   research_field_match (rfm) = {rfm}")
+        print(f"   計算式: alpha = 0.2 + (rfm/10)^2.0 × 0.7")
+        
+        calculated_alpha = 0.2 + (rfm / 10.0) ** 2.0 * 0.7
+        calculated_beta = 1.0 - calculated_alpha
+        
+        print(f"   計算結果:")
+        print(f"   ├─ calculated_alpha = 0.2 + ({rfm}/10)^2.0 × 0.7")
+        print(f"   ├─ calculated_alpha = 0.2 + {(rfm/10.0)**2.0:.4f} × 0.7")
+        print(f"   ├─ calculated_alpha = 0.2 + {(rfm/10.0)**2.0 * 0.7:.4f}")
+        print(f"   ├─ calculated_alpha = {calculated_alpha:.4f}")
+        print(f"   └─ calculated_beta = 1.0 - {calculated_alpha:.4f} = {calculated_beta:.4f}")
+        
+        # ★自動修正ロジック（alpha/beta逆転問題の対策）★
+        print(f"\n🔧 Step 6-2: 自動修正チェック")
+        correction_applied = False
+        
+        if rfm >= 5.0:
+            print(f"   モード: 分野重視（rfm={rfm} ≥ 5.0）")
+            print(f"   期待: alpha > beta（分野の比重が大きいべき）")
+            print(f"   実際: alpha={calculated_alpha:.4f}, beta={calculated_beta:.4f}")
+            
+            if calculated_alpha < calculated_beta:
+                print(f"   ⚠️ 警告: alpha < beta（逆転している！）")
+                print(f"   → 自動修正: 値を入れ替えます")
+                alpha = calculated_beta
+                beta = calculated_alpha
+                correction_applied = True
+            else:
+                print(f"   ✅ 正常: alpha > beta")
+                alpha = calculated_alpha
+                beta = calculated_beta
+        else:
+            print(f"   モード: 基本重視（rfm={rfm} < 5.0）")
+            print(f"   期待: beta > alpha（基本の比重が大きいべき）")
+            print(f"   実際: alpha={calculated_alpha:.4f}, beta={calculated_beta:.4f}")
+            
+            if calculated_beta < calculated_alpha:
+                print(f"   ⚠️ 警告: beta < alpha（逆転している！）")
+                print(f"   → 自動修正: 値を入れ替えます")
+                alpha = calculated_beta
+                beta = calculated_alpha
+                correction_applied = True
+            else:
+                print(f"   ✅ 正常: beta > alpha")
+                alpha = calculated_alpha
+                beta = calculated_beta
+        
+        print(f"\n   【最終確定値】")
+        print(f"   ⭐ alpha (分野の比重) = {alpha:.4f} ({alpha*100:.2f}%)")
+        print(f"   ⭐ beta (基本の比重) = {beta:.4f} ({beta*100:.2f}%)")
+        if correction_applied:
+            print(f"   ※自動修正が適用されました")
+        
+        # 基本統合
+        print(f"\n📈 Step 6-3: 基本統合")
+        print(f"   basic_score = {basic_score:.4f}")
+        print(f"   field_score = {field_score:.4f}")
+        print(f"   計算式: total = beta × basic_score + alpha × field_score")
+        print(f"   計算式: total = {beta:.4f} × {basic_score:.4f} + {alpha:.4f} × {field_score:.4f}")
+        
+        basic_contribution = beta * basic_score
+        field_contribution = alpha * field_score
+        total = basic_contribution + field_contribution
+        
+        print(f"   結果:")
+        print(f"   ├─ 基本寄与 = {beta:.4f} × {basic_score:.4f} = {basic_contribution:.4f}")
+        print(f"   ├─ 分野寄与 = {alpha:.4f} × {field_score:.4f} = {field_contribution:.4f}")
+        print(f"   └─ 合計 = {basic_contribution:.4f} + {field_contribution:.4f} = {total:.4f}")
+        
+        # 【改善】ボーナス/ペナルティ適用
+        match_type = field_detail.get("match_type", "unknown")
+        
+        print(f"\n⭐ Step 6-4: ボーナス/ペナルティ適用")
+        print(f"   分野マッチタイプ: {match_type}")
+        
+        if match_type == "exact":
+            # 完全一致ボーナス
+            bonus = self.FIELD_EXACT_BONUS * alpha
+            print(f"   ✨ 完全一致ボーナス")
+            print(f"   計算: {self.FIELD_EXACT_BONUS} × {alpha:.4f} = {bonus:.4f}")
+            print(f"   適用前: {total:.4f}")
+            total += bonus
+            print(f"   適用後: {total:.4f}")
+            field_detail["bonus_applied"] = True
+            field_detail["bonus_value"] = bonus
+            
+        elif match_type == "no_match":
+            # 不一致ペナルティ
+            penalty = self.FIELD_MISMATCH_PENALTY * alpha
+            print(f"   ⚠️ 不一致ペナルティ")
+            print(f"   計算: {self.FIELD_MISMATCH_PENALTY} × {alpha:.4f} = {penalty:.4f}")
+            print(f"   適用前: {total:.4f}")
+            total -= penalty
+            print(f"   適用後: {total:.4f}")
+            field_detail["penalty_applied"] = True
+            field_detail["penalty_value"] = penalty
+            
+        else:
+            print(f"   → ボーナス/ペナルティなし")
+        
+        # 0.0-1.0にクリップ
+        print(f"\n🎯 Step 6-5: 最終スコア確定")
+        print(f"   クリップ前: {total:.4f}")
         total = max(0.0, min(1.0, total))
+        print(f"   クリップ後: {total:.4f} (0.0-1.0の範囲に制限)")
+        
+        print(f"\n{'='*70}")
+        print(f"✅ 【Step 6完了】最終適合度 = {total:.4f}")
+        print(f"{'='*70}\n")
         
         # 説明文生成
         explanation = self._generate_explanation(
@@ -268,6 +397,15 @@ class FuzzyMultiPathMatcher:
         
         # 推薦レベル
         recommendation = self._get_recommendation(total)
+        
+        # 最終サマリー
+        print(f"\n{'#'*70}")
+        print(f"### 計算完了サマリー ###")
+        print(f"{'#'*70}")
+        print(f"   総合適合度: {total:.4f}")
+        print(f"   推薦レベル: {recommendation}")
+        print(f"   説明: {explanation}")
+        print(f"{'#'*70}\n")
         
         return CompatibilityResult(
             total_compatibility=total,
@@ -638,7 +776,7 @@ class FuzzyMultiPathMatcher:
         field_detail: Dict,
         num_paths: int
     ) -> str:
-        """説明文生成"""
+        """説明文生成（改善版）"""
         parts = []
         
         # 基本スコア情報
@@ -660,9 +798,17 @@ class FuzzyMultiPathMatcher:
         # 分野情報
         match_type = field_detail.get("match_type", "unknown")
         if match_type == "exact":
-            parts.append("興味分野と完全一致")
+            parts.append("✨興味分野と完全一致")
+            if field_detail.get("bonus_applied"):
+                bonus_val = field_detail['bonus_value']
+                parts.append(f"(+{bonus_val:.3f})")
         elif match_type == "category":
             parts.append("関連分野")
+        elif match_type == "no_match":
+            parts.append("⚠️興味分野と異なる")
+            if field_detail.get("penalty_applied"):
+                penalty_val = field_detail['penalty_value']
+                parts.append(f"(-{penalty_val:.3f})")
         
         # ファジィパス情報
         parts.append(f"{num_paths}パスで評価")
@@ -686,7 +832,7 @@ class FuzzyMultiPathMatcher:
 # テスト用
 if __name__ == "__main__":
     print("=" * 60)
-    print("FuzzyMultiPathMatcher テスト")
+    print("FuzzyMultiPathMatcher テスト（分野重視改善版）")
     print("=" * 60)
     
     matcher = FuzzyMultiPathMatcher()
@@ -698,7 +844,7 @@ if __name__ == "__main__":
         "team_work": 5,
         "workload": 8,
         "theory_practice": 6,
-        "research_field_match": 7,
+        "research_field_match": 9,  # 分野重視
         "skill_development": 7,
         "lab_atmosphere": 6,
         "flexibility": 5,
@@ -737,6 +883,8 @@ if __name__ == "__main__":
     print(f"\n総合適合度: {result.total_compatibility:.3f}")
     print(f"基本スコア: {result.basic_score:.3f}")
     print(f"分野スコア: {result.field_score:.3f}")
+    print(f"分野比重α: {result.field_weight_alpha:.3f}")
+    print(f"基本比重β: {result.basic_weight_beta:.3f}")
     print(f"評価パス数: {len(result.fuzzy_paths)}")
     print(f"推薦: {result.recommendation}")
     print(f"説明: {result.explanation}")
