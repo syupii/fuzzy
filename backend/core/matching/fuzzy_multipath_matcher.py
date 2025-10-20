@@ -178,7 +178,7 @@ class FuzzyMultiPathMatcher:
     # ============================================================
     
     # 1. 類似度計算パラメータ（技術資料 3.5.2節）
-    SIMILARITY_SIGMA = 0.2  # ガウス類似度のσ
+    SIMILARITY_SIGMA = 0.3  # ガウス類似度のσ
     
     # 2. 枝刈り閾値
     PRUNING_THRESHOLD = 0.01  # 枝刈り閾値
@@ -267,73 +267,64 @@ class FuzzyMultiPathMatcher:
         print(f"   分野スコア: {field_score:.4f}")
         
         # ========================================
-        # ★★★ Step 6: 改善版の最終スコア統合 ★★★
+        # ★★★ Step 6: 修正版の最終スコア統合 ★★★
         # ========================================
         
         rfm = student.get("research_field_match", 5.0)
         
         print(f"\n{'='*70}")
-        print(f"🔍 【Step 6: 最終スコア統合 - デバッグ出力】")
+        print(f"🔍 【Step 6: 最終スコア統合 - 修正版】")
         print(f"{'='*70}")
         
-        # 【改善】非線形alpha計算（分野重視度を強化）
-        print(f"\n📊 Step 6-1: alpha/beta計算")
+        # 【修正】rfm=5で alpha=beta=0.5 になる線形補間
+        print(f"\n📊 Step 6-1: alpha/beta計算（修正版）")
         print(f"   research_field_match (rfm) = {rfm}")
-        print(f"   計算式: alpha = 0.2 + (rfm/10)^2.0 × 0.7")
         
-        calculated_alpha = 0.2 + (rfm / 10.0) ** 2.0 * 0.7
+        if rfm >= 5.0:
+            # 分野重視モード: rfm 5→10 で alpha 0.5→0.9
+            calculated_alpha = 0.5 + (rfm - 5.0) / 5.0 * 0.4
+            mode = "分野重視"
+            print(f"   モード: {mode}（rfm={rfm} ≥ 5.0）")
+            print(f"   計算式: alpha = 0.5 + (rfm - 5.0) / 5.0 × 0.4")
+            print(f"   計算式: alpha = 0.5 + ({rfm} - 5.0) / 5.0 × 0.4")
+            print(f"   計算式: alpha = 0.5 + {(rfm - 5.0) / 5.0:.4f} × 0.4")
+            print(f"   計算式: alpha = 0.5 + {(rfm - 5.0) / 5.0 * 0.4:.4f}")
+        else:
+            # 基本重視モード: rfm 0→5 で alpha 0.2→0.5
+            calculated_alpha = 0.2 + rfm / 5.0 * 0.3
+            mode = "基本重視"
+            print(f"   モード: {mode}（rfm={rfm} < 5.0）")
+            print(f"   計算式: alpha = 0.2 + rfm / 5.0 × 0.3")
+            print(f"   計算式: alpha = 0.2 + {rfm} / 5.0 × 0.3")
+            print(f"   計算式: alpha = 0.2 + {rfm / 5.0:.4f} × 0.3")
+            print(f"   計算式: alpha = 0.2 + {rfm / 5.0 * 0.3:.4f}")
+        
         calculated_beta = 1.0 - calculated_alpha
         
         print(f"   計算結果:")
-        print(f"   ├─ calculated_alpha = 0.2 + ({rfm}/10)^2.0 × 0.7")
-        print(f"   ├─ calculated_alpha = 0.2 + {(rfm/10.0)**2.0:.4f} × 0.7")
-        print(f"   ├─ calculated_alpha = 0.2 + {(rfm/10.0)**2.0 * 0.7:.4f}")
         print(f"   ├─ calculated_alpha = {calculated_alpha:.4f}")
         print(f"   └─ calculated_beta = 1.0 - {calculated_alpha:.4f} = {calculated_beta:.4f}")
         
-        # ★自動修正ロジック（alpha/beta逆転問題の対策）★
-        print(f"\n🔧 Step 6-2: 自動修正チェック")
-        correction_applied = False
-        
-        if rfm >= 5.0:
-            print(f"   モード: 分野重視（rfm={rfm} ≥ 5.0）")
-            print(f"   期待: alpha > beta（分野の比重が大きいべき）")
-            print(f"   実際: alpha={calculated_alpha:.4f}, beta={calculated_beta:.4f}")
-            
-            if calculated_alpha < calculated_beta:
-                print(f"   ⚠️ 警告: alpha < beta（逆転している！）")
-                print(f"   → 自動修正: 値を入れ替えます")
-                alpha = calculated_beta
-                beta = calculated_alpha
-                correction_applied = True
-            else:
-                print(f"   ✅ 正常: alpha > beta")
-                alpha = calculated_alpha
-                beta = calculated_beta
-        else:
-            print(f"   モード: 基本重視（rfm={rfm} < 5.0）")
-            print(f"   期待: beta > alpha（基本の比重が大きいべき）")
-            print(f"   実際: alpha={calculated_alpha:.4f}, beta={calculated_beta:.4f}")
-            
-            if calculated_beta < calculated_alpha:
-                print(f"   ⚠️ 警告: beta < alpha（逆転している！）")
-                print(f"   → 自動修正: 値を入れ替えます")
-                alpha = calculated_beta
-                beta = calculated_alpha
-                correction_applied = True
-            else:
-                print(f"   ✅ 正常: beta > alpha")
-                alpha = calculated_alpha
-                beta = calculated_beta
+        alpha = calculated_alpha
+        beta = calculated_beta
         
         print(f"\n   【最終確定値】")
         print(f"   ⭐ alpha (分野の比重) = {alpha:.4f} ({alpha*100:.2f}%)")
         print(f"   ⭐ beta (基本の比重) = {beta:.4f} ({beta*100:.2f}%)")
-        if correction_applied:
-            print(f"   ※自動修正が適用されました")
+        
+        # 期待値チェック
+        if rfm >= 5.0:
+            expected = "alpha >= beta（分野重視）"
+            actual_ok = alpha >= beta
+        else:
+            expected = "beta >= alpha（基本重視）"
+            actual_ok = beta >= alpha
+        
+        print(f"   期待: {expected}")
+        print(f"   実際: {'✅ 正常' if actual_ok else '❌ 異常'}")
         
         # 基本統合
-        print(f"\n📈 Step 6-3: 基本統合")
+        print(f"\n📈 Step 6-2: 基本統合")
         print(f"   basic_score = {basic_score:.4f}")
         print(f"   field_score = {field_score:.4f}")
         print(f"   計算式: total = beta × basic_score + alpha × field_score")
@@ -351,7 +342,7 @@ class FuzzyMultiPathMatcher:
         # 【改善】ボーナス/ペナルティ適用
         match_type = field_detail.get("match_type", "unknown")
         
-        print(f"\n⭐ Step 6-4: ボーナス/ペナルティ適用")
+        print(f"\n⭐ Step 6-3: ボーナス/ペナルティ適用")
         print(f"   分野マッチタイプ: {match_type}")
         
         if match_type == "exact":
@@ -380,7 +371,7 @@ class FuzzyMultiPathMatcher:
             print(f"   → ボーナス/ペナルティなし")
         
         # 0.0-1.0にクリップ
-        print(f"\n🎯 Step 6-5: 最終スコア確定")
+        print(f"\n🎯 Step 6-4: 最終スコア確定")
         print(f"   クリップ前: {total:.4f}")
         total = max(0.0, min(1.0, total))
         print(f"   クリップ後: {total:.4f} (0.0-1.0の範囲に制限)")
@@ -675,7 +666,7 @@ class FuzzyMultiPathMatcher:
         priority  1 → weight 0.01
         """
         normalized = priority / 10.0
-        weight = normalized ** 1.8
+        weight = normalized ** 1.5
         return weight
     
     def _calculate_gaussian_similarity(

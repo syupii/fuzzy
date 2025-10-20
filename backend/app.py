@@ -198,14 +198,20 @@ def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
         priority_key = f"{criterion}_priority"
         normalized[priority_key] = student.get(priority_key, 5.0)
     
-    # ★★★ 修正点: 'field_interests' のデータ構造をリストから辞書に変換 ★★★
+    # ★★★ 修正: field_interests は正規化せず、1-10のまま辞書形式に変換 ★★★
     field_interests_list = student.get("field_interests", [])
-    # リスト（例: [{'field_id': 'ai_ml', 'interest_level': 9}]）を
-    # 辞書（例: {'ai_ml': 0.889}）に変換し、興味度も正規化する
     normalized["field_interests"] = {
-        item["field_id"]: (item["interest_level"] - 1) / 9.0 if item.get("interest_level", 1) > 1 else 0.0
+        item["field_id"]: item.get("interest_level", 5)  # ← 正規化を削除
         for item in field_interests_list if "field_id" in item
     }
+    
+    # デバッグ出力
+    print(f"\n{'='*70}")
+    print(f"【デバッグ】学生プロファイル正規化")
+    print(f"{'='*70}")
+    print(f"正規化前 field_interests: {field_interests_list}")
+    print(f"正規化後 field_interests: {normalized['field_interests']}")
+    print(f"{'='*70}\n")
     
     return normalized
 
