@@ -163,7 +163,7 @@
   "labs": [
     {
       "id": "lab_001",
-      "name": "Makiba Lab",
+      "name": "坂本 ゼミ",
       "professor": "坂本 牧葉",
       "research_area": "視覚デザイン",
       "specialization": "視覚デザイン、イラストレーション、感性工学",
@@ -185,8 +185,7 @@
         "flexibility": 7,
         "publication_opportunity": 4,
         "interdisciplinary": 8,
-        "communication_style": 8,
-        "research_field_match": 5.5
+        "communication_style": 8
       },
       "metadata": {
         "faculty_count": 1,
@@ -198,7 +197,7 @@
     },
     {
       "id": "lab_002",
-      "name": "情報可視化研究室",
+      "name": "伊藤 正彦ゼミ",
       "professor": "伊藤 正彦",
       "research_area": "情報可視化",
       "specialization": "情報可視化、ユーザインタフェース、データ工学",
@@ -220,8 +219,7 @@
         "flexibility": 9,
         "publication_opportunity": 9,
         "interdisciplinary": 8,
-        "communication_style": 9,
-        "research_field_match": 5.5
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -233,7 +231,7 @@
     },
     {
       "id": "lab_003",
-      "name": "斎藤 一 研究室",
+      "name": "斎藤 一 ゼミ",
       "professor": "斎藤 一",
       "research_area": "観光情報学",
       "specialization": "観光情報学、教育工学、Webデザイン",
@@ -255,8 +253,7 @@
         "flexibility": 7,
         "publication_opportunity": 5,
         "interdisciplinary": 9,
-        "communication_style": 9,
-        "research_field_match": 5.5
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -290,8 +287,7 @@
         "flexibility": 7,
         "publication_opportunity": 6,
         "interdisciplinary": 4,
-        "communication_style": 6,
-        "research_field_match": 5.5
+        "communication_style": 6
       },
       "metadata": {
         "faculty_count": 1,
@@ -303,7 +299,7 @@
     },
     {
       "id": "lab_005",
-      "name": "言語・文化研究室",
+      "name": "飯嶋 ゼミ",
       "professor": "飯嶋 美知子",
       "research_area": "日本語教育学",
       "specialization": "日本語教育学、日中対照言語学、異文化理解",
@@ -325,8 +321,7 @@
         "flexibility": 9,
         "publication_opportunity": 3,
         "interdisciplinary": 6,
-        "communication_style": 7,
-        "research_field_match": 5.5
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -338,7 +333,7 @@
     },
     {
       "id": "lab_006",
-      "name": "向田ゼミナール",
+      "name": "向田ゼミ",
       "professor": "向田",
       "research_area": "画像処理",
       "specialization": "画像処理、3DCG、VR/AR、プロジェクションマッピング",
@@ -361,8 +356,7 @@
         "flexibility": 3,
         "publication_opportunity": 8,
         "interdisciplinary": 7,
-        "communication_style": 7,
-        "research_field_match": 4.0
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -397,8 +391,7 @@
         "flexibility": 5,
         "publication_opportunity": 5,
         "interdisciplinary": 8,
-        "communication_style": 9,
-        "research_field_match": 4.0
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -432,8 +425,7 @@
         "flexibility": 6,
         "publication_opportunity": 10,
         "interdisciplinary": 5,
-        "communication_style": 8,
-        "research_field_match": 5.5
+        "communication_style": 8
       },
       "metadata": {
         "faculty_count": 1,
@@ -467,8 +459,7 @@
         "flexibility": 7,
         "publication_opportunity": 3,
         "interdisciplinary": 6,
-        "communication_style": 4,
-        "research_field_match": 5.5
+        "communication_style": 4
       },
       "metadata": {
         "faculty_count": 1,
@@ -480,7 +471,7 @@
     },
     {
       "id": "lab_010",
-      "name": "金ゼミ Kコンテンツ戦略ラボ",
+      "name": "金ゼミ ",
       "professor": "金 銀珠",
       "research_area": "韓国IT・コンテンツ産業研究",
       "specialization": "韓国IT・コンテンツ産業研究、韓国語教育、多言語Web制作",
@@ -502,8 +493,7 @@
         "flexibility": 7,
         "publication_opportunity": 3,
         "interdisciplinary": 6,
-        "communication_style": 8,
-        "research_field_match": 5.5
+        "communication_style": 8
       },
       "metadata": {
         "faculty_count": 1,
@@ -515,7 +505,7 @@
     },
     {
       "id": "lab_011",
-      "name": "辻研究室",
+      "name": "辻ゼミ",
       "professor": "辻 順平",
       "research_area": "人工知能",
       "specialization": "人工知能、機械学習、社会シミュレーション、IoT",
@@ -538,8 +528,7 @@
         "flexibility": 6,
         "publication_opportunity": 9,
         "interdisciplinary": 7,
-        "communication_style": 8,
-        "research_field_match": 4.0
+        "communication_style": 8
       },
       "metadata": {
         "faculty_count": 1,
@@ -573,8 +562,7 @@
         "flexibility": 8,
         "publication_opportunity": 4,
         "interdisciplinary": 6,
-        "communication_style": 5,
-        "research_field_match": 5.5
+        "communication_style": 5
       },
       "metadata": {
         "faculty_count": 1,
@@ -607,8 +595,7 @@
         "flexibility": 8,
         "publication_opportunity": 3,
         "interdisciplinary": 3,
-        "communication_style": 4,
-        "research_field_match": 6.5
+        "communication_style": 4
       },
       "metadata": {
         "faculty_count": 1,
@@ -620,7 +607,7 @@
     },
     {
       "id": "lab_014",
-      "name": "Hayata Lab",
+      "name": "隼田ゼミ",
       "professor": "隼田",
       "research_area": "メディアアート",
       "specialization": "メディアアート、コンテンツデザイン、地域連携",
@@ -642,8 +629,7 @@
         "flexibility": 7,
         "publication_opportunity": 6,
         "interdisciplinary": 8,
-        "communication_style": 9,
-        "research_field_match": 5.5
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -676,8 +662,7 @@
         "flexibility": 6,
         "publication_opportunity": 3,
         "interdisciplinary": 2,
-        "communication_style": 6,
-        "research_field_match": 6.5
+        "communication_style": 6
       },
       "metadata": {
         "faculty_count": 1,
@@ -689,7 +674,7 @@
     },
     {
       "id": "lab_016",
-      "name": "大島映像研究室 (OK Lab)",
+      "name": "大島ゼミ",
       "professor": "大島",
       "research_area": "映像表現",
       "specialization": "映像表現、アニメーション、メディアアート",
@@ -711,8 +696,7 @@
         "flexibility": 6,
         "publication_opportunity": 7,
         "interdisciplinary": 7,
-        "communication_style": 7,
-        "research_field_match": 5.5
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -746,8 +730,7 @@
         "flexibility": 7,
         "publication_opportunity": 2,
         "interdisciplinary": 3,
-        "communication_style": 3,
-        "research_field_match": 5.5
+        "communication_style": 3
       },
       "metadata": {
         "faculty_count": 1,
@@ -759,7 +742,7 @@
     },
     {
       "id": "lab_018",
-      "name": "ちかゼミ",
+      "name": "近澤ゼミ",
       "professor": "近澤",
       "research_area": "Webデザイン",
       "specialization": "Webデザイン、UX・UIデザイン、デザイン思考",
@@ -781,8 +764,7 @@
         "flexibility": 6,
         "publication_opportunity": 5,
         "interdisciplinary": 7,
-        "communication_style": 9,
-        "research_field_match": 5.5
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -816,8 +798,7 @@
         "flexibility": 7,
         "publication_opportunity": 4,
         "interdisciplinary": 5,
-        "communication_style": 5,
-        "research_field_match": 5.5
+        "communication_style": 5
       },
       "metadata": {
         "faculty_count": 1,
@@ -829,7 +810,7 @@
     },
     {
       "id": "lab_020",
-      "name": "山北ゼミナール",
+      "name": "山北ゼミ",
       "professor": "山北",
       "research_area": "データ工学",
       "specialization": "データ工学、データベース、ソフトウェア開発",
@@ -851,8 +832,7 @@
         "flexibility": 4,
         "publication_opportunity": 3,
         "interdisciplinary": 2,
-        "communication_style": 2,
-        "research_field_match": 5.5
+        "communication_style": 2
       },
       "metadata": {
         "faculty_count": 1,
@@ -887,8 +867,7 @@
         "flexibility": 7,
         "publication_opportunity": 6,
         "interdisciplinary": 7,
-        "communication_style": 7,
-        "research_field_match": 4.0
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -921,8 +900,7 @@
         "flexibility": 8,
         "publication_opportunity": 2,
         "interdisciplinary": 1,
-        "communication_style": 2,
-        "research_field_match": 6.5
+        "communication_style": 2
       },
       "metadata": {
         "faculty_count": 1,
@@ -934,7 +912,7 @@
     },
     {
       "id": "lab_023",
-      "name": "平山研究室",
+      "name": "平山ゼミ",
       "professor": "平山",
       "research_area": "コンピュータ音楽",
       "specialization": "コンピュータ音楽、メディアアート、音響",
@@ -956,8 +934,7 @@
         "flexibility": 6,
         "publication_opportunity": 8,
         "interdisciplinary": 7,
-        "communication_style": 7,
-        "research_field_match": 5.5
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -969,7 +946,7 @@
     },
     {
       "id": "lab_024",
-      "name": "守 啓祐ゼミナール",
+      "name": "守 ゼミ",
       "professor": "守 啓祐",
       "research_area": "音声情報処理",
       "specialization": "音声情報処理、画像処理、組み込み機器",
@@ -991,8 +968,7 @@
         "flexibility": 7,
         "publication_opportunity": 3,
         "interdisciplinary": 6,
-        "communication_style": 5,
-        "research_field_match": 5.5
+        "communication_style": 5
       },
       "metadata": {
         "faculty_count": 1,
@@ -1026,8 +1002,7 @@
         "flexibility": 7,
         "publication_opportunity": 6,
         "interdisciplinary": 7,
-        "communication_style": 9,
-        "research_field_match": 5.5
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -1062,8 +1037,7 @@
         "flexibility": 7,
         "publication_opportunity": 7,
         "interdisciplinary": 8,
-        "communication_style": 7,
-        "research_field_match": 4.0
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -1098,8 +1072,7 @@
         "flexibility": 8,
         "publication_opportunity": 5,
         "interdisciplinary": 8,
-        "communication_style": 7,
-        "research_field_match": 4.0
+        "communication_style": 7
       },
       "metadata": {
         "faculty_count": 1,
@@ -1132,8 +1105,7 @@
         "flexibility": 9,
         "publication_opportunity": 3,
         "interdisciplinary": 5,
-        "communication_style": 6,
-        "research_field_match": 6.5
+        "communication_style": 6
       },
       "metadata": {
         "faculty_count": 1,
@@ -1169,8 +1141,7 @@
         "flexibility": 7,
         "publication_opportunity": 5,
         "interdisciplinary": 8,
-        "communication_style": 9,
-        "research_field_match": 4.0
+        "communication_style": 9
       },
       "metadata": {
         "faculty_count": 1,
@@ -1206,8 +1177,7 @@
         "flexibility": 5,
         "publication_opportunity": 7,
         "interdisciplinary": 6,
-        "communication_style": 10,
-        "research_field_match": 4.0
+        "communication_style": 10
       },
       "metadata": {
         "faculty_count": 1,
@@ -1219,7 +1189,7 @@
     },
     {
       "id": "lab_031",
-      "name": "湯村研究室 (Spatial Interaction Lab)",
+      "name": "湯村ゼミ",
       "professor": "湯村 翼",
       "research_area": "IoT",
       "specialization": "IoT、インタラクション、ユビキタスコンピューティング、HCI",
@@ -1242,8 +1212,7 @@
         "flexibility": 7,
         "publication_opportunity": 9,
         "interdisciplinary": 8,
-        "communication_style": 8,
-        "research_field_match": 4.0
+        "communication_style": 8
       },
       "metadata": {
         "faculty_count": 1,

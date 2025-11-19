@@ -127,7 +127,7 @@ export const RESEARCH_FIELDS: ResearchField[] = [
   // 🌍 観光・地域分野（1分野）
   { id: 'tourism_regional', name: '観光情報・地域システム', category: '観光・地域' },
 
-  // 🎨 デザイン分野（4分野）
+  // デザイン分野（4分野）
   { id: 'web_design_uiux', name: 'Webデザイン・UI/UX', category: 'デザイン' },
   { id: 'graphic_visual', name: 'グラフィック・視覚デザイン', category: 'デザイン' },
   { id: 'illustration_art', name: 'イラストレーション・アート', category: 'デザイン' },
@@ -209,26 +209,26 @@ export const healthCheck = async () => {
 export const getDemoProfileNames = async (): Promise<string[]> => {
   // 20種類のデモプロファイル
   return [
-    '🤖 AI研究集中型',
-    '💼 実践・就職重視型',
-    '⚖️ バランス型',
-    '🌈 自由度重視型',
-    '📚 理論研究型',
-    '👥 チーム協働型',
-    '🧑‍💻 個人研究型',
-    '📄 論文発表重視型',
-    '🚀 スキル開発型',
-    '🔬 学際的研究型',
-    '⏰ 柔軟スケジュール型',
-    '📖 厳格指導型',
-    '🎨 デザイン実践型',
-    '🎮 ゲーム開発型',
-    '📊 データサイエンス型',
-    '🌐 Webエンジニア型',
-    '🎬 映像制作型',
-    '🏫 教育研究型',
-    '😌 軽負荷研究型',
-    '🏢 企業連携型'
+    'AI研究集中型',
+    '実践・就職重視型',
+    'バランス型',
+    '自由度重視型',
+    '理論研究型',
+    'チーム協働型',
+    '個人研究型',
+    '論文発表重視型',
+    'スキル開発型',
+    '学際的研究型',
+    '柔軟スケジュール型',
+    '厳格指導型',
+    'デザイン実践型',
+    'ゲーム開発型',
+    'データサイエンス型',
+    'Webエンジニア型',
+    '映像制作型',
+    '教育研究型',
+    '軽負荷研究型',
+    '企業連携型'
   ];
 };
 
@@ -236,7 +236,7 @@ export const getDemoProfileNames = async (): Promise<string[]> => {
  * デモプロファイルデータ
  */
 const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
-  '🤖 AI研究集中型': {
+  'AI研究集中型': {
     research_intensity: 9, research_intensity_priority: 10,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 6, team_work_priority: 5,
@@ -257,7 +257,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '💼 実践・就職重視型': {
+  '実践・就職重視型': {
     research_intensity: 5, research_intensity_priority: 5,
     advisor_style: 8, advisor_style_priority: 7,
     team_work: 7, team_work_priority: 6,
@@ -277,7 +277,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '⚖️ バランス型': {
+  'バランス型': {
     research_intensity: 6, research_intensity_priority: 5,
     advisor_style: 6, advisor_style_priority: 5,
     team_work: 6, team_work_priority: 5,
@@ -297,7 +297,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🌈 自由度重視型': {
+  '自由度重視型': {
     research_intensity: 5, research_intensity_priority: 4,
     advisor_style: 9, advisor_style_priority: 10,
     team_work: 4, team_work_priority: 3,
@@ -317,7 +317,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '📚 理論研究型': {
+  '理論研究型': {
     research_intensity: 8, research_intensity_priority: 9,
     advisor_style: 5, advisor_style_priority: 6,
     team_work: 3, team_work_priority: 4,
@@ -337,7 +337,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '👥 チーム協働型': {
+  'チーム協働型': {
     research_intensity: 7, research_intensity_priority: 6,
     advisor_style: 6, advisor_style_priority: 5,
     team_work: 10, team_work_priority: 10,
@@ -357,7 +357,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🧑‍💻 個人研究型': {
+  '個人研究型': {
     research_intensity: 8, research_intensity_priority: 8,
     advisor_style: 8, advisor_style_priority: 7,
     team_work: 2, team_work_priority: 8,
@@ -377,7 +377,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '📄 論文発表重視型': {
+  '論文発表重視型': {
     research_intensity: 9, research_intensity_priority: 9,
     advisor_style: 5, advisor_style_priority: 6,
     team_work: 5, team_work_priority: 5,
@@ -397,7 +397,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🚀 スキル開発型': {
+  'スキル開発型': {
     research_intensity: 7, research_intensity_priority: 6,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 7, team_work_priority: 6,
@@ -418,7 +418,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🔬 学際的研究型': {
+  '学際的研究型': {
     research_intensity: 8, research_intensity_priority: 7,
     advisor_style: 6, advisor_style_priority: 5,
     team_work: 8, team_work_priority: 7,
@@ -439,7 +439,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '⏰ 柔軟スケジュール型': {
+  '柔軟スケジュール型': {
     research_intensity: 5, research_intensity_priority: 5,
     advisor_style: 9, advisor_style_priority: 8,
     team_work: 5, team_work_priority: 4,
@@ -459,7 +459,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '📖 厳格指導型': {
+  '厳格指導型': {
     research_intensity: 8, research_intensity_priority: 8,
     advisor_style: 2, advisor_style_priority: 9,
     team_work: 6, team_work_priority: 5,
@@ -479,7 +479,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🎨 デザイン実践型': {
+  'デザイン実践型': {
     research_intensity: 6, research_intensity_priority: 5,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 8, team_work_priority: 7,
@@ -500,7 +500,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🎮 ゲーム開発型': {
+  'ゲーム開発型': {
     research_intensity: 7, research_intensity_priority: 7,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 8, team_work_priority: 7,
@@ -521,7 +521,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '📊 データサイエンス型': {
+  'データサイエンス型': {
     research_intensity: 8, research_intensity_priority: 8,
     advisor_style: 6, advisor_style_priority: 5,
     team_work: 5, team_work_priority: 5,
@@ -542,7 +542,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🌐 Webエンジニア型': {
+  'Webエンジニア型': {
     research_intensity: 6, research_intensity_priority: 6,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 7, team_work_priority: 6,
@@ -563,7 +563,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🎬 映像制作型': {
+  '映像制作型': {
     research_intensity: 7, research_intensity_priority: 6,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 9, team_work_priority: 8,
@@ -584,7 +584,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🏫 教育研究型': {
+  '教育研究型': {
     research_intensity: 6, research_intensity_priority: 6,
     advisor_style: 6, advisor_style_priority: 5,
     team_work: 7, team_work_priority: 6,
@@ -605,7 +605,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '😌 軽負荷研究型': {
+  '軽負荷研究型': {
     research_intensity: 4, research_intensity_priority: 6,
     advisor_style: 8, advisor_style_priority: 7,
     team_work: 5, team_work_priority: 4,
@@ -625,7 +625,7 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
     }
   },
 
-  '🏢 企業連携型': {
+  '企業連携型': {
     research_intensity: 7, research_intensity_priority: 7,
     advisor_style: 7, advisor_style_priority: 6,
     team_work: 8, team_work_priority: 8,

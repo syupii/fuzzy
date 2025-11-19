@@ -1,4 +1,4 @@
-// frontend/src/components/EvaluationForm.tsx - 最終修正版（すべての型エラー解決）
+// frontend/src/components/EvaluationForm.tsx - 完全修正版
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -24,13 +24,9 @@ import {
 } from '@mui/material';
 import {
   ExpandMore,
-  Science,
   School,
   Timeline,
-  Star,
-  TrendingUp,
   ArrowDropDown,
-  Psychology,
 } from '@mui/icons-material';
 
 import { apiService, StudentProfile, RESEARCH_FIELDS, FIELD_CATEGORIES, ResearchField } from '../services/api';
@@ -78,20 +74,74 @@ interface TabPanelProps {
   index: number;
 }
 
-// --- 評価基準の情報 ---
-const CRITERIA_INFO = {
-  research_intensity: { name: '研究強度', description: '研究にどれだけ集中的に取り組みたいか', range: '1 (軽い研究) ～ 10 (集中研究)', icon: <Science /> },
-  advisor_style: { name: '指導スタイル', description: '教授からの指導の受け方の好み', range: '1 (厳格指導) ～ 10 (自由指導)', icon: <School /> },
-  team_work: { name: 'チームワーク', description: '研究での他者との協働の程度', range: '1 (個人研究) ～ 10 (チーム研究)', icon: <Psychology /> },
-  workload: { name: 'ワークロード', description: '研究活動の忙しさに対する許容度', range: '1 (軽い負荷) ～ 10 (重い負荷)', icon: <Timeline /> },
-  theory_practice: { name: '理論・実践バランス', description: '理論研究と実践的研究のバランス', range: '1 (理論重視) ～ 10 (実践重視)', icon: <Star /> },
-  research_field_match: { name: '分野重視度', description: '分野マッチングと基本項目のバランス', range: '1 (基本項目重視) ～ 10 (分野重視)', icon: <Star /> },
-  skill_development: { name: 'スキル開発', description: '専門性と汎用性のバランス', range: '1 (専門特化) ～ 10 (幅広いスキル)', icon: <TrendingUp /> },
-  lab_atmosphere: { name: '研究室雰囲気', description: '研究室の全体的な雰囲気', range: '1 (静寂集中) ～ 10 (活発議論)', icon: <Psychology /> },
-  flexibility: { name: '柔軟性', description: '研究時間の自由度', range: '1 (固定スケジュール) ～ 10 (柔軟スケジュール)', icon: <Timeline /> },
-  publication_opportunity: { name: '論文発表機会', description: '研究成果の論文化機会', range: '1 (少ない機会) ～ 10 (豊富な機会)', icon: <Star /> },
-  interdisciplinary: { name: '学際性', description: '他分野との連携の程度', range: '1 (単一分野) ～ 10 (学際連携)', icon: <Science /> },
-  communication_style: { name: 'コミュニケーション', description: '研究室での交流スタイル', range: '1 (少人数密接) ～ 10 (オープン交流)', icon: <Psychology /> }
+interface CriteriaInfo {
+  name: string;
+  description: string;
+  range: string;
+}
+
+
+const CRITERIA_INFO: Record<string, CriteriaInfo> = {
+  research_intensity: {
+    name: '研究強度',
+    description: '研究にどれだけ集中的に取り組みたいか',
+    range: '1 (軽い研究) ～ 10 (集中研究)'
+  },
+  advisor_style: {
+    name: '指導スタイル',
+    description: '教授からの指導の受け方の好み',
+    range: '1 (厳格指導) ～ 10 (自由指導)'
+  },
+  team_work: {
+    name: 'チームワーク',
+    description: '研究での他者との協働の程度',
+    range: '1 (個人研究) ～ 10 (チーム研究)'
+  },
+  workload: {
+    name: 'ワークロード',
+    description: '研究活動の忙しさに対する許容度',
+    range: '1 (軽い負荷) ～ 10 (重い負荷)'
+  },
+  theory_practice: {
+    name: '理論・実践バランス',
+    description: '理論研究と実践的研究のバランス',
+    range: '1 (理論重視) ～ 10 (実践重視)'
+  },
+  research_field_match: {
+    name: '分野重視度',
+    description: '分野マッチングと基本項目のバランス',
+    range: '1 (基本項目重視) ～ 10 (分野重視)'
+  },
+  skill_development: {
+    name: 'スキル開発',
+    description: '専門性と汎用性のバランス',
+    range: '1 (専門特化) ～ 10 (幅広いスキル)'
+  },
+  lab_atmosphere: {
+    name: '研究室雰囲気',
+    description: '研究室の全体的な雰囲気',
+    range: '1 (静寂集中) ～ 10 (活発議論)'
+  },
+  flexibility: {
+    name: '柔軟性',
+    description: '研究時間の自由度',
+    range: '1 (固定スケジュール) ～ 10 (柔軟スケジュール)'
+  },
+  publication_opportunity: {
+    name: '論文発表機会',
+    description: '研究成果の論文化機会',
+    range: '1 (少ない機会) ～ 10 (豊富な機会)'
+  },
+  interdisciplinary: {
+    name: '学際性',
+    description: '他分野との連携の程度',
+    range: '1 (単一分野) ～ 10 (学際連携)'
+  },
+  communication_style: {
+    name: 'コミュニケーション',
+    description: '研究室での交流スタイル',
+    range: '1 (少人数密接) ～ 10 (オープン交流)'
+  }
 };
 
 const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
@@ -176,7 +226,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     try {
       const demoData = await apiService.getDemoProfileSimple(profileName);
 
-      // ✅ 型エラー完全解決: オブジェクト全体を構築してから型アサーション
       const newPreferences: EvaluationPreferencesWithPriority = {
         research_intensity: demoData.research_intensity,
         advisor_style: demoData.advisor_style,
@@ -206,7 +255,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
 
       setPreferences(newPreferences);
 
-      // ✅ field_interestsをオブジェクトとして処理
       const newSelectedFields = new Set<string>();
       const newFieldInterests: ResearchFieldInterests = {};
 
@@ -258,7 +306,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         publication_opportunity_priority: preferences.publication_opportunity_priority,
         interdisciplinary_priority: preferences.interdisciplinary_priority,
         communication_style_priority: preferences.communication_style_priority,
-        // ✅ field_interestsをオブジェクト形式で送信
         field_interests: Object.fromEntries(
           Array.from(selectedFields).map(fieldId => [
             fieldId,
@@ -277,40 +324,76 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     }
   };
 
+  // ✅ 正しい renderBasicCriteria
   const renderBasicCriteria = () => (
     <Box>
-      <Typography variant="h6" gutterBottom>評価基準設定</Typography>
+      <Typography variant="h6" gutterBottom>
+        評価基準設定
+      </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         各項目について「希望値」と「重要度（優先度）」を設定してください
       </Typography>
       <Grid container spacing={3}>
-        {Object.entries(CRITERIA_INFO).map(([key, info]) => (
-          <Grid item xs={12} sm={6} key={key}>
-            <Card variant="outlined" sx={{ p: 2, height: '100%' }}>
-              <Typography variant="subtitle1" gutterBottom color="primary" sx={{ display: 'flex', alignItems: 'center' }}>
-                {info.icon} <Box component="span" sx={{ ml: 1 }}>{info.name}</Box>
+        {Object.entries(CRITERIA_INFO).map(([criterionKey, criterionInfo]) => (
+          <Grid item xs={12} sm={6} key={criterionKey}>
+            <Card
+              variant="outlined"
+              sx={{
+                p: 2.5,
+                height: '100%',
+                transition: 'all 0.3s',
+                '&:hover': {
+                  boxShadow: 3,
+                  borderColor: 'primary.main'
+                }
+              }}
+            >
+              {/* タイトル */}
+              <Typography variant="h6" color="primary" gutterBottom sx={{ fontWeight: 'bold' }}>
+                {criterionInfo.name}
               </Typography>
+
+              {/* 説明文（タイトル直下） */}
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {criterionInfo.description}
+              </Typography>
+
+              {/* 範囲情報 */}
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                {criterionInfo.range}
+              </Typography>
+
+              <Divider sx={{ mb: 2 }} />
+
+              {/* スライダー部分 */}
               <Grid container spacing={2}>
                 <Grid item xs={12}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <TrendingUp sx={{ mr: 1, fontSize: 20, color: 'text.secondary' }} />
-                    <Typography variant="body2">希望値: {preferences[key as keyof EvaluationPreferencesWithPriority]}</Typography>
-                  </Box>
+                  <Typography variant="body2" gutterBottom sx={{ fontWeight: 'medium' }}>
+                    希望値: {preferences[criterionKey as keyof EvaluationPreferencesWithPriority]}
+                  </Typography>
                   <Slider
-                    value={preferences[key as keyof EvaluationPreferencesWithPriority]}
-                    onChange={(_, value) => handlePreferenceChange(key as keyof EvaluationPreferencesWithPriority, value as number)}
-                    min={1} max={10} step={1} marks valueLabelDisplay="auto"
+                    value={preferences[criterionKey as keyof EvaluationPreferencesWithPriority]}
+                    onChange={(_, value) => handlePreferenceChange(criterionKey as keyof EvaluationPreferencesWithPriority, value as number)}
+                    min={1}
+                    max={10}
+                    step={1}
+                    marks
+                    valueLabelDisplay="auto"
                   />
                 </Grid>
                 <Grid item xs={12}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Star sx={{ mr: 1, fontSize: 20, color: 'warning.main' }} />
-                    <Typography variant="body2">重要度: {preferences[`${key}_priority` as keyof EvaluationPreferencesWithPriority]}</Typography>
-                  </Box>
+                  <Typography variant="body2" gutterBottom sx={{ fontWeight: 'medium' }}>
+                    重要度: {preferences[`${criterionKey}_priority` as keyof EvaluationPreferencesWithPriority]}
+                  </Typography>
                   <Slider
-                    value={preferences[`${key}_priority` as keyof EvaluationPreferencesWithPriority]}
-                    onChange={(_, value) => handlePreferenceChange(`${key}_priority` as keyof EvaluationPreferencesWithPriority, value as number)}
-                    min={1} max={10} step={1} marks valueLabelDisplay="auto" color="warning"
+                    value={preferences[`${criterionKey}_priority` as keyof EvaluationPreferencesWithPriority]}
+                    onChange={(_, value) => handlePreferenceChange(`${criterionKey}_priority` as keyof EvaluationPreferencesWithPriority, value as number)}
+                    min={1}
+                    max={10}
+                    step={1}
+                    marks
+                    valueLabelDisplay="auto"
+                    color="warning"
                   />
                 </Grid>
               </Grid>
@@ -322,7 +405,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
   );
 
   const renderFieldInterests = () => {
-    // ✅ 型安全なカテゴリ取得
     const categories = Object.keys(FIELD_CATEGORIES) as Array<keyof typeof FIELD_CATEGORIES>;
 
     return (
