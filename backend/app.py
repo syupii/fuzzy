@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 研究室選択支援システム - FastAPI バックエンド（修正版）
-評価が0になる問題を修正
+評価が0になる問題を修正 + field_interestsのデータ形式を修正
 """
 
 import os
@@ -41,7 +41,7 @@ except ImportError as e:
 app = FastAPI(
     title="研究室選択支援システム",
     description="ファジィ決定木による高精度マッチングシステム",
-    version="3.1.0-fixed"
+    version="3.1.1-fixed"
 )
 
 # --- CORS設定 ---
@@ -166,7 +166,7 @@ initialize_system()
 @app.get("/")
 async def root():
     """ルートエンドポイント"""
-    return { "message": "研究室選択支援システム API", "version": "3.1.0-fixed" }
+    return { "message": "研究室選択支援システム API", "version": "3.1.1-fixed" }
 
 
 @app.get("/api/health")
@@ -198,18 +198,27 @@ def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
         priority_key = f"{criterion}_priority"
         normalized[priority_key] = student.get(priority_key, 5.0)
     
-    # ★★★ 修正: field_interests は正規化せず、1-10のまま辞書形式に変換 ★★★
-    field_interests_list = student.get("field_interests", [])
-    normalized["field_interests"] = {
-        item["field_id"]: item.get("interest_level", 5)  # ← 正規化を削除
-        for item in field_interests_list if "field_id" in item
-    }
+    # ★★★ 修正: field_interests をオブジェクト形式と配列形式の両方に対応 ★★★
+    field_interests_data = student.get("field_interests", {})
+    
+    if isinstance(field_interests_data, dict):
+        # すでにオブジェクト形式 {"ai_ml": 10, "image_processing": 8}
+        normalized["field_interests"] = field_interests_data
+    elif isinstance(field_interests_data, list):
+        # 配列形式 [{"field_id": "ai_ml", "interest_level": 10}]
+        normalized["field_interests"] = {
+            item["field_id"]: item.get("interest_level", 5)
+            for item in field_interests_data if "field_id" in item
+        }
+    else:
+        normalized["field_interests"] = {}
     
     # デバッグ出力
     print(f"\n{'='*70}")
     print(f"【デバッグ】学生プロファイル正規化")
     print(f"{'='*70}")
-    print(f"正規化前 field_interests: {field_interests_list}")
+    print(f"受信データ型: {type(field_interests_data)}")
+    print(f"正規化前 field_interests: {field_interests_data}")
     print(f"正規化後 field_interests: {normalized['field_interests']}")
     print(f"{'='*70}\n")
     
@@ -217,14 +226,27 @@ def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.post("/api/evaluate")
-async def evaluate_labs(request: Dict[str, Any] = Body(...)):
+async def evaluate_labs(student_profile: Dict[str, Any] = Body(...)):
     """研究室評価API"""
     if not system_state.get("initialized"):
         raise HTTPException(status_code=503, detail="システムが初期化されていません")
     
-    student = request.get("student_profile")
-    if not student:
-        raise HTTPException(status_code=400, detail="学生プロファイルが見つかりません")
+    # ★★★ 修正: リクエストボディ全体を学生プロファイルとして扱う ★★★
+    # 後方互換性のため、student_profileキーがある場合も対応
+    if "student_profile" in student_profile:
+        student = student_profile["student_profile"]
+    else:
+        student = student_profile
+    
+    # デバッグ: 受信したリクエストを出力
+    print(f"\n{'='*70}")
+    print(f"【デバッグ】受信したリクエスト")
+    print(f"{'='*70}")
+    print(f"field_interests型: {type(student.get('field_interests'))}")
+    print(f"field_interests内容: {student.get('field_interests')}")
+    print(f"基本項目例 - research_intensity: {student.get('research_intensity')}")
+    print(f"優先度例 - research_intensity_priority: {student.get('research_intensity_priority')}")
+    print(f"{'='*70}\n")
     
     normalized_student = normalize_student_profile(student)
     matcher = system_state.get("matcher_multipath")
