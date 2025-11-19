@@ -1,4 +1,4 @@
-// frontend/src/components/EvaluationForm.tsx - 修正版
+// frontend/src/components/EvaluationForm.tsx - 最終修正版（すべての型エラー解決）
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -33,9 +33,9 @@ import {
   Psychology,
 } from '@mui/icons-material';
 
-import { apiService, StudentProfile, FieldInterest } from '../services/api';
+import { apiService, StudentProfile, RESEARCH_FIELDS, FIELD_CATEGORIES, ResearchField } from '../services/api';
 
-// --- (型定義や定数データは変更なし) ---
+// --- 型定義 ---
 interface EvaluationPreferencesWithPriority {
   research_intensity: number;
   advisor_style: number;
@@ -62,18 +62,23 @@ interface EvaluationPreferencesWithPriority {
   interdisciplinary_priority: number;
   communication_style_priority: number;
 }
+
 interface ResearchFieldInterests {
   [key: string]: number;
 }
+
 interface EvaluationFormProps {
   onResults: (response: any) => void;
   onError: (error: string) => void;
 }
+
 interface TabPanelProps {
   children?: React.ReactNode;
   value: number;
   index: number;
 }
+
+// --- 評価基準の情報 ---
 const CRITERIA_INFO = {
   research_intensity: { name: '研究強度', description: '研究にどれだけ集中的に取り組みたいか', range: '1 (軽い研究) ～ 10 (集中研究)', icon: <Science /> },
   advisor_style: { name: '指導スタイル', description: '教授からの指導の受け方の好み', range: '1 (厳格指導) ～ 10 (自由指導)', icon: <School /> },
@@ -88,24 +93,12 @@ const CRITERIA_INFO = {
   interdisciplinary: { name: '学際性', description: '他分野との連携の程度', range: '1 (単一分野) ～ 10 (学際連携)', icon: <Science /> },
   communication_style: { name: 'コミュニケーション', description: '研究室での交流スタイル', range: '1 (少人数密接) ～ 10 (オープン交流)', icon: <Psychology /> }
 };
-const RESEARCH_FIELDS = [
-  { id: 'ai_ml', name: '人工知能・機械学習', category: 'テクノロジー・システム' }, { id: 'image_processing', name: '画像・映像処理', category: 'テクノロジー・システム' },
-  { id: 'network_security', name: 'ネットワーク・セキュリティ', category: 'テクノロジー・システム' }, { id: 'database_systems', name: 'データベース・情報システム', category: 'テクノロジー・システム' },
-  { id: 'embedded_iot', name: '組込み・IoT', category: 'テクノロジー・システム' }, { id: 'education_linguistics', name: '教育・言語学', category: 'テクノロジー・システム' },
-  { id: 'natural_science_math', name: '自然科学・数理', category: 'テクノロジー・システム' }, { id: 'medical_healthcare', name: '医療情報・ヘルスケア', category: 'テクノロジー・システム' },
-  { id: 'tourism_regional', name: '観光情報・地域システム', category: 'テクノロジー・システム' }, { id: 'business_decision', name: '経営情報・意思決定支援', category: 'テクノロジー・システム' },
-  { id: 'audio_processing', name: '音声・音響情報処理', category: 'テクノロジー・システム' }, { id: 'system_ethics', name: 'システム運用・情報倫理', category: 'テクノロジー・システム' },
-  { id: 'web_design', name: 'Webデザイン・UI/UX', category: 'クリエイティブ' }, { id: 'design_visual', name: 'デザイン・視覚表現', category: 'クリエイティブ' },
-  { id: 'video_animation', name: '映像・アニメーション', category: 'クリエイティブ' }, { id: 'computer_music', name: 'コンピュータ音楽・サウンドアート', category: 'クリエイティブ' },
-  { id: 'game_esports', name: 'ゲーム開発・eスポーツ', category: 'エンターテイメント' }, { id: 'vr_ar_media', name: 'VR/AR・メディアアート', category: 'エンターテイメント' },
-  { id: 'philosophy_humanities', name: '哲学・人文・環境行動学', category: '人文・社会・体育' }, { id: 'sports_science', name: 'スポーツ・体育科学', category: '人文・社会・体育' }
-];
+
 const TabPanel: React.FC<TabPanelProps> = ({ children, value, index }) => (
   <div hidden={value !== index}>
     {value === index && <Box sx={{ p: 3 }}>{children}</Box>}
   </div>
 );
-// --- (変更のないセクションの終わり) ---
 
 const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) => {
   const [tabValue, setTabValue] = useState(0);
@@ -182,7 +175,9 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     setLoadingDemoProfiles(true);
     try {
       const demoData = await apiService.getDemoProfileSimple(profileName);
-      setPreferences({
+
+      // ✅ 型エラー完全解決: オブジェクト全体を構築してから型アサーション
+      const newPreferences: EvaluationPreferencesWithPriority = {
         research_intensity: demoData.research_intensity,
         advisor_style: demoData.advisor_style,
         team_work: demoData.team_work,
@@ -195,25 +190,33 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         publication_opportunity: demoData.publication_opportunity,
         interdisciplinary: demoData.interdisciplinary,
         communication_style: demoData.communication_style,
-        research_intensity_priority: demoData.research_intensity_priority,
-        advisor_style_priority: demoData.advisor_style_priority,
-        team_work_priority: demoData.team_work_priority,
-        workload_priority: demoData.workload_priority,
-        theory_practice_priority: demoData.theory_practice_priority,
+        research_intensity_priority: demoData.research_intensity_priority || 5,
+        advisor_style_priority: demoData.advisor_style_priority || 5,
+        team_work_priority: demoData.team_work_priority || 5,
+        workload_priority: demoData.workload_priority || 5,
+        theory_practice_priority: demoData.theory_practice_priority || 5,
         research_field_match_priority: demoData.research_field_match_priority || 5,
-        skill_development_priority: demoData.skill_development_priority,
-        lab_atmosphere_priority: demoData.lab_atmosphere_priority,
-        flexibility_priority: demoData.flexibility_priority,
-        publication_opportunity_priority: demoData.publication_opportunity_priority,
-        interdisciplinary_priority: demoData.interdisciplinary_priority,
-        communication_style_priority: demoData.communication_style_priority
-      });
+        skill_development_priority: demoData.skill_development_priority || 5,
+        lab_atmosphere_priority: demoData.lab_atmosphere_priority || 5,
+        flexibility_priority: demoData.flexibility_priority || 5,
+        publication_opportunity_priority: demoData.publication_opportunity_priority || 5,
+        interdisciplinary_priority: demoData.interdisciplinary_priority || 5,
+        communication_style_priority: demoData.communication_style_priority || 5
+      };
+
+      setPreferences(newPreferences);
+
+      // ✅ field_interestsをオブジェクトとして処理
       const newSelectedFields = new Set<string>();
       const newFieldInterests: ResearchFieldInterests = {};
-      demoData.field_interests.forEach((fi: FieldInterest) => {
-        newSelectedFields.add(fi.field_id);
-        newFieldInterests[fi.field_id] = fi.interest_level;
-      });
+
+      if (demoData.field_interests && typeof demoData.field_interests === 'object') {
+        Object.entries(demoData.field_interests).forEach(([fieldId, interestLevel]) => {
+          newSelectedFields.add(fieldId);
+          newFieldInterests[fieldId] = Number(interestLevel);
+        });
+      }
+
       setSelectedFields(newSelectedFields);
       setFieldInterests(newFieldInterests);
       handleDemoMenuClose();
@@ -255,10 +258,13 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         publication_opportunity_priority: preferences.publication_opportunity_priority,
         interdisciplinary_priority: preferences.interdisciplinary_priority,
         communication_style_priority: preferences.communication_style_priority,
-        field_interests: Array.from(selectedFields).map(fieldId => ({
-          field_id: fieldId,
-          interest_level: fieldInterests[fieldId] || 5
-        }))
+        // ✅ field_interestsをオブジェクト形式で送信
+        field_interests: Object.fromEntries(
+          Array.from(selectedFields).map(fieldId => [
+            fieldId,
+            fieldInterests[fieldId] || 5
+          ])
+        )
       };
       const result = await apiService.evaluate(studentProfile);
       onResults(result);
@@ -316,28 +322,46 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
   );
 
   const renderFieldInterests = () => {
-    const categories = Array.from(new Set(RESEARCH_FIELDS.map(f => f.category)));
+    // ✅ 型安全なカテゴリ取得
+    const categories = Object.keys(FIELD_CATEGORIES) as Array<keyof typeof FIELD_CATEGORIES>;
+
     return (
       <Box>
-        <Typography variant="h6" gutterBottom>研究分野選択</Typography>
+        <Typography variant="h6" gutterBottom>研究分野選択（27分野体系）</Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
           興味のある研究分野を選択し、興味度を設定してください
         </Typography>
         {categories.map(category => (
           <Accordion key={category} defaultExpanded>
-            <AccordionSummary expandIcon={<ExpandMore />}><Typography variant="h6">{category}</Typography></AccordionSummary>
+            <AccordionSummary expandIcon={<ExpandMore />}>
+              <Typography variant="h6">{category}</Typography>
+            </AccordionSummary>
             <AccordionDetails>
               <Grid container spacing={2}>
-                {RESEARCH_FIELDS.filter(f => f.category === category).map(field => (
+                {FIELD_CATEGORIES[category].map((field: ResearchField) => (
                   <Grid item xs={12} sm={6} md={4} key={field.id}>
-                    <Card variant="outlined" sx={{ p: 2, borderWidth: selectedFields.has(field.id) ? 2 : 1, borderColor: selectedFields.has(field.id) ? 'primary.main' : 'grey.300' }}>
+                    <Card
+                      variant="outlined"
+                      sx={{
+                        p: 2,
+                        borderWidth: selectedFields.has(field.id) ? 2 : 1,
+                        borderColor: selectedFields.has(field.id) ? 'primary.main' : 'grey.300'
+                      }}
+                    >
                       <FormControlLabel
-                        control={<Checkbox checked={selectedFields.has(field.id)} onChange={() => handleFieldToggle(field.id)} />}
+                        control={
+                          <Checkbox
+                            checked={selectedFields.has(field.id)}
+                            onChange={() => handleFieldToggle(field.id)}
+                          />
+                        }
                         label={field.name}
                       />
                       {selectedFields.has(field.id) && (
                         <Box sx={{ mt: 2 }}>
-                          <Typography variant="body2" gutterBottom>興味度: {fieldInterests[field.id] || 5}</Typography>
+                          <Typography variant="body2" gutterBottom>
+                            興味度: {fieldInterests[field.id] || 5}
+                          </Typography>
                           <Slider
                             value={fieldInterests[field.id] || 5}
                             onChange={(_, value) => handleFieldInterestChange(field.id, value as number)}
@@ -368,8 +392,12 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         <Card sx={{ p: 3, mb: 3 }}>
           <Typography variant="subtitle1" gutterBottom>設定サマリー</Typography>
           <Grid container spacing={2}>
-            <Grid item xs={6}><Typography variant="body2">評価基準: {Object.keys(CRITERIA_INFO).length}項目設定済み</Typography></Grid>
-            <Grid item xs={6}><Typography variant="body2">研究分野: {selectedFieldsCount}分野選択中</Typography></Grid>
+            <Grid item xs={6}>
+              <Typography variant="body2">評価基準: {Object.keys(CRITERIA_INFO).length}項目設定済み</Typography>
+            </Grid>
+            <Grid item xs={6}>
+              <Typography variant="body2">研究分野: {selectedFieldsCount}分野選択中</Typography>
+            </Grid>
           </Grid>
           {selectedFieldsCount > 0 && (
             <Box sx={{ mt: 2 }}>
@@ -378,32 +406,62 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
                 {Array.from(selectedFields).map(fieldId => {
                   const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
                   const interest = fieldInterests[fieldId] || 5;
-                  return field ? <Chip key={fieldId} label={`${field.name} (${interest}/10)`} size="small" color="primary" variant="outlined" /> : null;
+                  return field ? (
+                    <Chip
+                      key={fieldId}
+                      label={`${field.name} (${interest}/10)`}
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                    />
+                  ) : null;
                 })}
               </Box>
             </Box>
           )}
         </Card>
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', alignItems: 'center' }}>
-          <Button variant="outlined" onClick={handleDemoMenuOpen} startIcon={loadingDemoProfiles ? <CircularProgress size={20} /> : <School />} endIcon={<ArrowDropDown />} disabled={loadingDemoProfiles}>
+          <Button
+            variant="outlined"
+            onClick={handleDemoMenuOpen}
+            startIcon={loadingDemoProfiles ? <CircularProgress size={20} /> : <School />}
+            endIcon={<ArrowDropDown />}
+            disabled={loadingDemoProfiles}
+          >
             {loadingDemoProfiles ? '読み込み中...' : 'デモデータ選択'}
           </Button>
           <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleDemoMenuClose}>
             {demoProfileNames.length > 0 ? (
               demoProfileNames.map(profileName => (
-                <MenuItem key={profileName} onClick={() => handleLoadDemo(profileName)}>{profileName}</MenuItem>
+                <MenuItem key={profileName} onClick={() => handleLoadDemo(profileName)}>
+                  {profileName}
+                </MenuItem>
               ))
-            ) : <MenuItem disabled>読み込み中...</MenuItem>}
+            ) : (
+              <MenuItem disabled>読み込み中...</MenuItem>
+            )}
           </Menu>
-          <Button variant="contained" onClick={handleEvaluate} disabled={isLoading || selectedFieldsCount === 0} startIcon={<Timeline />} size="large">
+          <Button
+            variant="contained"
+            onClick={handleEvaluate}
+            disabled={isLoading || selectedFieldsCount === 0}
+            startIcon={<Timeline />}
+            size="large"
+          >
             {isLoading ? '評価中...' : '研究室マッチング実行'}
           </Button>
         </Box>
-        {selectedFieldsCount === 0 && <Alert severity="warning" sx={{ mt: 2 }}>研究分野を最低1つ以上選択してください</Alert>}
+        {selectedFieldsCount === 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }}>
+            研究分野を最低1つ以上選択してください
+          </Alert>
+        )}
         {isLoading && (
           <Box sx={{ mt: 2 }}>
             <LinearProgress />
-            <Typography variant="body2" textAlign="center" sx={{ mt: 1 }}>優先度を考慮した研究室適合性を評価中...</Typography>
+            <Typography variant="body2" textAlign="center" sx={{ mt: 1 }}>
+              優先度を考慮した研究室適合性を評価中...
+            </Typography>
           </Box>
         )}
       </Box>
@@ -414,7 +472,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     <Box sx={{ width: '100%' }}>
       <Tabs value={tabValue} onChange={(_, newValue) => setTabValue(newValue)}>
         <Tab label="評価基準設定" />
-        <Tab label="研究分野選択" />
+        <Tab label="研究分野選択（27分野）" />
         <Tab label="評価実行" />
       </Tabs>
       <TabPanel value={tabValue} index={0}>{renderBasicCriteria()}</TabPanel>

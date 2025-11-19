@@ -207,12 +207,443 @@ export const healthCheck = async () => {
  * デモプロファイル名の一覧を取得
  */
 export const getDemoProfileNames = async (): Promise<string[]> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/api/demo-profiles`);
-    return response.data.profiles || [];
-  } catch (error) {
-    console.warn('デモプロファイル取得に失敗、デフォルト値を返します', error);
-    return ['AI研究志望', '実践重視型', 'バランス型', '自由度重視'];
+  // 20種類のデモプロファイル
+  return [
+    '🤖 AI研究集中型',
+    '💼 実践・就職重視型',
+    '⚖️ バランス型',
+    '🌈 自由度重視型',
+    '📚 理論研究型',
+    '👥 チーム協働型',
+    '🧑‍💻 個人研究型',
+    '📄 論文発表重視型',
+    '🚀 スキル開発型',
+    '🔬 学際的研究型',
+    '⏰ 柔軟スケジュール型',
+    '📖 厳格指導型',
+    '🎨 デザイン実践型',
+    '🎮 ゲーム開発型',
+    '📊 データサイエンス型',
+    '🌐 Webエンジニア型',
+    '🎬 映像制作型',
+    '🏫 教育研究型',
+    '😌 軽負荷研究型',
+    '🏢 企業連携型'
+  ];
+};
+
+/**
+ * デモプロファイルデータ
+ */
+const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
+  '🤖 AI研究集中型': {
+    research_intensity: 9, research_intensity_priority: 10,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 6, team_work_priority: 5,
+    workload: 9, workload_priority: 7,
+    theory_practice: 5, theory_practice_priority: 6,
+    skill_development: 8, skill_development_priority: 8,
+    lab_atmosphere: 7, lab_atmosphere_priority: 5,
+    flexibility: 5, flexibility_priority: 4,
+    publication_opportunity: 10, publication_opportunity_priority: 10,
+    research_field_match: 9, research_field_match_priority: 9,
+    interdisciplinary: 6, interdisciplinary_priority: 5,
+    communication_style: 6, communication_style_priority: 4,
+    field_interests: {
+      'ai_ml': 10,
+      'image_processing': 8,
+      'data_science_math': 7,
+      'natural_science': 6
+    }
+  },
+
+  '💼 実践・就職重視型': {
+    research_intensity: 5, research_intensity_priority: 5,
+    advisor_style: 8, advisor_style_priority: 7,
+    team_work: 7, team_work_priority: 6,
+    workload: 6, workload_priority: 8,
+    theory_practice: 9, theory_practice_priority: 10,
+    skill_development: 9, skill_development_priority: 10,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 8, flexibility_priority: 9,
+    publication_opportunity: 4, publication_opportunity_priority: 3,
+    research_field_match: 7, research_field_match_priority: 6,
+    interdisciplinary: 7, interdisciplinary_priority: 6,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'software_dev': 10,
+      'web_design_uiux': 8,
+      'database_systems': 7
+    }
+  },
+
+  '⚖️ バランス型': {
+    research_intensity: 6, research_intensity_priority: 5,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 6, team_work_priority: 5,
+    workload: 6, workload_priority: 5,
+    theory_practice: 6, theory_practice_priority: 5,
+    skill_development: 6, skill_development_priority: 5,
+    lab_atmosphere: 6, lab_atmosphere_priority: 5,
+    flexibility: 6, flexibility_priority: 5,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 6, research_field_match_priority: 5,
+    interdisciplinary: 6, interdisciplinary_priority: 5,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'ai_ml': 7,
+      'web_design_uiux': 7,
+      'software_dev': 6
+    }
+  },
+
+  '🌈 自由度重視型': {
+    research_intensity: 5, research_intensity_priority: 4,
+    advisor_style: 9, advisor_style_priority: 10,
+    team_work: 4, team_work_priority: 3,
+    workload: 4, workload_priority: 6,
+    theory_practice: 7, theory_practice_priority: 5,
+    skill_development: 7, skill_development_priority: 6,
+    lab_atmosphere: 7, lab_atmosphere_priority: 6,
+    flexibility: 10, flexibility_priority: 10,
+    publication_opportunity: 4, publication_opportunity_priority: 3,
+    research_field_match: 6, research_field_match_priority: 5,
+    interdisciplinary: 5, interdisciplinary_priority: 4,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'illustration_art': 8,
+      'graphic_visual': 7,
+      'video_film': 6
+    }
+  },
+
+  '📚 理論研究型': {
+    research_intensity: 8, research_intensity_priority: 9,
+    advisor_style: 5, advisor_style_priority: 6,
+    team_work: 3, team_work_priority: 4,
+    workload: 7, workload_priority: 6,
+    theory_practice: 2, theory_practice_priority: 9,
+    skill_development: 5, skill_development_priority: 5,
+    lab_atmosphere: 4, lab_atmosphere_priority: 4,
+    flexibility: 6, flexibility_priority: 5,
+    publication_opportunity: 9, publication_opportunity_priority: 10,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 4, interdisciplinary_priority: 5,
+    communication_style: 4, communication_style_priority: 4,
+    field_interests: {
+      'data_science_math': 10,
+      'natural_science': 8,
+      'ai_ml': 7
+    }
+  },
+
+  '👥 チーム協働型': {
+    research_intensity: 7, research_intensity_priority: 6,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 10, team_work_priority: 10,
+    workload: 7, workload_priority: 6,
+    theory_practice: 8, theory_practice_priority: 7,
+    skill_development: 7, skill_development_priority: 6,
+    lab_atmosphere: 9, lab_atmosphere_priority: 9,
+    flexibility: 6, flexibility_priority: 5,
+    publication_opportunity: 7, publication_opportunity_priority: 6,
+    research_field_match: 7, research_field_match_priority: 6,
+    interdisciplinary: 8, interdisciplinary_priority: 8,
+    communication_style: 10, communication_style_priority: 10,
+    field_interests: {
+      'game_dev': 9,
+      'web_design_uiux': 8,
+      'media_art': 7
+    }
+  },
+
+  '🧑‍💻 個人研究型': {
+    research_intensity: 8, research_intensity_priority: 8,
+    advisor_style: 8, advisor_style_priority: 7,
+    team_work: 2, team_work_priority: 8,
+    workload: 7, workload_priority: 6,
+    theory_practice: 6, theory_practice_priority: 5,
+    skill_development: 8, skill_development_priority: 7,
+    lab_atmosphere: 4, lab_atmosphere_priority: 3,
+    flexibility: 8, flexibility_priority: 8,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 8, research_field_match_priority: 7,
+    interdisciplinary: 3, interdisciplinary_priority: 4,
+    communication_style: 3, communication_style_priority: 7,
+    field_interests: {
+      'software_dev': 10,
+      'ai_ml': 8,
+      'database_systems': 7
+    }
+  },
+
+  '📄 論文発表重視型': {
+    research_intensity: 9, research_intensity_priority: 9,
+    advisor_style: 5, advisor_style_priority: 6,
+    team_work: 5, team_work_priority: 5,
+    workload: 8, workload_priority: 7,
+    theory_practice: 4, theory_practice_priority: 6,
+    skill_development: 6, skill_development_priority: 5,
+    lab_atmosphere: 7, lab_atmosphere_priority: 6,
+    flexibility: 4, flexibility_priority: 4,
+    publication_opportunity: 10, publication_opportunity_priority: 10,
+    research_field_match: 9, research_field_match_priority: 9,
+    interdisciplinary: 6, interdisciplinary_priority: 6,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'ai_ml': 9,
+      'image_processing': 8,
+      'embedded_iot': 7
+    }
+  },
+
+  '🚀 スキル開発型': {
+    research_intensity: 7, research_intensity_priority: 6,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 7, team_work_priority: 6,
+    workload: 7, workload_priority: 6,
+    theory_practice: 8, theory_practice_priority: 8,
+    skill_development: 10, skill_development_priority: 10,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 7, flexibility_priority: 7,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 7, research_field_match_priority: 6,
+    interdisciplinary: 8, interdisciplinary_priority: 8,
+    communication_style: 7, communication_style_priority: 6,
+    field_interests: {
+      'software_dev': 9,
+      'web_design_uiux': 9,
+      'database_systems': 8,
+      'network_security': 7
+    }
+  },
+
+  '🔬 学際的研究型': {
+    research_intensity: 8, research_intensity_priority: 7,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 8, team_work_priority: 7,
+    workload: 7, workload_priority: 6,
+    theory_practice: 6, theory_practice_priority: 6,
+    skill_development: 8, skill_development_priority: 7,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 7, flexibility_priority: 6,
+    publication_opportunity: 8, publication_opportunity_priority: 7,
+    research_field_match: 7, research_field_match_priority: 6,
+    interdisciplinary: 10, interdisciplinary_priority: 10,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'ai_ml': 8,
+      'tourism_regional': 7,
+      'media_art': 7,
+      'data_science_math': 6
+    }
+  },
+
+  '⏰ 柔軟スケジュール型': {
+    research_intensity: 5, research_intensity_priority: 5,
+    advisor_style: 9, advisor_style_priority: 8,
+    team_work: 5, team_work_priority: 4,
+    workload: 5, workload_priority: 7,
+    theory_practice: 7, theory_practice_priority: 6,
+    skill_development: 7, skill_development_priority: 6,
+    lab_atmosphere: 7, lab_atmosphere_priority: 6,
+    flexibility: 10, flexibility_priority: 10,
+    publication_opportunity: 5, publication_opportunity_priority: 4,
+    research_field_match: 6, research_field_match_priority: 5,
+    interdisciplinary: 6, interdisciplinary_priority: 5,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'web_design_uiux': 8,
+      'graphic_visual': 8,
+      'software_dev': 7
+    }
+  },
+
+  '📖 厳格指導型': {
+    research_intensity: 8, research_intensity_priority: 8,
+    advisor_style: 2, advisor_style_priority: 9,
+    team_work: 6, team_work_priority: 5,
+    workload: 8, workload_priority: 7,
+    theory_practice: 5, theory_practice_priority: 6,
+    skill_development: 7, skill_development_priority: 7,
+    lab_atmosphere: 5, lab_atmosphere_priority: 4,
+    flexibility: 4, flexibility_priority: 3,
+    publication_opportunity: 9, publication_opportunity_priority: 9,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 5, interdisciplinary_priority: 5,
+    communication_style: 5, communication_style_priority: 4,
+    field_interests: {
+      'ai_ml': 9,
+      'image_processing': 8,
+      'natural_science': 7
+    }
+  },
+
+  '🎨 デザイン実践型': {
+    research_intensity: 6, research_intensity_priority: 5,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 8, team_work_priority: 7,
+    workload: 7, workload_priority: 6,
+    theory_practice: 9, theory_practice_priority: 9,
+    skill_development: 8, skill_development_priority: 8,
+    lab_atmosphere: 9, lab_atmosphere_priority: 8,
+    flexibility: 7, flexibility_priority: 7,
+    publication_opportunity: 5, publication_opportunity_priority: 4,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 7, interdisciplinary_priority: 7,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'graphic_visual': 10,
+      'web_design_uiux': 9,
+      'illustration_art': 8,
+      'design_thinking_marketing': 7
+    }
+  },
+
+  '🎮 ゲーム開発型': {
+    research_intensity: 7, research_intensity_priority: 7,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 8, team_work_priority: 7,
+    workload: 8, workload_priority: 7,
+    theory_practice: 9, theory_practice_priority: 9,
+    skill_development: 9, skill_development_priority: 9,
+    lab_atmosphere: 9, lab_atmosphere_priority: 8,
+    flexibility: 6, flexibility_priority: 6,
+    publication_opportunity: 7, publication_opportunity_priority: 6,
+    research_field_match: 9, research_field_match_priority: 9,
+    interdisciplinary: 7, interdisciplinary_priority: 6,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'game_dev': 10,
+      'ai_ml': 8,
+      'vr_ar_metaverse': 8,
+      'image_processing': 7
+    }
+  },
+
+  '📊 データサイエンス型': {
+    research_intensity: 8, research_intensity_priority: 8,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 5, team_work_priority: 5,
+    workload: 7, workload_priority: 6,
+    theory_practice: 5, theory_practice_priority: 6,
+    skill_development: 8, skill_development_priority: 8,
+    lab_atmosphere: 6, lab_atmosphere_priority: 5,
+    flexibility: 7, flexibility_priority: 6,
+    publication_opportunity: 8, publication_opportunity_priority: 8,
+    research_field_match: 9, research_field_match_priority: 9,
+    interdisciplinary: 7, interdisciplinary_priority: 7,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'data_science_math': 10,
+      'ai_ml': 9,
+      'database_systems': 8,
+      'natural_science': 7
+    }
+  },
+
+  '🌐 Webエンジニア型': {
+    research_intensity: 6, research_intensity_priority: 6,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 7, team_work_priority: 6,
+    workload: 7, workload_priority: 7,
+    theory_practice: 9, theory_practice_priority: 9,
+    skill_development: 9, skill_development_priority: 9,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 8, flexibility_priority: 7,
+    publication_opportunity: 5, publication_opportunity_priority: 4,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 6, interdisciplinary_priority: 6,
+    communication_style: 7, communication_style_priority: 6,
+    field_interests: {
+      'web_design_uiux': 10,
+      'software_dev': 9,
+      'database_systems': 8,
+      'network_security': 7
+    }
+  },
+
+  '🎬 映像制作型': {
+    research_intensity: 7, research_intensity_priority: 6,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 9, team_work_priority: 8,
+    workload: 8, workload_priority: 7,
+    theory_practice: 9, theory_practice_priority: 9,
+    skill_development: 8, skill_development_priority: 7,
+    lab_atmosphere: 9, lab_atmosphere_priority: 9,
+    flexibility: 6, flexibility_priority: 6,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 9, research_field_match_priority: 9,
+    interdisciplinary: 7, interdisciplinary_priority: 7,
+    communication_style: 9, communication_style_priority: 8,
+    field_interests: {
+      'video_film': 10,
+      'animation': 8,
+      'media_art': 7,
+      'computer_music': 6
+    }
+  },
+
+  '🏫 教育研究型': {
+    research_intensity: 6, research_intensity_priority: 6,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 7, team_work_priority: 6,
+    workload: 6, workload_priority: 5,
+    theory_practice: 6, theory_practice_priority: 6,
+    skill_development: 6, skill_development_priority: 6,
+    lab_atmosphere: 7, lab_atmosphere_priority: 7,
+    flexibility: 7, flexibility_priority: 7,
+    publication_opportunity: 7, publication_opportunity_priority: 6,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 8, interdisciplinary_priority: 8,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'japanese_education': 10,
+      'educational_tech': 8,
+      'korean_studies': 7,
+      'english_humanities': 6
+    }
+  },
+
+  '😌 軽負荷研究型': {
+    research_intensity: 4, research_intensity_priority: 6,
+    advisor_style: 8, advisor_style_priority: 7,
+    team_work: 5, team_work_priority: 4,
+    workload: 3, workload_priority: 9,
+    theory_practice: 7, theory_practice_priority: 5,
+    skill_development: 6, skill_development_priority: 5,
+    lab_atmosphere: 7, lab_atmosphere_priority: 6,
+    flexibility: 9, flexibility_priority: 9,
+    publication_opportunity: 4, publication_opportunity_priority: 3,
+    research_field_match: 6, research_field_match_priority: 5,
+    interdisciplinary: 5, interdisciplinary_priority: 4,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'english_humanities': 8,
+      'japanese_education': 7,
+      'sports_science': 6
+    }
+  },
+
+  '🏢 企業連携型': {
+    research_intensity: 7, research_intensity_priority: 7,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 8, team_work_priority: 8,
+    workload: 7, workload_priority: 7,
+    theory_practice: 9, theory_practice_priority: 9,
+    skill_development: 9, skill_development_priority: 9,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 6, flexibility_priority: 6,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 8, research_field_match_priority: 8,
+    interdisciplinary: 8, interdisciplinary_priority: 8,
+    communication_style: 8, communication_style_priority: 8,
+    field_interests: {
+      'web_design_uiux': 9,
+      'software_dev': 9,
+      'tourism_regional': 8,
+      'design_thinking_marketing': 8
+    }
   }
 };
 
@@ -220,27 +651,40 @@ export const getDemoProfileNames = async (): Promise<string[]> => {
  * デモプロファイルの詳細データを取得
  */
 export const getDemoProfileSimple = async (profileName: string): Promise<EvaluationRequest> => {
-  try {
-    const response = await axios.get(`${API_BASE_URL}/api/demo-profiles/${encodeURIComponent(profileName)}`);
-    return response.data;
-  } catch (error) {
-    console.warn('デモプロファイル詳細取得に失敗、デフォルト値を返します', error);
-    // デフォルトのプロファイルを返す
-    return {
-      research_intensity: 5,
-      advisor_style: 5,
-      team_work: 5,
-      workload: 5,
-      theory_practice: 5,
-      skill_development: 5,
-      lab_atmosphere: 5,
-      flexibility: 5,
-      publication_opportunity: 5,
-      research_field_match: 5,
-      interdisciplinary: 5,
-      communication_style: 5,
-    };
+  // プロファイルデータから取得
+  if (DEMO_PROFILES[profileName]) {
+    return DEMO_PROFILES[profileName];
   }
+
+  // 見つからない場合はデフォルト値を返す
+  console.warn(`プロファイル "${profileName}" が見つかりません。デフォルト値を返します。`);
+  return {
+    research_intensity: 5,
+    advisor_style: 5,
+    team_work: 5,
+    workload: 5,
+    theory_practice: 5,
+    skill_development: 5,
+    lab_atmosphere: 5,
+    flexibility: 5,
+    publication_opportunity: 5,
+    research_field_match: 5,
+    interdisciplinary: 5,
+    communication_style: 5,
+    research_intensity_priority: 5,
+    advisor_style_priority: 5,
+    team_work_priority: 5,
+    workload_priority: 5,
+    theory_practice_priority: 5,
+    skill_development_priority: 5,
+    lab_atmosphere_priority: 5,
+    flexibility_priority: 5,
+    publication_opportunity_priority: 5,
+    research_field_match_priority: 5,
+    interdisciplinary_priority: 5,
+    communication_style_priority: 5,
+    field_interests: {}
+  };
 };
 
 /**
