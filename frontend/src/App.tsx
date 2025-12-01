@@ -1,4 +1,6 @@
-// frontend/src/App.tsx - サマリー表示責務を修正
+// frontend/src/App.tsx
+// studentProfileをResultsListに渡す版
+
 import React, { useState } from 'react';
 import {
   Container,
@@ -47,6 +49,7 @@ interface EvaluationResponse {
   metadata?: any;
   system_info?: any;
   total_labs_evaluated?: number;
+  student_profile?: any; // ★★★ 学生プロファイルを追加 ★★★
 }
 
 // テーマ設定
@@ -65,6 +68,7 @@ const theme = createTheme({
 const App: React.FC = () => {
   const [activeStep, setActiveStep] = useState(0);
   const [evaluationResults, setEvaluationResults] = useState<EvaluationResponse | null>(null);
+  const [studentProfile, setStudentProfile] = useState<any>(null); // ★★★ 学生プロファイルを保持 ★★★
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -86,6 +90,12 @@ const App: React.FC = () => {
       }
     };
     setEvaluationResults(normalizedResponse);
+
+    // ★★★ 学生プロファイルを保存 ★★★
+    if (response.student_profile) {
+      setStudentProfile(response.student_profile);
+    }
+
     setActiveStep(2);
     setError('');
   };
@@ -98,6 +108,7 @@ const App: React.FC = () => {
   const handleReset = () => {
     setActiveStep(0);
     setEvaluationResults(null);
+    setStudentProfile(null); // ★★★ リセット時にクリア ★★★
     setError('');
   };
 
@@ -166,7 +177,7 @@ const App: React.FC = () => {
                 <Grid item xs={12} sm={3}>
                   <Box textAlign="center">
                     <Typography variant="h4">
-                      {results.filter((r: any) => (r.final_score || 0) >= 0.7).length}
+                      {results.filter((r: any) => (r.overall_compatibility || 0) >= 0.7).length}
                     </Typography>
                     <Typography variant="body2">高適合研究室</Typography>
                   </Box>
@@ -175,7 +186,7 @@ const App: React.FC = () => {
                   <Box textAlign="center">
                     <Typography variant="h4">
                       {results.length > 0
-                        ? (results.reduce((sum: number, r: any) => sum + (r.final_score || 0), 0) / results.length * 100).toFixed(1) + '%'
+                        ? (results.reduce((sum: number, r: any) => sum + (r.overall_compatibility || 0), 0) / results.length * 100).toFixed(1) + '%'
                         : '0.0%'}
                     </Typography>
                     <Typography variant="body2">平均適合度</Typography>
@@ -192,11 +203,11 @@ const App: React.FC = () => {
               </Grid>
             </Paper>
 
-            {/* 結果リスト */}
-            {/* ★★★ 修正点1: `summary` プロパティを削除 ★★★ */}
+            {/* ★★★ ResultsListにstudentProfileを渡す ★★★ */}
             <ResultsList
               results={results}
-              metadata={evaluationResults.metadata || evaluationResults.system_info}
+              metadata={evaluationResults.system_info || evaluationResults.metadata}
+              studentProfile={studentProfile}
             />
 
             {/* アクションボタン */}

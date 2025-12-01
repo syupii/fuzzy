@@ -1,4 +1,4 @@
-// frontend/src/services/api.ts - 27分野体系対応版
+// frontend/src/services/api.ts - 卒論ペルソナ追加版
 import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -161,7 +161,6 @@ export const FIELD_CATEGORIES = {
 
 // ==================== 追加の型定義 ====================
 
-// StudentProfileはEvaluationRequestと同じ構造
 export type StudentProfile = EvaluationRequest;
 
 export interface FieldInterest {
@@ -171,33 +170,21 @@ export interface FieldInterest {
 
 // ==================== API関数 ====================
 
-/**
- * 研究室一覧を取得
- */
 export const getLabs = async () => {
   const response = await axios.get(`${API_BASE_URL}/api/labs`);
   return response.data;
 };
 
-/**
- * 研究室適合度を評価
- */
 export const evaluateLabs = async (data: EvaluationRequest): Promise<EvaluationResponse> => {
   const response = await axios.post(`${API_BASE_URL}/api/evaluate`, data);
   return response.data;
 };
 
-/**
- * システム情報を取得
- */
 export const getSystemInfo = async () => {
   const response = await axios.get(`${API_BASE_URL}/`);
   return response.data;
 };
 
-/**
- * ヘルスチェック
- */
 export const healthCheck = async () => {
   const response = await axios.get(`${API_BASE_URL}/health`);
   return response.data;
@@ -207,8 +194,16 @@ export const healthCheck = async () => {
  * デモプロファイル名の一覧を取得
  */
 export const getDemoProfileNames = async (): Promise<string[]> => {
-  // 20種類のデモプロファイル
+  // 卒論の5つのペルソナ + 既存の20種類 = 25種類
   return [
+    // 🎓 卒論のペルソナ（実験用）
+    '【卒論】ペルソナA：研究没頭型',
+    '【卒論】ペルソナB：バランス重視型',
+    '【卒論】ペルソナC：実践・開発型',
+    '【卒論】ペルソナD：環境・雰囲気重視型',
+    '【卒論】ペルソナE：分野絶対型',
+
+    // 既存のデモプロファイル
     'AI研究集中型',
     '実践・就職重視型',
     'バランス型',
@@ -236,6 +231,125 @@ export const getDemoProfileNames = async (): Promise<string[]> => {
  * デモプロファイルデータ
  */
 const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
+  // ==================== 🎓 卒論のペルソナ（実験用） ====================
+
+  '【卒論】ペルソナA：研究没頭型': {
+    // 特徴：研究強度と論文発表機会を最大化(10), 指導はやや自由(7)を希望
+    // 興味分野：人工知能・機械学習
+    // 分野重視度：8
+    research_intensity: 10, research_intensity_priority: 10,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 6, team_work_priority: 5,
+    workload: 9, workload_priority: 8,
+    theory_practice: 4, theory_practice_priority: 6,
+    skill_development: 8, skill_development_priority: 8,
+    lab_atmosphere: 6, lab_atmosphere_priority: 4,
+    flexibility: 5, flexibility_priority: 3,
+    publication_opportunity: 10, publication_opportunity_priority: 10,
+    research_field_match: 8, research_field_match_priority: 9,
+    interdisciplinary: 5, interdisciplinary_priority: 4,
+    communication_style: 5, communication_style_priority: 4,
+    field_interests: {
+      'ai_ml': 10,
+      'data_science_math': 8,
+      'image_processing': 7
+    }
+  },
+
+  '【卒論】ペルソナB：バランス重視型': {
+    // 特徴：全項目において極端な値を避け、平均的な環境(5～7)を希望
+    // 興味分野：画像処理・コンピュータビジョン
+    // 分野重視度：5
+    research_intensity: 6, research_intensity_priority: 5,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 6, team_work_priority: 5,
+    workload: 6, workload_priority: 5,
+    theory_practice: 6, theory_practice_priority: 5,
+    skill_development: 6, skill_development_priority: 5,
+    lab_atmosphere: 6, lab_atmosphere_priority: 5,
+    flexibility: 6, flexibility_priority: 5,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 5, research_field_match_priority: 5,
+    interdisciplinary: 6, interdisciplinary_priority: 5,
+    communication_style: 6, communication_style_priority: 5,
+    field_interests: {
+      'image_processing': 8,
+      'ai_ml': 7,
+      'cg_graphics': 6
+    }
+  },
+
+  '【卒論】ペルソナC：実践・開発型': {
+    // 特徴：理論よりも実践(10)を重視し、チーム開発(9)を好む
+    // 興味分野：ゲーム開発
+    // 分野重視度：4
+    research_intensity: 7, research_intensity_priority: 6,
+    advisor_style: 7, advisor_style_priority: 6,
+    team_work: 9, team_work_priority: 9,
+    workload: 7, workload_priority: 6,
+    theory_practice: 10, theory_practice_priority: 10,
+    skill_development: 9, skill_development_priority: 9,
+    lab_atmosphere: 8, lab_atmosphere_priority: 7,
+    flexibility: 6, flexibility_priority: 5,
+    publication_opportunity: 6, publication_opportunity_priority: 4,
+    research_field_match: 4, research_field_match_priority: 5,
+    interdisciplinary: 7, interdisciplinary_priority: 6,
+    communication_style: 8, communication_style_priority: 7,
+    field_interests: {
+      'game_dev': 10,
+      'cg_graphics': 8,
+      'vr_ar_metaverse': 7
+    }
+  },
+
+  '【卒論】ペルソナD：環境・雰囲気重視型': {
+    // 特徴：ゼミの雰囲気と柔軟性(9)を最優先し、研究強度は低め(4)を希望
+    // 興味分野：Web デザイン・UI/UX
+    // 分野重視度：3
+    research_intensity: 4, research_intensity_priority: 6,
+    advisor_style: 8, advisor_style_priority: 7,
+    team_work: 5, team_work_priority: 5,
+    workload: 4, workload_priority: 7,
+    theory_practice: 6, theory_practice_priority: 5,
+    skill_development: 6, skill_development_priority: 5,
+    lab_atmosphere: 9, lab_atmosphere_priority: 10,
+    flexibility: 9, flexibility_priority: 10,
+    publication_opportunity: 4, publication_opportunity_priority: 3,
+    research_field_match: 3, research_field_match_priority: 4,
+    interdisciplinary: 5, interdisciplinary_priority: 4,
+    communication_style: 7, communication_style_priority: 6,
+    field_interests: {
+      'web_design_uiux': 9,
+      'graphic_visual': 7,
+      'illustration_art': 6
+    }
+  },
+
+  '【卒論】ペルソナE：分野絶対型': {
+    // 特徴：特定の研究分野への適合性のみを極端に重視
+    // 興味分野：VR/AR・メタバース
+    // 分野重視度：10
+    research_intensity: 6, research_intensity_priority: 5,
+    advisor_style: 6, advisor_style_priority: 5,
+    team_work: 5, team_work_priority: 4,
+    workload: 6, workload_priority: 5,
+    theory_practice: 6, theory_practice_priority: 5,
+    skill_development: 7, skill_development_priority: 6,
+    lab_atmosphere: 5, lab_atmosphere_priority: 4,
+    flexibility: 5, flexibility_priority: 4,
+    publication_opportunity: 6, publication_opportunity_priority: 5,
+    research_field_match: 10, research_field_match_priority: 10,
+    interdisciplinary: 5, interdisciplinary_priority: 4,
+    communication_style: 5, communication_style_priority: 4,
+    field_interests: {
+      'vr_ar_metaverse': 10,
+      'game_dev': 8,
+      'cg_graphics': 7
+    }
+  },
+
+  // ==================== 既存のデモプロファイル ====================
+
   'AI研究集中型': {
     research_intensity: 9, research_intensity_priority: 10,
     advisor_style: 7, advisor_style_priority: 6,
@@ -651,12 +765,10 @@ const DEMO_PROFILES: { [key: string]: EvaluationRequest } = {
  * デモプロファイルの詳細データを取得
  */
 export const getDemoProfileSimple = async (profileName: string): Promise<EvaluationRequest> => {
-  // プロファイルデータから取得
   if (DEMO_PROFILES[profileName]) {
     return DEMO_PROFILES[profileName];
   }
 
-  // 見つからない場合はデフォルト値を返す
   console.warn(`プロファイル "${profileName}" が見つかりません。デフォルト値を返します。`);
   return {
     research_intensity: 5,
@@ -694,25 +806,16 @@ export const evaluate = evaluateLabs;
 
 // ==================== ヘルパー関数 ====================
 
-/**
- * 分野IDから分野名を取得
- */
 export const getFieldName = (fieldId: string): string => {
   const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
   return field ? field.name : fieldId;
 };
 
-/**
- * 分野IDからカテゴリを取得
- */
 export const getFieldCategory = (fieldId: string): string => {
   const field = RESEARCH_FIELDS.find(f => f.id === fieldId);
   return field ? field.category : '不明';
 };
 
-/**
- * カテゴリに属する分野を取得
- */
 export const getFieldsByCategory = (category: string): ResearchField[] => {
   return RESEARCH_FIELDS.filter(f => f.category === category);
 };
@@ -732,7 +835,6 @@ export default {
   FIELD_CATEGORIES
 };
 
-// apiServiceという名前でも同じものをエクスポート
 export const apiService = {
   getLabs,
   evaluateLabs,

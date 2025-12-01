@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-研究室選択支援システム - FastAPI バックエンド（修正版）
-評価が0になる問題を修正 + field_interestsのデータ形式を修正
+研究室選択支援システム - FastAPI バックエンド（詳細情報追加版）
+評価が0になる問題を修正 + field_interestsのデータ形式を修正 + 研究室詳細情報を追加
 """
 
 import os
@@ -41,7 +41,7 @@ except ImportError as e:
 app = FastAPI(
     title="研究室選択支援システム",
     description="ファジィ決定木による高精度マッチングシステム",
-    version="3.1.1-fixed"
+    version="3.1.2-with-details"
 )
 
 # --- CORS設定 ---
@@ -67,13 +67,16 @@ system_state = {
     "startup_time": None
 }
 
-# 12項目評価基準
+# 12項目評価基準（research_field_matchは除外）
 EVALUATION_CRITERIA = [
     "research_intensity", "advisor_style", "team_work",
-    "workload", "theory_practice", "research_field_match",
-    "skill_development", "lab_atmosphere", "flexibility",
-    "publication_opportunity", "interdisciplinary", "communication_style"
+    "workload", "theory_practice", "skill_development", 
+    "lab_atmosphere", "flexibility", "publication_opportunity", 
+    "interdisciplinary", "communication_style"
 ]
+
+# research_field_matchは分野マッチングの比重を決めるメタパラメータ
+META_PARAMETERS = ["research_field_match"]
 
 
 # ==================== データベース読み込み ====================
@@ -166,7 +169,7 @@ initialize_system()
 @app.get("/")
 async def root():
     """ルートエンドポイント"""
-    return { "message": "研究室選択支援システム API", "version": "3.1.1-fixed" }
+    return { "message": "研究室選択支援システム API", "version": "3.1.2-with-details" }
 
 
 @app.get("/api/health")
@@ -191,11 +194,22 @@ async def get_labs(field_id: Optional[str] = Query(None)):
 def normalize_student_profile(student: Dict[str, Any]) -> Dict[str, Any]:
     """学生プロファイルを正規化 (1-10スケールを0-1スケールに変換)"""
     normalized = {}
+    
+    # 基本11項目を正規化
     for criterion in EVALUATION_CRITERIA:
         value = student.get(criterion, 5.0)
         normalized[criterion] = (value - 1) / 9.0 if value > 1 else 0.0
         
         priority_key = f"{criterion}_priority"
+        normalized[priority_key] = student.get(priority_key, 5.0)
+    
+    # ★★★ メタパラメータ（research_field_match）を正規化 ★★★
+    # これは研究室の特性ではなく、基本スコアと分野スコアの比重を決める
+    for meta_param in META_PARAMETERS:
+        value = student.get(meta_param, 5.0)
+        normalized[meta_param] = (value - 1) / 9.0 if value > 1 else 0.0
+        
+        priority_key = f"{meta_param}_priority"
         normalized[priority_key] = student.get(priority_key, 5.0)
     
     # ★★★ 修正: field_interests をオブジェクト形式と配列形式の両方に対応 ★★★
@@ -260,46 +274,90 @@ async def evaluate_labs(student_profile: Dict[str, Any] = Body(...)):
     for lab in labs_to_evaluate:
         try:
             result = matcher.calculate_compatibility(normalized_student, lab)
+            
+            # ★★★ 研究室の正規化されたfeaturesを作成 ★★★
+            normalized_features = {}
+            if "features" in lab:
+                for criterion in EVALUATION_CRITERIA:
+                    if criterion in lab["features"]:
+                        value = lab["features"][criterion]
+                        # 1-10スケールを0-1スケールに正規化
+                        normalized_features[criterion] = (value - 1) / 9.0 if value > 1 else 0.0
+            
+            # ★★★ 詳細情報を含むレスポンスを構築 ★★★
             lab_result = {
                 "lab_id": lab.get("id"),
                 "lab_name": lab.get("name"),
-                "professor_name": lab.get("professor"),
-                "research_area": lab.get("research_area"),
-                "category": lab.get("category"),
-                "final_score": result.total_compatibility,
+                "professor": lab.get("professor", lab.get("professor_name", "")),
+                "field_id": lab.get("field_id"),
+                "field_name": lab.get("research_area", ""),
+                "category": lab.get("category", ""),
+                
+                # スコア情報
+                "overall_compatibility": result.total_compatibility,
                 "basic_score": result.basic_score,
                 "field_score": result.field_score,
-                "feature_scores": result.criteria_scores,
+                "field_weight": getattr(result, 'field_weight_alpha', 0.5),
+                "basic_weight": getattr(result, 'basic_weight_beta', 0.5),
+                
+                # 詳細スコア
+                "criteria_scores": result.criteria_scores,
+                "feature_scores": result.criteria_scores,  # 互換性のため
+                "field_detail": getattr(result, 'field_detail', {}),
+                
+                # 決定木情報
+                "tree_path": getattr(result, 'tree_path', ''),
+                "tree_layers": getattr(result, 'tree_layers', []),
+                "leaf_criteria": getattr(result, 'leaf_criteria', []),
+                "fuzzy_paths": getattr(result, 'fuzzy_paths', []),
+                
+                # 推薦情報
                 "explanation": result.explanation,
                 "recommendation": result.recommendation,
-                "priority_analysis": getattr(result, 'priority_analysis', None),
                 "confidence": getattr(result, 'confidence', 0.85),
+                
+                # ★★★ 研究室詳細情報（フロントエンド表示用） ★★★
+                "description": lab.get("description", ""),
+                "specialization": lab.get("specialization", lab.get("research_area", "")),
+                "research_fields": lab.get("research_fields", lab.get("keywords", [])),
+                
+                # ★★★ 研究室の特徴値（正規化済み0-1スケール）- 比較表示用 ★★★
+                "features": normalized_features
             }
             results.append(lab_result)
+            
         except Exception as e:
             print(f"⚠️ {lab.get('name')} の評価エラー: {e}")
+            import traceback
+            traceback.print_exc()
             continue
-            
+    
     processing_time = time.time() - start_time
-    results.sort(key=lambda x: x["final_score"], reverse=True)
+    
+    # ソート
+    results.sort(key=lambda x: x["overall_compatibility"], reverse=True)
+    
     system_state["evaluation_count"] += 1
     
+    # サマリー情報
     summary = {}
     if results:
         summary = {
             "total_labs": len(results),
-            "high_compatibility_count": len([r for r in results if r["final_score"] >= 0.7]),
-            "avg_score": sum(r["final_score"] for r in results) / len(results),
+            "high_compatibility_count": len([r for r in results if r["overall_compatibility"] >= 0.7]),
+            "avg_score": sum(r["overall_compatibility"] for r in results) / len(results),
             "best_match_lab": results[0]["lab_name"],
-            "best_match_score": results[0]["final_score"]
+            "best_match_score": results[0]["overall_compatibility"]
         }
 
     return {
         "evaluation_results": results,
+        "student_profile": normalized_student,  # ★★★ 学生プロファイルを追加 ★★★
         "summary": summary,
         "system_info": {
             "processing_time": processing_time,
-            "timestamp": datetime.now().isoformat()
+            "timestamp": datetime.now().isoformat(),
+            "matcher_type": "FuzzyMultiPathMatcher"
         }
     }
 

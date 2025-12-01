@@ -64,7 +64,7 @@ interface ResearchFieldInterests {
 }
 
 interface EvaluationFormProps {
-  onResults: (response: any) => void;
+  onResults: (response: any, inputValues?: any) => void;
   onError: (error: string) => void;
 }
 
@@ -314,7 +314,25 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
         )
       };
       const result = await apiService.evaluate(studentProfile);
-      onResults(result);
+      const inputValues = {
+        basicCriteria: {
+          research_intensity: preferences.research_intensity,
+          advisor_style: preferences.advisor_style,
+          team_work: preferences.team_work,
+          workload: preferences.workload,
+          theory_practice: preferences.theory_practice,
+          research_field_match: preferences.research_field_match,
+          skill_development: preferences.skill_development,
+          lab_atmosphere: preferences.lab_atmosphere,
+          flexibility: preferences.flexibility,
+          publication_opportunity: preferences.publication_opportunity,
+          interdisciplinary: preferences.interdisciplinary,
+          communication_style: preferences.communication_style,
+        },
+        fieldInterests: fieldInterests
+      };
+
+      onResults(result, inputValues);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : '評価処理でエラーが発生しました';
       setError(errorMessage);
