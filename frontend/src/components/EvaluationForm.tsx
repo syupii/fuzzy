@@ -177,17 +177,6 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [fieldInterests, setFieldInterests] = useState<ResearchFieldInterests>({});
 
-  useEffect(() => {
-    const fetchDemoProfileNames = async () => {
-      try {
-        const names = await apiService.getDemoProfileNames();
-        setDemoProfileNames(names);
-      } catch (err) {
-        console.error('デモプロファイル名の取得に失敗:', err);
-      }
-    };
-    fetchDemoProfileNames();
-  }, []);
 
   const handlePreferenceChange = (key: keyof EvaluationPreferencesWithPriority, value: number) => {
     setPreferences(prev => ({ ...prev, [key]: value }));
@@ -221,61 +210,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
     setAnchorEl(null);
   };
 
-  const handleLoadDemo = async (profileName: string) => {
-    setLoadingDemoProfiles(true);
-    try {
-      const demoData = await apiService.getDemoProfileSimple(profileName);
 
-      const newPreferences: EvaluationPreferencesWithPriority = {
-        research_intensity: demoData.research_intensity,
-        advisor_style: demoData.advisor_style,
-        team_work: demoData.team_work,
-        workload: demoData.workload,
-        theory_practice: demoData.theory_practice,
-        research_field_match: demoData.research_field_match,
-        skill_development: demoData.skill_development,
-        lab_atmosphere: demoData.lab_atmosphere,
-        flexibility: demoData.flexibility,
-        publication_opportunity: demoData.publication_opportunity,
-        interdisciplinary: demoData.interdisciplinary,
-        communication_style: demoData.communication_style,
-        research_intensity_priority: demoData.research_intensity_priority || 5,
-        advisor_style_priority: demoData.advisor_style_priority || 5,
-        team_work_priority: demoData.team_work_priority || 5,
-        workload_priority: demoData.workload_priority || 5,
-        theory_practice_priority: demoData.theory_practice_priority || 5,
-        research_field_match_priority: demoData.research_field_match_priority || 5,
-        skill_development_priority: demoData.skill_development_priority || 5,
-        lab_atmosphere_priority: demoData.lab_atmosphere_priority || 5,
-        flexibility_priority: demoData.flexibility_priority || 5,
-        publication_opportunity_priority: demoData.publication_opportunity_priority || 5,
-        interdisciplinary_priority: demoData.interdisciplinary_priority || 5,
-        communication_style_priority: demoData.communication_style_priority || 5
-      };
-
-      setPreferences(newPreferences);
-
-      const newSelectedFields = new Set<string>();
-      const newFieldInterests: ResearchFieldInterests = {};
-
-      if (demoData.field_interests && typeof demoData.field_interests === 'object') {
-        Object.entries(demoData.field_interests).forEach(([fieldId, interestLevel]) => {
-          newSelectedFields.add(fieldId);
-          newFieldInterests[fieldId] = Number(interestLevel);
-        });
-      }
-
-      setSelectedFields(newSelectedFields);
-      setFieldInterests(newFieldInterests);
-      handleDemoMenuClose();
-      setError('');
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'デモプロファイルの読み込みに失敗しました';
-      setError(errorMessage);
-    } finally {
-      setLoadingDemoProfiles(false);
-    }
-  };
 
   const handleEvaluate = async () => {
     setIsLoading(true);
@@ -521,26 +456,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
           )}
         </Card>
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', alignItems: 'center' }}>
-          <Button
-            variant="outlined"
-            onClick={handleDemoMenuOpen}
-            startIcon={loadingDemoProfiles ? <CircularProgress size={20} /> : <School />}
-            endIcon={<ArrowDropDown />}
-            disabled={loadingDemoProfiles}
-          >
-            {loadingDemoProfiles ? '読み込み中...' : 'デモデータ選択'}
-          </Button>
-          <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleDemoMenuClose}>
-            {demoProfileNames.length > 0 ? (
-              demoProfileNames.map(profileName => (
-                <MenuItem key={profileName} onClick={() => handleLoadDemo(profileName)}>
-                  {profileName}
-                </MenuItem>
-              ))
-            ) : (
-              <MenuItem disabled>読み込み中...</MenuItem>
-            )}
-          </Menu>
+
           <Button
             variant="contained"
             onClick={handleEvaluate}

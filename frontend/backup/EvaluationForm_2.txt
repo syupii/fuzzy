@@ -1,0 +1,434 @@
+// frontend/src/components/EvaluationForm.tsx - ハイブリッド版
+import React, { useState } from 'react';
+import {
+    Box,
+    Card,
+    Typography,
+    Slider,
+    Button,
+    Grid,
+    FormControl,
+    InputLabel,
+    Select,
+    MenuItem,
+    Alert,
+    Chip,
+    Stack,
+    Paper,
+    Divider,
+    CircularProgress,
+    SelectChangeEvent,
+} from '@mui/material';
+import { evaluateLabs } from '../services/api';
+
+interface EvaluationCriteria {
+    [key: string]: number;
+}
+
+interface CriteriaInfo {
+    name: string;
+    description: string;
+    range: string;
+}
+
+const EvaluationForm: React.FC<{
+    onResults: (results: any) => void;
+    onError: (error: string) => void;
+}> = ({ onResults, onError }) => {
+    const [loading, setLoading] = useState(false);
+
+    // 評価基準（12項目）
+    const [criteria, setCriteria] = useState<EvaluationCriteria>({
+        research_intensity: 5,
+        advisor_style: 5,
+        team_work: 5,
+        workload: 5,
+        theory_practice: 5,
+        skill_development: 5,
+        lab_atmosphere: 5,
+        flexibility: 5,
+        publication_opportunity: 5,
+        interdisciplinary: 5,
+        communication_style: 5,
+        research_field_match: 5,
+    });
+
+    // 優先度
+    const [priorities, setPriorities] = useState<EvaluationCriteria>({
+        research_intensity_priority: 5,
+        advisor_style_priority: 5,
+        team_work_priority: 5,
+        workload_priority: 5,
+        theory_practice_priority: 5,
+        skill_development_priority: 5,
+        lab_atmosphere_priority: 5,
+        flexibility_priority: 5,
+        publication_opportunity_priority: 5,
+        interdisciplinary_priority: 5,
+        communication_style_priority: 5,
+        research_field_match_priority: 5,
+    });
+
+    // 分野興味
+    const [fieldInterests, setFieldInterests] = useState<{ [key: string]: number }>({});
+    const [selectedFields, setSelectedFields] = useState<string[]>([]);
+
+    // ★★★ 評価項目の定義（新デザイン用） ★★★
+    const CRITERIA_INFO: Record<string, CriteriaInfo> = {
+        research_intensity: {
+            name: '研究強度',
+            description: '研究にどれだけ集中的に取り組みたいか',
+            range: '1 (軽い研究) ～ 10 (集中研究)'
+        },
+        advisor_style: {
+            name: '指導スタイル',
+            description: '教授からの指導の受け方の好み',
+            range: '1 (厳格指導) ～ 10 (自由指導)'
+        },
+        team_work: {
+            name: 'チームワーク',
+            description: '研究での他者との協働の程度',
+            range: '1 (個人研究) ～ 10 (チーム研究)'
+        },
+        workload: {
+            name: 'ワークロード',
+            description: '研究活動の忙しさに対する許容度',
+            range: '1 (軽い負荷) ～ 10 (重い負荷)'
+        },
+        theory_practice: {
+            name: '理論・実践バランス',
+            description: '理論研究と実践的研究のバランス',
+            range: '1 (理論重視) ～ 10 (実践重視)'
+        },
+        skill_development: {
+            name: 'スキル開発',
+            description: '専門性と汎用性のバランス',
+            range: '1 (専門特化) ～ 10 (幅広いスキル)'
+        },
+        lab_atmosphere: {
+            name: '研究室雰囲気',
+            description: '研究室の全体的な雰囲気',
+            range: '1 (静寂集中) ～ 10 (活発議論)'
+        },
+        flexibility: {
+            name: '柔軟性',
+            description: '研究時間の自由度',
+            range: '1 (固定スケジュール) ～ 10 (柔軟スケジュール)'
+        },
+        publication_opportunity: {
+            name: '論文発表機会',
+            description: '研究成果の論文化機会',
+            range: '1 (少ない機会) ～ 10 (豊富な機会)'
+        },
+        interdisciplinary: {
+            name: '学際性',
+            description: '他分野との連携の程度',
+            range: '1 (単一分野) ～ 10 (学際連携)'
+        },
+        communication_style: {
+            name: 'コミュニケーション',
+            description: '研究室での交流スタイル',
+            range: '1 (少人数密接) ～ 10 (オープン交流)'
+        },
+        research_field_match: {
+            name: '研究分野適合性',
+            description: '分野マッチングの重要度',
+            range: '1 (広い分野) ～ 10 (専門特化)'
+        }
+    };
+
+    // ★★★ 研究分野の定義（旧バージョン） ★★★
+    const researchFields = [
+        { id: 'ai_machine_learning', name: 'AI・機械学習', category: 'テクノロジー・システム' },
+        { id: 'data_science', name: 'データサイエンス', category: 'テクノロジー・システム' },
+        { id: 'web_development', name: 'Web開発', category: 'テクノロジー・システム' },
+        { id: 'mobile_app', name: 'モバイルアプリ', category: 'テクノロジー・システム' },
+        { id: 'cloud_computing', name: 'クラウド技術', category: 'テクノロジー・システム' },
+        { id: 'security', name: 'セキュリティ', category: 'テクノロジー・システム' },
+        { id: 'iot', name: 'IoT', category: 'テクノロジー・システム' },
+        { id: 'network', name: 'ネットワーク', category: 'テクノロジー・システム' },
+        { id: 'database', name: 'データベース', category: 'テクノロジー・システム' },
+        { id: 'image_processing', name: '画像処理', category: 'クリエイティブ' },
+        { id: 'cg', name: 'CG・3D', category: 'クリエイティブ' },
+        { id: 'ui_ux', name: 'UI/UXデザイン', category: 'クリエイティブ' },
+        { id: 'video_production', name: '映像制作', category: 'クリエイティブ' },
+        { id: 'animation', name: 'アニメーション', category: 'クリエイティブ' },
+        { id: 'sound_design', name: '音響デザイン', category: 'クリエイティブ' },
+        { id: 'game_development', name: 'ゲーム開発', category: 'エンターテインメント' },
+        { id: 'vr_ar', name: 'VR/AR', category: 'エンターテインメント' },
+        { id: 'esports', name: 'eスポーツ', category: 'エンターテインメント' },
+        { id: 'digital_content', name: 'デジタルコンテンツ', category: 'エンターテインメント' },
+        { id: 'business', name: 'ビジネス・経営', category: '人文・社会' },
+        { id: 'marketing', name: 'マーケティング', category: '人文・社会' },
+        { id: 'education', name: '教育工学', category: '人文・社会' },
+        { id: 'psychology', name: '心理学', category: '人文・社会' },
+        { id: 'linguistics', name: '言語学', category: '人文・社会' },
+        { id: 'japanese_education', name: '日本語教育', category: '人文・社会' },
+        { id: 'korean_studies', name: '韓国語・韓国文化', category: '人文・社会' },
+        { id: 'media_studies', name: 'メディア研究', category: '人文・社会' },
+    ];
+
+    const handleCriteriaChange = (key: string, value: number) => {
+        setCriteria({ ...criteria, [key]: value });
+    };
+
+    const handlePriorityChange = (key: string, value: number) => {
+        setPriorities({ ...priorities, [key]: value });
+    };
+
+    const handleFieldSelect = (event: SelectChangeEvent<string>) => {
+        const fieldId = event.target.value;
+        if (fieldId && !selectedFields.includes(fieldId)) {
+            setSelectedFields([...selectedFields, fieldId]);
+            setFieldInterests({ ...fieldInterests, [fieldId]: 5 });
+        }
+    };
+
+    const handleFieldRemove = (fieldId: string) => {
+        setSelectedFields(selectedFields.filter(f => f !== fieldId));
+        const newInterests = { ...fieldInterests };
+        delete newInterests[fieldId];
+        setFieldInterests(newInterests);
+    };
+
+    const handleFieldInterestChange = (fieldId: string, value: number) => {
+        setFieldInterests({ ...fieldInterests, [fieldId]: value });
+    };
+
+    const handleSubmit = async () => {
+        setLoading(true);
+        try {
+            const requestData: any = {
+                ...criteria,
+                ...priorities,
+                field_interests: fieldInterests,
+            };
+
+            const response = await evaluateLabs(requestData);
+            onResults(response);
+        } catch (error: any) {
+            onError(error.message || '評価中にエラーが発生しました');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Box>
+            {/* ★★★ 評価基準セクション（新デザイン・横3列） ★★★ */}
+            <Paper sx={{ p: 4, mb: 3, borderRadius: 2 }}>
+                <Typography variant="h5" gutterBottom fontWeight={700} color="primary">
+                    評価基準の設定
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                    各項目について、あなたの希望度（1-10）と優先度（1-10）を設定してください
+                </Typography>
+
+                <Grid container spacing={2}>
+                    {Object.entries(CRITERIA_INFO).map(([criterionKey, criterionInfo]) => (
+                        <Grid item xs={12} sm={6} lg={4} key={criterionKey}>
+                            <Card
+                                variant="outlined"
+                                sx={{
+                                    p: 3,
+                                    height: '100%',
+                                    borderRadius: 2,
+                                    transition: 'all 0.3s',
+                                    '&:hover': {
+                                        boxShadow: 3,
+                                        borderColor: 'primary.main'
+                                    }
+                                }}
+                            >
+                                {/* タイトル */}
+                                <Typography variant="h6" color="primary" gutterBottom sx={{ fontWeight: 'bold' }}>
+                                    {criterionInfo.name}
+                                </Typography>
+
+                                {/* 説明文 */}
+                                <Typography variant="body2" color="text.secondary" gutterBottom>
+                                    {criterionInfo.description}
+                                </Typography>
+
+                                {/* 範囲情報 */}
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                                    {criterionInfo.range}
+                                </Typography>
+
+                                <Divider sx={{ mb: 2 }} />
+
+                                {/* 希望度スライダー */}
+                                <Box sx={{ mb: 3 }}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                            希望度
+                                        </Typography>
+                                        <Chip
+                                            label={`${criteria[criterionKey]}/10`}
+                                            size="small"
+                                            color="primary"
+                                            sx={{ fontWeight: 700 }}
+                                        />
+                                    </Stack>
+                                    <Slider
+                                        value={criteria[criterionKey]}
+                                        onChange={(_, value) => handleCriteriaChange(criterionKey, value as number)}
+                                        min={1}
+                                        max={10}
+                                        step={1}
+                                        marks
+                                        valueLabelDisplay="auto"
+                                    />
+                                </Box>
+
+                                {/* 優先度スライダー */}
+                                <Box>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                                        <Typography variant="body2" sx={{ fontWeight: 'medium' }}>
+                                            優先度
+                                        </Typography>
+                                        <Chip
+                                            label={`${priorities[`${criterionKey}_priority`]}/10`}
+                                            size="small"
+                                            color="secondary"
+                                            sx={{ fontWeight: 700 }}
+                                        />
+                                    </Stack>
+                                    <Slider
+                                        value={priorities[`${criterionKey}_priority`]}
+                                        onChange={(_, value) => handlePriorityChange(`${criterionKey}_priority`, value as number)}
+                                        min={1}
+                                        max={10}
+                                        step={1}
+                                        marks
+                                        valueLabelDisplay="auto"
+                                        color="secondary"
+                                    />
+                                </Box>
+                            </Card>
+                        </Grid>
+                    ))}
+                </Grid>
+            </Paper>
+
+            {/* ★★★ 研究分野セクション（旧バージョン） ★★★ */}
+            <Paper sx={{ p: 4, mb: 3, borderRadius: 2 }}>
+                <Typography variant="h5" gutterBottom fontWeight={700} color="primary">
+                    研究分野の選択
+                </Typography>
+                <Typography variant="body2" color="text.secondary" paragraph>
+                    興味のある研究分野を選択し、興味度（1-10）を設定してください
+                </Typography>
+
+                <FormControl fullWidth sx={{ mb: 3 }}>
+                    <InputLabel>研究分野を追加</InputLabel>
+                    <Select
+                        value=""
+                        onChange={handleFieldSelect}
+                        label="研究分野を追加"
+                    >
+                        {researchFields
+                            .filter(f => !selectedFields.includes(f.id))
+                            .map(field => (
+                                <MenuItem key={field.id} value={field.id}>
+                                    {field.name} ({field.category})
+                                </MenuItem>
+                            ))}
+                    </Select>
+                </FormControl>
+
+                {selectedFields.length > 0 && (
+                    <Grid container spacing={2}>
+                        {selectedFields.map(fieldId => {
+                            const field = researchFields.find(f => f.id === fieldId);
+                            if (!field) return null;
+
+                            return (
+                                <Grid item xs={12} sm={6} lg={4} key={fieldId}>
+                                    <Card variant="outlined" sx={{ p: 2.5, borderRadius: 2 }}>
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                                            <Box>
+                                                <Typography variant="subtitle2" fontWeight={600}>
+                                                    {field.name}
+                                                </Typography>
+                                                <Typography variant="caption" color="text.secondary">
+                                                    {field.category}
+                                                </Typography>
+                                            </Box>
+                                            <Button
+                                                size="small"
+                                                color="error"
+                                                onClick={() => handleFieldRemove(fieldId)}
+                                            >
+                                                削除
+                                            </Button>
+                                        </Stack>
+
+                                        <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                                            <Typography variant="body2" color="text.secondary">
+                                                興味度
+                                            </Typography>
+                                            <Chip
+                                                label={`${fieldInterests[fieldId]}/10`}
+                                                size="small"
+                                                color="primary"
+                                                sx={{ fontWeight: 700 }}
+                                            />
+                                        </Stack>
+                                        <Slider
+                                            value={fieldInterests[fieldId] || 5}
+                                            onChange={(_, value) => handleFieldInterestChange(fieldId, value as number)}
+                                            min={1}
+                                            max={10}
+                                            step={1}
+                                            marks
+                                            valueLabelDisplay="auto"
+                                        />
+                                    </Card>
+                                </Grid>
+                            );
+                        })}
+                    </Grid>
+                )}
+
+                {selectedFields.length === 0 && (
+                    <Alert severity="info" sx={{ borderRadius: 2 }}>
+                        研究分野を1つ以上選択してください
+                    </Alert>
+                )}
+            </Paper>
+
+            {/* ★★★ 実行ボタン（旧バージョン） ★★★ */}
+            <Box sx={{ textAlign: 'center' }}>
+                <Button
+                    variant="contained"
+                    size="large"
+                    onClick={handleSubmit}
+                    disabled={loading || selectedFields.length === 0}
+                    sx={{
+                        px: 6,
+                        py: 1.5,
+                        fontSize: '1.1rem',
+                        fontWeight: 700,
+                        borderRadius: 3,
+                        boxShadow: 3,
+                        '&:hover': {
+                            boxShadow: 6,
+                        }
+                    }}
+                >
+                    {loading ? (
+                        <>
+                            <CircularProgress size={24} sx={{ mr: 1 }} color="inherit" />
+                            評価中...
+                        </>
+                    ) : (
+                        '評価を実行'
+                    )}
+                </Button>
+            </Box>
+        </Box>
+    );
+};
+
+export default EvaluationForm;
