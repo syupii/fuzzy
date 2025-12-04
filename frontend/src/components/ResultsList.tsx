@@ -573,21 +573,29 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                                 </Paper>
                             )}
 
-                            {/* 説明 */}
+                            {/* 説明：AIによる分析結果 */}
                             {lab.explanation && (
-                                <Alert
-                                    severity="info"
-                                    sx={{
-                                        mb: 3,
-                                        borderRadius: 2,
-                                        '& .MuiAlert-message': {
-                                            fontSize: '0.95rem',
-                                            lineHeight: 1.7,
-                                        }
-                                    }}
-                                >
-                                    {lab.explanation}
-                                </Alert>
+                                <Box sx={{ mb: 3 }}>
+                                    <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', color: 'primary.main' }}>
+                                        <Star sx={{ mr: 1, fontSize: 20 }} />
+                                        AIによる推薦理由
+                                    </Typography>
+                                    <Paper
+                                        variant="outlined"
+                                        sx={{
+                                            p: 2,
+                                            borderRadius: 2,
+                                            bgcolor: 'aliceblue', // 薄い青色で知的な印象に
+                                            borderColor: 'primary.light',
+                                            borderLeft: 4,
+                                            borderLeftColor: 'primary.main'
+                                        }}
+                                    >
+                                        <Typography variant="body2" sx={{ lineHeight: 1.8, fontSize: '0.95rem' }}>
+                                            {lab.explanation}
+                                        </Typography>
+                                    </Paper>
+                                </Box>
                             )}
 
                             {/* アクションボタン */}

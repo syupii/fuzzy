@@ -384,6 +384,9 @@ class FuzzyMultiPathMatcher:
         explanation = self._generate_explanation(
             total, basic_score, field_score, alpha, beta,
             field_detail, len(fuzzy_paths)
+            student=student,
+            lab=lab,
+            criteria_scores=criteria_scores
         )
         
         # 推薦レベル
@@ -765,46 +768,92 @@ class FuzzyMultiPathMatcher:
         alpha: float,
         beta: float,
         field_detail: Dict,
-        num_paths: int
+        num_paths: int,
+        # ★追加: 詳細な判定を行うために引数を増やします
+        student: Dict[str, Any] = None,
+        lab: Dict[str, Any] = None,
+        criteria_scores: Dict[str, float] = None
     ) -> str:
-        """説明文生成（改善版）"""
-        parts = []
+        """
+        説得力のある説明文を動的に生成する（ナラティブエンジン）
+        """
+        # データが不足している場合は簡易メッセージを返す
+        if student is None or lab is None or criteria_scores is None:
+            if total >= 0.8: return "非常に高い適合性があります。"
+            elif total >= 0.6: return "条件によく合致しています。"
+            else: return "検討の余地があります。"
+
+        # --- 1. ユーザーの「こだわり（高優先度項目）」を特定 ---
+        # 優先度キー（xxx_priority）の値が8以上のものを抽出
+        priorities = self._get_sorted_priorities(student)
+        top_priorities = [p for p in priorities if p['priority'] >= 8]
         
-        # 基本スコア情報
-        parts.append(f"基本適合度{basic_score:.2f}")
+        # --- 2. 「こだわり」と「実態」の照合 ---
+        matched_points = []     # こだわっていて、かつ一致した点 (スコア高)
+        compromise_points = []  # こだわっていたが、一致しなかった点 (スコア低)
         
-        # 分野スコア情報
-        parts.append(f"分野適合度{field_score:.2f}")
-        
-        # 総合評価
-        if total >= 0.8:
-            parts.append("非常に高い適合性")
-        elif total >= 0.65:
-            parts.append("高い適合性")
-        elif total >= 0.5:
-            parts.append("中程度の適合性")
-        else:
-            parts.append("要検討")
-        
-        # 分野情報
+        # 項目名の日本語マッピング
+        criteria_labels = {
+            "research_intensity": "研究強度", "advisor_style": "指導方針",
+            "team_work": "チームワーク", "workload": "活動量",
+            "theory_practice": "理論・実践", "skill_development": "スキル習得",
+            "lab_atmosphere": "雰囲気", "flexibility": "柔軟性",
+            "publication_opportunity": "発表機会", "interdisciplinary": "学際性",
+            "communication_style": "交流頻度"
+        }
+
+        for p in top_priorities:
+            key = p['criterion']
+            # 分野は別ロジックで扱うのでスキップ
+            if key == "research_field_match":
+                continue
+                
+            score = criteria_scores.get(key, 0.0)
+            label = criteria_labels.get(key, key)
+            
+            if score >= 0.75: # 合致ライン
+                matched_points.append(label)
+            elif score <= 0.45: # 不一致ライン
+                compromise_points.append(label)
+
+        # --- 3. 分野マッチングの状況 ---
         match_type = field_detail.get("match_type", "unknown")
-        if match_type == "exact":
-            parts.append("✨興味分野と完全一致")
-            if field_detail.get("bonus_applied"):
-                bonus_val = field_detail['bonus_value']
-                parts.append(f"(+{bonus_val:.3f})")
-        elif match_type == "category":
-            parts.append("関連分野")
-        elif match_type == "no_match":
-            parts.append("⚠️興味分野と異なる")
-            if field_detail.get("penalty_applied"):
-                penalty_val = field_detail['penalty_value']
-                parts.append(f"(-{penalty_val:.3f})")
+        # 学生が分野を重視しているか (優先度7以上)
+        is_field_prioritized = student.get("research_field_match", 5) >= 7
+
+        # --- 4. 文章の組み立て (Narrative Construction) ---
+        sentences = []
+
+        # 【A. 決定打（キラーフレーズ）】
+        if is_field_prioritized and match_type == "exact":
+            sentences.append("あなたが重視する研究分野が完全一致しており、専門性を高めるのに最適な環境です。")
+        elif matched_points:
+            # マッチしたこだわりポイントを強調（最大2つ）
+            points_str = "』『".join(matched_points[:2])
+            sentences.append(f"あなたが最優先した『{points_str}』の方針が、この研究室の実態と強く合致しています。")
+        elif total >= 0.85:
+            sentences.append("全体的なバランスが極めて良く、あなたの希望条件を高い水準で満たしています。")
+
+        # 【B. 展開・補足】
+        if match_type == "exact" and not is_field_prioritized:
+            sentences.append("研究分野も一致しているため、スムーズに研究に着手できるでしょう。")
+        elif match_type != "exact" and basic_score >= 0.75:
+            sentences.append("分野は異なりますが、ゼミの雰囲気や指導方針といった「活動スタイル」の相性が抜群です。")
         
-        # ファジィパス情報
-        parts.append(f"{num_paths}パスで評価")
-        
-        return " / ".join(parts)
+        # 【C. 正直な懸念点（信頼性の向上）】
+        # 良いことだけでなく「ここは違う」と認めることで説得力が増す
+        if compromise_points:
+            point = compromise_points[0]
+            sentences.append(f"『{point}』に関しては希望と少し差がありますが、総合的な適合度は十分に高いです。")
+
+        # 【D. 結び（条件に当てはまらない場合）】
+        if not sentences:
+            if total >= 0.7:
+                sentences.append("大きな欠点がなく、安定して研究に取り組める環境と言えます。")
+            else:
+                sentences.append("一部の条件で妥協が必要ですが、検討候補として有力です。")
+
+        return "".join(sentences)
     
     def _get_recommendation(self, score: float) -> str:
         """推薦レベル"""
