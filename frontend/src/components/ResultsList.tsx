@@ -585,7 +585,7 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                                         sx={{
                                             p: 2,
                                             borderRadius: 2,
-                                            bgcolor: 'aliceblue', // 薄い青色で知的な印象に
+                                            bgcolor: 'aliceblue',
                                             borderColor: 'primary.light',
                                             borderLeft: 4,
                                             borderLeftColor: 'primary.main'

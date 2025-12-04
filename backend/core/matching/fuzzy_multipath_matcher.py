@@ -383,7 +383,7 @@ class FuzzyMultiPathMatcher:
         # 説明文生成
         explanation = self._generate_explanation(
             total, basic_score, field_score, alpha, beta,
-            field_detail, len(fuzzy_paths)
+            field_detail, len(fuzzy_paths),
             student=student,
             lab=lab,
             criteria_scores=criteria_scores
