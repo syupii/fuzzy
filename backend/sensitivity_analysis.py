@@ -609,8 +609,19 @@ class SensitivityAnalyzer:
         for criterion in self.criteria:
             base_profile[f"{criterion}_priority"] = 5.0
         
-        # field_interests を追加（空でもOK）
-        base_profile["field_interests"] = {}
+        # ★★★ 重要：対象研究室の分野に対する興味を設定 ★★★
+        # 対象研究室を取得
+        target_lab = next((lab for lab in self.labs_data if lab["id"] == lab_id), None)
+        if target_lab and target_lab.get("field_id"):
+            # その研究室の分野に対する興味を8.0に設定（高い興味）
+            lab_field_id = target_lab["field_id"]
+            base_profile["field_interests"] = {lab_field_id: 8.0}
+            print(f"  📚 分野マッチング有効化: {lab_field_id} = 8.0")
+        else:
+            # field_idがない場合は空辞書
+            base_profile["field_interests"] = {}
+            if target_lab:
+                print(f"  ⚠️  警告: {lab_id} にはfield_idが設定されていません")
         
         print(f"🔍 {lab_id} の感度分析を開始...")
         

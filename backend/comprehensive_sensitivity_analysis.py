@@ -1,9 +1,15 @@
 """
 研究室配属システム - 包括的感度分析システム（卒論用・最高品質版）
 
+Phase 1-3: 標準感度分析（パラメータ影響度・1位獲得条件・境界値）
+Phase 4: 全パラメータ包括分析（詳細遷移点・感度曲線）
+Phase 5: 可視化（図表生成）
+Phase 6: 逆引き分析（目標研究室を1位にする条件探索）
+Phase 7: ランキング配分分析（12次元空間での順位確率分布）
+
 実行時間: PCスペックと精度モードによる
 精度: 3段階（fast/standard/precise）
-出力: 研究室ごとの詳細レポート（HTML/JSON/CSV）、全図表、統計データ
+出力: JSON/CSV/PNG（20種類以上の図表）
 
 使い方:
   # 【推奨】標準モード（30-60分/研究室、約16-31時間で31研究室）
@@ -60,11 +66,17 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
     卒論用の包括的感度分析クラス
     
     拡張機能:
-    1. 高精度分析（サンプル数5,000-10,000）
-    2. 詳細な遷移点記録（100ステップ）
-    3. 全パラメータ組み合わせ分析
-    4. HTML/PDFレポート自動生成
-    5. 卒論用図表の完全セット
+    Phase 1-3: 標準感度分析（パラメータ影響度・1位獲得条件・境界値）
+    Phase 4: 全パラメータ包括分析（詳細遷移点・感度曲線）
+    Phase 5: 可視化（13種類以上の図表）
+    Phase 6: 逆引き分析（目標研究室を1位にする条件探索）
+    Phase 7: ランキング配分分析（12次元空間での順位確率分布）
+    
+    出力:
+    - JSON: 全分析データ
+    - CSV: 統計表・確率分布
+    - PNG: ヒートマップ・グラフ（20種類以上）
+    - HTML: 対話的レポート
     """
     
     def __init__(self, matcher, labs_data):
@@ -104,6 +116,273 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
         else:
             raise ValueError(f"Unknown mode: {mode}. Use 'fast', 'standard', or 'precise'.")
         
+    # ==================== Phase 6: 逆引き分析（条件探索） ====================
+    
+    def reverse_lookup_optimal_conditions(
+        self,
+        target_lab_id: str,
+        target_rank: int = 1,
+        num_trials: int = 1000,
+        mutation_rate: float = 0.3
+    ) -> Dict[str, Any]:
+        """
+        目標研究室を指定順位にするための最適パラメータセットを探索
+        
+        遺伝的アルゴリズムで最適化：
+        - 目標: target_lab_id を target_rank 位にする
+        - 方法: パラメータ空間を探索して複数の解を発見
+        
+        Args:
+            target_lab_id: 目標研究室ID
+            target_rank: 目標順位（1=1位）
+            num_trials: 試行回数
+            mutation_rate: 突然変異率
+            
+        Returns:
+            最適パラメータセットのリスト
+        """
+        print(f"\n🎯 逆引き分析: {target_lab_id} を {target_rank}位にする条件を探索中...")
+        
+        solutions = []  # 見つかった解のリスト
+        best_fitness = float('-inf')
+        
+        # 遺伝的アルゴリズムで探索
+        for trial in range(num_trials):
+            # ランダムなパラメータセットを生成
+            candidate = self._generate_random_profile()
+            
+            # 評価: target_lab_id の順位を確認
+            results = self._match_all_labs(candidate, self.labs_data)
+            target_lab = next((lab for lab in results if lab["lab_id"] == target_lab_id), None)
+            
+            if target_lab:
+                current_rank = target_lab.get("rank", 999)
+                current_score = target_lab["final_score"]
+                
+                # 適合度: 目標順位に近いほど高い
+                fitness = 1.0 / (abs(current_rank - target_rank) + 1) + current_score * 0.1
+                
+                # 目標順位を達成した場合
+                if current_rank == target_rank:
+                    solutions.append({
+                        "parameters": {k: v for k, v in candidate.items() if not k.endswith("_priority")},
+                        "rank": current_rank,
+                        "score": current_score,
+                        "fitness": fitness,
+                        "trial": trial
+                    })
+                    
+                    if len(solutions) >= 20:  # 十分な解が見つかったら終了
+                        break
+                
+                if fitness > best_fitness:
+                    best_fitness = fitness
+            
+            # 進捗表示
+            if (trial + 1) % 100 == 0:
+                print(f"  試行 {trial + 1}/{num_trials}: 最良適合度={best_fitness:.3f}, 解の数={len(solutions)}")
+        
+        # 結果を整理
+        solutions.sort(key=lambda x: x["score"], reverse=True)
+        
+        return {
+            "target_lab_id": target_lab_id,
+            "target_rank": target_rank,
+            "solutions_found": len(solutions),
+            "solutions": solutions[:10],  # TOP10の解
+            "search_trials": num_trials,
+            "best_fitness": best_fitness
+        }
+    
+    def evaluate_specific_conditions(
+        self,
+        parameters: Dict[str, float],
+        top_n: int = 10
+    ) -> Dict[str, Any]:
+        """
+        特定のパラメータ条件下での全研究室ランキングを評価
+        
+        Args:
+            parameters: 評価するパラメータセット
+            top_n: 表示する上位研究室数
+            
+        Returns:
+            ランキング結果
+        """
+        print(f"\n📊 特定条件でのランキング評価...")
+        
+        # パラメータを正規化
+        profile = parameters.copy()
+        
+        # field_interestsがない場合は空辞書を追加
+        if "field_interests" not in profile:
+            profile["field_interests"] = {}
+        
+        # priorityがない場合はデフォルト値を設定
+        for criterion in self.criteria:
+            if f"{criterion}_priority" not in profile:
+                profile[f"{criterion}_priority"] = 5.0
+        
+        # マッチング実行
+        results = self._match_all_labs(profile, self.labs_data)
+        
+        # 研究室名を追加
+        for lab_result in results:
+            lab_data = next((lab for lab in self.labs_data if lab["id"] == lab_result["lab_id"]), None)
+            if lab_data:
+                lab_result["lab_name"] = lab_data.get("name", lab_result["lab_id"])
+        
+        # TOP Nを抽出
+        top_labs = results[:top_n]
+        
+        return {
+            "parameters": parameters,
+            "total_labs": len(results),
+            "top_ranking": top_labs,
+            "score_distribution": {
+                "max": max(r["final_score"] for r in results),
+                "min": min(r["final_score"] for r in results),
+                "mean": np.mean([r["final_score"] for r in results]),
+                "std": np.std([r["final_score"] for r in results])
+            }
+        }
+    
+    # ==================== Phase 7: ランキング配分分析（12次元空間） ====================
+    
+    def analyze_ranking_distribution(
+        self,
+        num_samples: int = 10000,
+        target_labs: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        モンテカルロサンプリングで全パラメータ空間での順位分布を分析
+        
+        Args:
+            num_samples: サンプル数（10,000〜50,000推奨）
+            target_labs: 分析対象研究室（Noneの場合は全研究室）
+            
+        Returns:
+            順位確率分布・統計データ
+        """
+        print(f"\n📈 ランキング配分分析（モンテカルロサンプリング: {num_samples}サンプル）...")
+        
+        if target_labs is None:
+            target_labs = [lab["id"] for lab in self.labs_data]
+        
+        # 各研究室の順位カウンター
+        rank_counts = {lab_id: {i: 0 for i in range(1, len(self.labs_data) + 1)} for lab_id in target_labs}
+        
+        # パラメータ値と順位の記録（相関分析用）
+        parameter_rank_data = {criterion: {lab_id: [] for lab_id in target_labs} for criterion in self.criteria}
+        
+        print(f"  サンプリング中...")
+        for sample_idx in range(num_samples):
+            # ランダムなパラメータセットを生成
+            random_profile = self._generate_random_profile()
+            
+            # 対象研究室の分野に対する興味をランダムに設定
+            # （公平な分析のため、field_interestsもランダム化）
+            random_field_interests = {}
+            for lab in self.labs_data:
+                if lab.get("field_id"):
+                    random_field_interests[lab["field_id"]] = np.random.uniform(1, 10)
+            random_profile["field_interests"] = random_field_interests
+            
+            # マッチング実行
+            results = self._match_all_labs(random_profile, self.labs_data)
+            
+            # 各研究室の順位を記録
+            for lab_result in results:
+                lab_id = lab_result["lab_id"]
+                if lab_id in target_labs:
+                    rank = lab_result["rank"]
+                    rank_counts[lab_id][rank] += 1
+                    
+                    # パラメータ値も記録
+                    for criterion in self.criteria:
+                        parameter_rank_data[criterion][lab_id].append({
+                            "value": random_profile[criterion],
+                            "rank": rank
+                        })
+            
+            # 進捗表示
+            if (sample_idx + 1) % 1000 == 0:
+                print(f"    {sample_idx + 1}/{num_samples} サンプル完了")
+        
+        # 確率分布を計算
+        rank_probabilities = {}
+        for lab_id in target_labs:
+            lab_name = next((lab["name"] for lab in self.labs_data if lab["id"] == lab_id), lab_id)
+            rank_probabilities[lab_id] = {
+                "lab_name": lab_name,
+                "rank_distribution": {
+                    rank: count / num_samples
+                    for rank, count in rank_counts[lab_id].items()
+                },
+                "top1_probability": rank_counts[lab_id][1] / num_samples,
+                "top3_probability": sum(rank_counts[lab_id][i] for i in range(1, 4)) / num_samples,
+                "top5_probability": sum(rank_counts[lab_id][i] for i in range(1, 6)) / num_samples,
+                "top10_probability": sum(rank_counts[lab_id][i] for i in range(1, 11)) / num_samples,
+                "average_rank": sum(rank * count for rank, count in rank_counts[lab_id].items()) / num_samples
+            }
+        
+        # パラメータと順位の相関を計算
+        parameter_correlations = self._analyze_parameter_rank_correlation(parameter_rank_data, target_labs)
+        
+        return {
+            "num_samples": num_samples,
+            "total_labs_analyzed": len(target_labs),
+            "rank_probabilities": rank_probabilities,
+            "parameter_correlations": parameter_correlations,
+            "summary": {
+                "most_likely_top1": max(rank_probabilities.items(), key=lambda x: x[1]["top1_probability"]),
+                "most_consistent": min(rank_probabilities.items(), key=lambda x: x[1]["average_rank"])
+            }
+        }
+    
+    def _analyze_parameter_rank_correlation(
+        self,
+        parameter_rank_data: Dict,
+        target_labs: List[str]
+    ) -> Dict[str, Any]:
+        """パラメータ値と順位の相関を分析"""
+        correlations = {}
+        
+        for criterion in self.criteria:
+            criterion_corr = {}
+            for lab_id in target_labs:
+                data_points = parameter_rank_data[criterion][lab_id]
+                if len(data_points) > 0:
+                    values = [d["value"] for d in data_points]
+                    ranks = [d["rank"] for d in data_points]
+                    
+                    # Spearman相関係数を計算
+                    correlation = np.corrcoef(values, ranks)[0, 1] if len(values) > 1 else 0.0
+                    
+                    criterion_corr[lab_id] = {
+                        "correlation": correlation,
+                        "interpretation": self._interpret_correlation(correlation)
+                    }
+            
+            correlations[criterion] = criterion_corr
+        
+        return correlations
+    
+    def _interpret_correlation(self, corr: float) -> str:
+        """相関係数の解釈"""
+        abs_corr = abs(corr)
+        if abs_corr >= 0.7:
+            strength = "強い"
+        elif abs_corr >= 0.4:
+            strength = "中程度の"
+        elif abs_corr >= 0.2:
+            strength = "弱い"
+        else:
+            strength = "ほとんど"
+        
+        direction = "正の" if corr > 0 else "負の"
+        return f"{strength}{direction}相関"
+    
     # ==================== 拡張Phase 4: 詳細な遷移点分析 ====================
     
     def analyze_detailed_transitions(
@@ -425,6 +704,17 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
         for criterion in self.criteria:
             base_profile[f"{criterion}_priority"] = 5.0
         
+        # ★★★ 重要：対象研究室の分野に対する興味を設定 ★★★
+        target_lab = next((lab for lab in self.labs_data if lab["id"] == lab_id), None)
+        if target_lab and target_lab.get("field_id"):
+            lab_field_id = target_lab["field_id"]
+            base_profile["field_interests"] = {lab_field_id: 8.0}
+            print(f"  📚 分野マッチング有効化: {lab_field_id} = 8.0")
+        else:
+            base_profile["field_interests"] = {}
+            if target_lab:
+                print(f"  ⚠️  警告: {lab_id} にはfield_idが設定されていません")
+        
         # Phase 1-3: 標準分析
         print("\n[Phase 1-3] 標準分析を実行中...")
         standard_analysis = self.comprehensive_analysis(lab_id, self.high_precision_samples)
@@ -441,6 +731,38 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
             lab_id, lab_name, all_params_analysis, lab_dir
         )
         
+        # Phase 6: 逆引き分析
+        print("\n[Phase 6] 逆引き分析を実行中...")
+        reverse_lookup_data = self.reverse_lookup_optimal_conditions(
+            lab_id, target_rank=1, num_trials=1000
+        )
+        
+        # Phase 6の可視化
+        if reverse_lookup_data["solutions_found"] > 0:
+            self._visualize_reverse_lookup_solutions(reverse_lookup_data, lab_dir)
+        
+        # Phase 7: ランキング配分分析
+        print("\n[Phase 7] ランキング配分分析を実行中...")
+        # 軽量モードの場合はサンプル数を削減
+        if self.mode_name and "軽量" in self.mode_name:
+            num_samples = 5000
+        elif self.mode_name and "高精度" in self.mode_name:
+            num_samples = 20000
+        else:
+            num_samples = 10000
+        
+        ranking_distribution = self.analyze_ranking_distribution(
+            num_samples=num_samples,
+            target_labs=[lab_id]
+        )
+        
+        # Phase 7の可視化（このlab用の相関）
+        self._visualize_parameter_correlation(
+            ranking_distribution["parameter_correlations"],
+            lab_dir,
+            target_lab_id=lab_id
+        )
+        
         # 統合レポート
         report = {
             "lab_id": lab_id,
@@ -448,6 +770,8 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
             "analysis_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "standard_analysis": standard_analysis,
             "comprehensive_parameter_analysis": all_params_analysis,
+            "reverse_lookup_analysis": reverse_lookup_data,
+            "ranking_distribution_analysis": ranking_distribution,
             "summary": self._generate_executive_summary(
                 lab_name, standard_analysis, all_params_analysis
             )
@@ -717,6 +1041,248 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
         plt.tight_layout()
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
+    
+    # ==================== Phase 6 & 7 可視化メソッド ====================
+    
+    def _visualize_ranking_distribution(
+        self,
+        distribution_data: Dict,
+        output_dir: Path,
+        top_n_labs: int = 10
+    ):
+        """ランキング配分分析の可視化"""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        rank_probs = distribution_data["rank_probabilities"]
+        
+        # TOP Nの研究室を選択（top1_probabilityが高い順）
+        sorted_labs = sorted(
+            rank_probs.items(),
+            key=lambda x: x[1]["top1_probability"],
+            reverse=True
+        )[:top_n_labs]
+        
+        # (1) TOP1確率ランキング
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        lab_names = [item[1]["lab_name"] for item in sorted_labs]
+        top1_probs = [item[1]["top1_probability"] * 100 for item in sorted_labs]
+        
+        bars = ax.barh(lab_names, top1_probs, color='#FF6B6B')
+        ax.set_xlabel('1位獲得確率 (%)', fontsize=12)
+        ax.set_title('研究室別 1位獲得確率ランキング (モンテカルロサンプリング)', 
+                    fontsize=14, fontweight='bold')
+        ax.grid(axis='x', alpha=0.3)
+        
+        for i, (bar, prob) in enumerate(zip(bars, top1_probs)):
+            ax.text(prob + 0.5, i, f'{prob:.2f}%', va='center', fontsize=9)
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "ranking_top1_probability.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # (2) TOP3/TOP5確率比較
+        fig, ax = plt.subplots(figsize=(14, 7))
+        
+        x = np.arange(len(lab_names))
+        width = 0.25
+        
+        top1 = [item[1]["top1_probability"] * 100 for item in sorted_labs]
+        top3 = [item[1]["top3_probability"] * 100 for item in sorted_labs]
+        top5 = [item[1]["top5_probability"] * 100 for item in sorted_labs]
+        
+        ax.bar(x - width, top1, width, label='TOP1', color='#FF6B6B')
+        ax.bar(x, top3, width, label='TOP3', color='#4ECDC4')
+        ax.bar(x + width, top5, width, label='TOP5', color='#95E1D3')
+        
+        ax.set_xlabel('研究室', fontsize=12)
+        ax.set_ylabel('確率 (%)', fontsize=12)
+        ax.set_title('研究室別 TOP順位獲得確率', fontsize=14, fontweight='bold')
+        ax.set_xticks(x)
+        ax.set_xticklabels(lab_names, rotation=45, ha='right')
+        ax.legend()
+        ax.grid(axis='y', alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "ranking_topn_comparison.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # (3) 順位分布ヒートマップ
+        fig, ax = plt.subplots(figsize=(16, 10))
+        
+        # ヒートマップ用データを準備
+        heatmap_data = []
+        for item in sorted_labs:
+            lab_id, lab_data = item
+            rank_dist = lab_data["rank_distribution"]
+            # TOP20までの順位確率
+            row = [rank_dist.get(i, 0) * 100 for i in range(1, 21)]
+            heatmap_data.append(row)
+        
+        sns.heatmap(
+            heatmap_data,
+            annot=True,
+            fmt='.1f',
+            cmap='YlOrRd',
+            xticklabels=range(1, 21),
+            yticklabels=lab_names,
+            cbar_kws={'label': '確率 (%)'},
+            ax=ax
+        )
+        
+        ax.set_xlabel('順位', fontsize=12)
+        ax.set_ylabel('研究室', fontsize=12)
+        ax.set_title('研究室別 順位分布ヒートマップ (TOP20)', fontsize=14, fontweight='bold')
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "ranking_distribution_heatmap.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # (4) 平均順位比較
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        avg_ranks = [item[1]["average_rank"] for item in sorted_labs]
+        
+        bars = ax.barh(lab_names, avg_ranks, color='#A8DADC')
+        ax.set_xlabel('平均順位', fontsize=12)
+        ax.set_title('研究室別 平均順位 (低いほど上位)', fontsize=14, fontweight='bold')
+        ax.invert_xaxis()  # 低い値が右に来るように
+        ax.grid(axis='x', alpha=0.3)
+        
+        for i, (bar, rank) in enumerate(zip(bars, avg_ranks)):
+            ax.text(rank - 0.5, i, f'{rank:.2f}', va='center', fontsize=9, ha='right')
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "ranking_average_rank.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"  ✅ ランキング配分図表（4枚）を保存しました")
+    
+    def _visualize_parameter_correlation(
+        self,
+        correlation_data: Dict,
+        output_dir: Path,
+        target_lab_id: str = None
+    ):
+        """パラメータと順位の相関を可視化"""
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        
+        # 特定の研究室の相関を可視化
+        if target_lab_id and target_lab_id in correlation_data[self.criteria[0]]:
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # 相関行列を作成
+            corr_values = []
+            for criterion in self.criteria:
+                if target_lab_id in correlation_data[criterion]:
+                    corr_values.append(correlation_data[criterion][target_lab_id]["correlation"])
+                else:
+                    corr_values.append(0.0)
+            
+            # ソート
+            sorted_indices = np.argsort(np.abs(corr_values))[::-1]
+            criteria_sorted = [self.criteria[i] for i in sorted_indices]
+            corr_sorted = [corr_values[i] for i in sorted_indices]
+            
+            # 色分け（正の相関=緑、負の相関=赤）
+            colors = ['#2ECC71' if c > 0 else '#E74C3C' for c in corr_sorted]
+            
+            bars = ax.barh(criteria_sorted, corr_sorted, color=colors)
+            ax.set_xlabel('相関係数', fontsize=12)
+            ax.set_title(f'パラメータと順位の相関 (対象研究室)', fontsize=14, fontweight='bold')
+            ax.axvline(x=0, color='black', linestyle='--', linewidth=1)
+            ax.grid(axis='x', alpha=0.3)
+            
+            for i, (bar, corr) in enumerate(zip(bars, corr_sorted)):
+                label_x = corr + 0.02 if corr > 0 else corr - 0.02
+                ha = 'left' if corr > 0 else 'right'
+                ax.text(label_x, i, f'{corr:.3f}', va='center', ha=ha, fontsize=9)
+            
+            plt.tight_layout()
+            plt.savefig(output_dir / f"correlation_{target_lab_id}.png", dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(f"  ✅ 相関図表を保存しました")
+    
+    def _visualize_reverse_lookup_solutions(
+        self,
+        solutions_data: Dict,
+        output_dir: Path
+    ):
+        """逆引き分析の解を可視化"""
+        import matplotlib.pyplot as plt
+        
+        if len(solutions_data["solutions"]) == 0:
+            print(f"  ⚠️ 解が見つかりませんでした")
+            return
+        
+        solutions = solutions_data["solutions"]
+        
+        # (1) 解の分布（2D投影）- 影響度の高いパラメータ2つ
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # 最初の2つのパラメータを使用（実際には影響度でソートすべき）
+        param1 = self.criteria[0]
+        param2 = self.criteria[1]
+        
+        x_values = [s["parameters"][param1] for s in solutions]
+        y_values = [s["parameters"][param2] for s in solutions]
+        scores = [s["score"] for s in solutions]
+        
+        scatter = ax.scatter(x_values, y_values, c=scores, s=100, 
+                           cmap='viridis', alpha=0.6, edgecolors='black')
+        ax.set_xlabel(f'{param1}', fontsize=12)
+        ax.set_ylabel(f'{param2}', fontsize=12)
+        ax.set_title(f'最適条件の分布 ({len(solutions)}個の解)', 
+                    fontsize=14, fontweight='bold')
+        ax.grid(alpha=0.3)
+        
+        cbar = plt.colorbar(scatter, ax=ax)
+        cbar.set_label('適合度スコア', fontsize=10)
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "reverse_lookup_solutions_2d.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        # (2) パラメータ値の範囲
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        param_ranges = {}
+        for criterion in self.criteria:
+            values = [s["parameters"][criterion] for s in solutions]
+            param_ranges[criterion] = {
+                "min": min(values),
+                "max": max(values),
+                "mean": np.mean(values),
+                "std": np.std(values)
+            }
+        
+        criteria_list = list(param_ranges.keys())
+        means = [param_ranges[c]["mean"] for c in criteria_list]
+        mins = [param_ranges[c]["min"] for c in criteria_list]
+        maxs = [param_ranges[c]["max"] for c in criteria_list]
+        
+        y_pos = np.arange(len(criteria_list))
+        
+        # エラーバー
+        ax.barh(y_pos, means, xerr=[
+            [m - mi for m, mi in zip(means, mins)],
+            [ma - m for ma, m in zip(maxs, means)]
+        ], color='#3498DB', alpha=0.7, capsize=5)
+        
+        ax.set_yticks(y_pos)
+        ax.set_yticklabels(criteria_list)
+        ax.set_xlabel('パラメータ値', fontsize=12)
+        ax.set_title(f'最適パラメータの範囲 (平均±範囲)', fontsize=14, fontweight='bold')
+        ax.grid(axis='x', alpha=0.3)
+        
+        plt.tight_layout()
+        plt.savefig(output_dir / "reverse_lookup_parameter_ranges.png", dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        print(f"  ✅ 逆引き分析図表（2枚）を保存しました")
     
     def _generate_executive_summary(
         self,
@@ -1066,12 +1632,110 @@ class ComprehensiveSensitivityAnalyzer(SensitivityAnalyzer):
             "global_summary": self._generate_global_summary(all_reports)
         }
         
+        # Phase 7（全体版）: 全研究室のランキング配分分析
+        print(f"\n{'='*70}")
+        print("📈 全研究室のランキング配分分析を実行中...")
+        print(f"{'='*70}")
+        
+        # サンプル数を精度モードに応じて設定
+        if self.mode_name and "軽量" in self.mode_name:
+            global_samples = 10000
+        elif self.mode_name and "高精度" in self.mode_name:
+            global_samples = 30000
+        else:
+            global_samples = 20000
+        
+        global_ranking_distribution = self.analyze_ranking_distribution(
+            num_samples=global_samples,
+            target_labs=None  # 全研究室
+        )
+        
+        # 全体のランキング配分を可視化
+        global_output_dir = Path(output_dir) / "global_analysis"
+        global_output_dir.mkdir(parents=True, exist_ok=True)
+        
+        print(f"\n全体ランキング配分の可視化を生成中...")
+        self._visualize_ranking_distribution(
+            global_ranking_distribution,
+            global_output_dir,
+            top_n_labs=15  # TOP15を表示
+        )
+        
+        # マスターレポートに追加
+        master_report["global_ranking_distribution"] = global_ranking_distribution
+        
         # マスターレポート保存
         master_file = Path(output_dir) / "master_report.json"
         with open(master_file, 'w', encoding='utf-8') as f:
             json.dump(master_report, f, ensure_ascii=False, indent=2)
         
+        # ランキング配分CSVを生成
+        self._save_ranking_distribution_csv(global_ranking_distribution, global_output_dir)
+        
         return master_report
+    
+    def _save_ranking_distribution_csv(
+        self,
+        distribution_data: Dict,
+        output_dir: Path
+    ):
+        """ランキング配分データをCSVで保存"""
+        import csv
+        
+        rank_probs = distribution_data["rank_probabilities"]
+        
+        # (1) 確率分布CSV
+        csv_file = output_dir / "ranking_probabilities.csv"
+        with open(csv_file, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # ヘッダー
+            writer.writerow([
+                "研究室ID", "研究室名", "TOP1確率(%)", "TOP3確率(%)", 
+                "TOP5確率(%)", "TOP10確率(%)", "平均順位"
+            ])
+            
+            # データ
+            for lab_id, data in sorted(
+                rank_probs.items(),
+                key=lambda x: x[1]["top1_probability"],
+                reverse=True
+            ):
+                writer.writerow([
+                    lab_id,
+                    data["lab_name"],
+                    f"{data['top1_probability'] * 100:.2f}",
+                    f"{data['top3_probability'] * 100:.2f}",
+                    f"{data['top5_probability'] * 100:.2f}",
+                    f"{data['top10_probability'] * 100:.2f}",
+                    f"{data['average_rank']:.2f}"
+                ])
+        
+        print(f"  ✅ ランキング確率CSV: {csv_file}")
+        
+        # (2) 詳細な順位分布CSV
+        detail_csv = output_dir / "ranking_distribution_detail.csv"
+        with open(detail_csv, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            
+            # ヘッダー
+            header = ["研究室ID", "研究室名"] + [f"{i}位(%)" for i in range(1, 21)]
+            writer.writerow(header)
+            
+            # データ
+            for lab_id, data in sorted(
+                rank_probs.items(),
+                key=lambda x: x[1]["top1_probability"],
+                reverse=True
+            ):
+                row = [lab_id, data["lab_name"]]
+                rank_dist = data["rank_distribution"]
+                for i in range(1, 21):
+                    prob = rank_dist.get(i, 0) * 100
+                    row.append(f"{prob:.2f}")
+                writer.writerow(row)
+        
+        print(f"  ✅ 詳細分布CSV: {detail_csv}")
     
     def _generate_global_summary(self, all_reports: Dict) -> Dict[str, Any]:
         """全体サマリーを生成"""
