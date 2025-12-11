@@ -1,0 +1,110 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>新井山ゼミ - 包括的感度分析レポート</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, #2E86AB 0%, #A23B72 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+        }
+        .section {
+            background: white;
+            padding: 25px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1, h2, h3 {
+            margin-top: 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #2E86AB;
+            color: white;
+        }
+        .metric {
+            display: inline-block;
+            background: #e3f2fd;
+            padding: 15px 25px;
+            margin: 10px;
+            border-radius: 5px;
+            border-left: 4px solid #2E86AB;
+        }
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #2E86AB;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #666;
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>新井山ゼミ</h1>
+        <p>包括的感度分析レポート</p>
+        <p>生成日時: 2025-12-15 18:16:09</p>
+    </div>
+    
+    <div class="section">
+        <h2>📊 エグゼクティブサマリー</h2>
+        <div class="metric">
+            <div class="metric-label">1位獲得確率</div>
+            <div class="metric-value">4.4%</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">分析パラメータ数</div>
+            <div class="metric-value">12</div>
+        </div>
+        <div class="metric">
+            <div class="metric-label">最大影響度</div>
+            <div class="metric-value">0.119</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <h2>🔥 最重要パラメータ TOP 3</h2>
+        <ol>
+            <li><strong>advisor_style</strong></li><li><strong>flexibility</strong></li><li><strong>lab_atmosphere</strong></li>
+        </ol>
+    </div>
+    
+    <div class="section">
+        <h2>💡 推奨事項</h2>
+        <ul>
+            <li>この研究室は適切な学生プロファイルで1位を獲得できます（確率: 4.4%）</li><li>research_intensity の推奨値: 4.3点</li><li>advisor_style の推奨値: 6.4点</li><li>team_work の推奨値: 4.2点</li>
+        </ul>
+    </div>
+    
+    <div class="section">
+        <h2>📈 詳細分析データ</h2>
+        <p>完全な数値データは同梱のJSONファイルを参照してください。</p>
+        <p>図表は visualizations/ フォルダに保存されています。</p>
+    </div>
+</body>
+</html>

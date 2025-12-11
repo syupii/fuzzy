@@ -387,11 +387,135 @@ class GeneticOptimizer:
         return self.best_individual
 
 
-def load_lab_database(filepath: str = "backend/data/labs_database.json") -> List[Dict]:
-    """研究室データベースを読み込み"""
-    with open(filepath, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    return data.get("labs", [])
+def flatten_lab_data(labs_data: List[Dict]) -> List[Dict]:
+    """
+    研究室データをフラット化
+    
+    labs_database.jsonの構造に対応:
+    - lab["features"]["research_intensity"] → lab["research_intensity"]
+    - lab["id"] → lab["lab_id"]
+    - lab["name"] → lab["lab_name"]
+    
+    Args:
+        labs_data: 元の研究室データ（ネスト構造）
+        
+    Returns:
+        フラット化・正規化された研究室データ
+    """
+    flattened = []
+    
+    for lab in labs_data:
+        flat_lab = lab.copy()
+        
+        # features をフラット化
+        if "features" in lab:
+            features = lab["features"]
+            for key, value in features.items():
+                flat_lab[key] = value
+            # features キーは削除（冗長なので）
+            del flat_lab["features"]
+        
+        # キー名の正規化
+        # id → lab_id
+        if "lab_id" not in flat_lab:
+            lab_id = flat_lab.get("id") or flat_lab.get("laboratory_id") or flat_lab.get("labId")
+            if lab_id:
+                flat_lab["lab_id"] = lab_id
+            else:
+                logger.warning(f"研究室IDが見つかりません: {flat_lab}")
+                continue
+        
+        # name → lab_name
+        if "lab_name" not in flat_lab:
+            lab_name = flat_lab.get("name") or flat_lab.get("laboratory_name") or flat_lab.get("labName")
+            if lab_name:
+                flat_lab["lab_name"] = lab_name
+        
+        # field_id を確保
+        if "field_id" not in flat_lab:
+            research_fields = flat_lab.get("research_fields", [])
+            if research_fields:
+                flat_lab["field_id"] = research_fields[0].lower().replace("・", "_").replace(" ", "_")
+        
+        flattened.append(flat_lab)
+    
+    return flattened
+
+
+def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
+    """
+    研究室データベースを読み込み
+    
+    Args:
+        use_lab_database_class: True=LabDatabaseクラスを使用（推奨）、False=直接JSON読み込み
+        
+    Returns:
+        フラット化・正規化された研究室データ
+    """
+    if use_lab_database_class:
+        # LabDatabaseクラスを使用（推奨）
+        try:
+            import sys
+            import os
+            sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+            
+            from data.models.labs_database import LabDatabase
+            
+            db = LabDatabase()
+            raw_labs_data = db.get_all_labs()
+            
+            # データをフラット化
+            labs_data = flatten_lab_data(raw_labs_data)
+            
+            logger.info(f"{len(labs_data)}件の研究室データを読み込みました（LabDatabaseクラス使用）")
+            return labs_data
+            
+        except ImportError as e:
+            logger.warning(f"LabDatabaseクラスのインポートに失敗: {e}")
+            logger.info("フォールバック: 直接JSON読み込みを試みます")
+            use_lab_database_class = False
+    
+    if not use_lab_database_class:
+        # 直接JSON読み込み（フォールバック）
+        import os
+        
+        possible_paths = [
+            "data/labs_database.json",
+            "backend/data/labs_database.json",
+            "../data/labs_database.json",
+            os.path.join(os.path.dirname(__file__), "data", "labs_database.json"),
+        ]
+        
+        actual_path = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                actual_path = path
+                logger.info(f"研究室データベースを読み込み: {path}")
+                break
+        
+        if actual_path is None:
+            error_msg = "研究室データベースが見つかりません"
+            logger.error(error_msg)
+            raise FileNotFoundError(error_msg)
+        
+        with open(actual_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        
+        # データ構造の解析
+        if isinstance(data, dict):
+            labs = data.get("labs") or data.get("laboratories") or data.get("lab_list")
+        elif isinstance(data, list):
+            labs = data
+        else:
+            raise ValueError(f"不明なデータ構造: {type(data)}")
+        
+        if not labs:
+            raise ValueError("研究室データが空です")
+        
+        # フラット化
+        labs_data = flatten_lab_data(labs)
+        logger.info(f"{len(labs_data)}件の研究室データを読み込みました（直接JSON読み込み）")
+        return labs_data
 
 
 def analyze_single_lab(lab_id: str, config: GAConfig) -> Dict[str, Any]:
