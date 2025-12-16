@@ -1,0 +1,926 @@
+{
+  "lab_id": "lab_004",
+  "lab_name": "広奥ゼミ",
+  "analysis_date": "2025-12-19 13:47:55",
+  "phase1_basic_parameter_importance": {
+    "parameter_importance": {
+      "research_intensity": {
+        "score_range": 0.04652452641839311,
+        "rank_range": 0,
+        "optimal_value": 7.979591836734694,
+        "optimal_score": 0.7487196191000887,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.04652452641839311
+      },
+      "advisor_style": {
+        "score_range": 0.04634483824211355,
+        "rank_range": 1,
+        "optimal_value": 7.061224489795919,
+        "optimal_score": 0.7335441799237581,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 4.857142857142858,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          },
+          {
+            "value": 6.510204081632653,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.05634483824211355
+      },
+      "team_work": {
+        "score_range": 0.04652452641839311,
+        "rank_range": 1,
+        "optimal_value": 3.0204081632653064,
+        "optimal_score": 0.7487196191000887,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 5.591836734693878,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          },
+          {
+            "value": 9.63265306122449,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05652452641839311
+      },
+      "workload": {
+        "score_range": 0.04650148481779515,
+        "rank_range": 0,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.7593893330733292,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.04650148481779515
+      },
+      "theory_practice": {
+        "score_range": 0.04555706657907033,
+        "rank_range": 1,
+        "optimal_value": 5.959183673469388,
+        "optimal_score": 0.721664879133781,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 3.3877551020408165,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.775510204081633,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.05555706657907033
+      },
+      "research_field_match": {
+        "score_range": 0.1601698557457023,
+        "rank_range": 9,
+        "optimal_value": 10.0,
+        "optimal_score": 0.8,
+        "num_transitions": 8,
+        "transitions": [
+          {
+            "value": 1.183673469387755,
+            "rank_before": 10,
+            "rank_after": 9,
+            "direction": "上昇"
+          },
+          {
+            "value": 1.3673469387755102,
+            "rank_before": 9,
+            "rank_after": 7,
+            "direction": "上昇"
+          },
+          {
+            "value": 1.9183673469387754,
+            "rank_before": 7,
+            "rank_after": 6,
+            "direction": "上昇"
+          },
+          {
+            "value": 2.2857142857142856,
+            "rank_before": 6,
+            "rank_after": 5,
+            "direction": "上昇"
+          },
+          {
+            "value": 2.4693877551020407,
+            "rank_before": 5,
+            "rank_after": 4,
+            "direction": "上昇"
+          },
+          {
+            "value": 3.2040816326530615,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.122448979591837,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.857142857142858,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.2501698557457023
+      },
+      "skill_development": {
+        "score_range": 0.03875123734816244,
+        "rank_range": 0,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.752810289582299,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.03875123734816244
+      },
+      "lab_atmosphere": {
+        "score_range": 0.037964222149225346,
+        "rank_range": 1,
+        "optimal_value": 5.040816326530613,
+        "optimal_score": 0.7213732446326757,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 3.0204081632653064,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.775510204081633,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.04796422214922535
+      },
+      "flexibility": {
+        "score_range": 0.038620698535094644,
+        "rank_range": 1,
+        "optimal_value": 7.061224489795919,
+        "optimal_score": 0.7312726619576565,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 4.857142857142858,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          },
+          {
+            "value": 6.510204081632653,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.048620698535094646
+      },
+      "publication_opportunity": {
+        "score_range": 0.037964222149225346,
+        "rank_range": 2,
+        "optimal_value": 5.959183673469388,
+        "optimal_score": 0.7213732446326757,
+        "num_transitions": 4,
+        "transitions": [
+          {
+            "value": 1.183673469387755,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          },
+          {
+            "value": 3.0204081632653064,
+            "rank_before": 2,
+            "rank_after": 3,
+            "direction": "下降"
+          },
+          {
+            "value": 3.3877551020408165,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.408163265306123,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05796422214922535
+      },
+      "interdisciplinary": {
+        "score_range": 0.030896558828075738,
+        "rank_range": 1,
+        "optimal_value": 3.938775510204082,
+        "optimal_score": 0.729001143991555,
+        "num_transitions": 1,
+        "transitions": [
+          {
+            "value": 5.775510204081633,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.04089655882807574
+      },
+      "communication_style": {
+        "score_range": 0.030371377719380255,
+        "rank_range": 1,
+        "optimal_value": 5.959183673469388,
+        "optimal_score": 0.7210816101315703,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 3.2040816326530615,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.959183673469388,
+            "rank_before": 1,
+            "rank_after": 2,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.04037137771938026
+      }
+    },
+    "top_3_influential": [
+      "research_field_match",
+      "publication_opportunity",
+      "team_work"
+    ],
+    "least_influential": [
+      "interdisciplinary",
+      "communication_style",
+      "skill_development"
+    ]
+  },
+  "phase2_research_field_match_impact": {
+    "results_by_rfm": {
+      "1": {
+        "rank": 10,
+        "score": 0.6398301442542977,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.8134267415939265,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.7568344673743328,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "金ゼミ ",
+            "score": 0.7261132037749792,
+            "field_id": "korean_studies"
+          }
+        ],
+        "alpha": 0.1,
+        "beta": 0.9
+      },
+      "2": {
+        "rank": 6,
+        "score": 0.6576267948927093,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7852682147501568,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.7349639709994069,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6935948302519379,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.2,
+        "beta": 0.8
+      },
+      "3": {
+        "rank": 4,
+        "score": 0.6754234455311205,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7571096879063872,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.713093474624481,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6768954764704456,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.3,
+        "beta": 0.7
+      },
+      "4": {
+        "rank": 2,
+        "score": 0.6932200961695318,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7289511610626176,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.6932200961695318,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6912229782495551,
+            "field_id": "image_processing"
+          }
+        ],
+        "alpha": 0.4,
+        "beta": 0.6
+      },
+      "5": {
+        "rank": 1,
+        "score": 0.7110167468079432,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.7110167468079432,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.7082206323183775,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.700792634218848,
+            "field_id": "ai_ml"
+          }
+        ],
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "6": {
+        "rank": 1,
+        "score": 0.7288133974463545,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.7288133974463545,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.726576505854702,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6726341073750783,
+            "field_id": "ai_ml"
+          }
+        ],
+        "alpha": 0.6,
+        "beta": 0.4
+      },
+      "7": {
+        "rank": 1,
+        "score": 0.7466100480847659,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.7466100480847659,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.7449323793910265,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6444755805313087,
+            "field_id": "ai_ml"
+          }
+        ],
+        "alpha": 0.7,
+        "beta": 0.30000000000000004
+      },
+      "8": {
+        "rank": 1,
+        "score": 0.7644066987231773,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.7644066987231773,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.763288252927351,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6163170536875391,
+            "field_id": "ai_ml"
+          }
+        ],
+        "alpha": 0.8,
+        "beta": 0.19999999999999996
+      },
+      "9": {
+        "rank": 1,
+        "score": 0.7822033493615888,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.7822033493615888,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.7816441264636755,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.5881585268437696,
+            "field_id": "ai_ml"
+          }
+        ],
+        "alpha": 0.9,
+        "beta": 0.09999999999999998
+      },
+      "10": {
+        "rank": 1,
+        "score": 0.8,
+        "top_3": [
+          {
+            "lab_name": "広奥ゼミ",
+            "score": 0.8,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "佐々木ゼミ",
+            "score": 0.8,
+            "field_id": "network_security"
+          },
+          {
+            "lab_name": "伊藤 正彦ゼミ",
+            "score": 0.5599999999999999,
+            "field_id": "database_systems"
+          }
+        ],
+        "alpha": 1.0,
+        "beta": 0.0
+      }
+    },
+    "best_rfm": {
+      "value": 5,
+      "rank": 1,
+      "score": 0.7110167468079432
+    },
+    "worst_rfm": {
+      "value": 1,
+      "rank": 10,
+      "score": 0.6398301442542977
+    },
+    "rank_range": 9,
+    "interpretation": "research_field_matchは順位に中程度の影響を与える（変動幅5-9）"
+  },
+  "phase3_field_interests_sensitivity": {
+    "target_field_analysis": {
+      "field_id": "network_security",
+      "field_label": "ネットワーク・セキュリティ",
+      "results": [
+        {
+          "interest": 1.0,
+          "rank": 13,
+          "score": 0.46101674680794325,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 2.0,
+          "rank": 13,
+          "score": 0.46101674680794325,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 3.0,
+          "rank": 13,
+          "score": 0.46101674680794325,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 4.0,
+          "rank": 7,
+          "score": 0.5110167468079432,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 5.0,
+          "rank": 3,
+          "score": 0.5610167468079432,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 6.0,
+          "rank": 2,
+          "score": 0.6110167468079433,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 7.0,
+          "rank": 2,
+          "score": 0.6610167468079432,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 8.0,
+          "rank": 1,
+          "score": 0.7110167468079432,
+          "top_lab": "広奥ゼミ"
+        },
+        {
+          "interest": 9.0,
+          "rank": 1,
+          "score": 0.7610167468079432,
+          "top_lab": "広奥ゼミ"
+        },
+        {
+          "interest": 10.0,
+          "rank": 1,
+          "score": 0.8110167468079432,
+          "top_lab": "広奥ゼミ"
+        }
+      ],
+      "rank_range": 12,
+      "score_range": 0.35
+    },
+    "other_fields_analysis": {},
+    "pattern_analysis": {
+      "対象分野のみ高興味": {
+        "rank": 1,
+        "score": 0.8110167468079432,
+        "top_lab": "広奥ゼミ",
+        "top_3": [
+          "広奥ゼミ",
+          "佐々木ゼミ",
+          "齋藤健司ゼミ"
+        ]
+      },
+      "対象分野低興味": {
+        "rank": 13,
+        "score": 0.46101674680794325,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "金ゼミ "
+        ]
+      },
+      "同カテゴリ高興味": {
+        "rank": 10,
+        "score": 0.5910167468079432,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "守 ゼミ"
+        ]
+      },
+      "異カテゴリ高興味": {
+        "rank": 13,
+        "score": 0.46101674680794325,
+        "top_lab": "綿谷ゼミ",
+        "top_3": [
+          "綿谷ゼミ",
+          "平山ゼミ",
+          "齋藤健司ゼミ"
+        ]
+      },
+      "全分野均等": {
+        "rank": 6,
+        "score": 0.5610167468079432,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "綿谷ゼミ"
+        ]
+      },
+      "分野興味なし": {
+        "rank": 13,
+        "score": 0.46101674680794325,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "金ゼミ "
+        ]
+      }
+    },
+    "category_analysis": {},
+    "interaction_analysis": {
+      "1": {
+        "1": {
+          "rank": 13,
+          "score": 0.5898301442542978,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "5": {
+          "rank": 11,
+          "score": 0.6098301442542978,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "10": {
+          "rank": 7,
+          "score": 0.6598301442542978,
+          "top_lab": "齋藤健司ゼミ"
+        }
+      },
+      "5": {
+        "1": {
+          "rank": 13,
+          "score": 0.46101674680794325,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "5": {
+          "rank": 3,
+          "score": 0.5610167468079432,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "10": {
+          "rank": 1,
+          "score": 0.8110167468079432,
+          "top_lab": "広奥ゼミ"
+        }
+      },
+      "10": {
+        "1": {
+          "rank": 4,
+          "score": 0.3,
+          "top_lab": "坂本 ゼミ"
+        },
+        "5": {
+          "rank": 1,
+          "score": 0.5,
+          "top_lab": "広奥ゼミ"
+        },
+        "10": {
+          "rank": 1,
+          "score": 1.0,
+          "top_lab": "広奥ゼミ"
+        }
+      }
+    }
+  },
+  "phase4_top_rank_conditions": {
+    "num_samples": 1000,
+    "num_top_rank": 58,
+    "top_rank_probability": 0.058,
+    "found_top_rank": true,
+    "typical_profile": {
+      "research_intensity": {
+        "mean": 6.125651757632612,
+        "std": 2.954518417104612,
+        "min": 1.0255597425895786,
+        "max": 9.977605186909184
+      },
+      "advisor_style": {
+        "mean": 5.794846678805232,
+        "std": 2.4339473746631746,
+        "min": 1.1602231051622378,
+        "max": 9.98205205088749
+      },
+      "team_work": {
+        "mean": 4.036167826720163,
+        "std": 2.696699771561361,
+        "min": 1.0508394904217289,
+        "max": 9.939046339850675
+      },
+      "workload": {
+        "mean": 7.141312979521971,
+        "std": 2.5944538282945464,
+        "min": 1.0521473105896815,
+        "max": 9.893887180553296
+      },
+      "theory_practice": {
+        "mean": 5.006401627022815,
+        "std": 2.142611500135971,
+        "min": 1.069283097612168,
+        "max": 9.981870124570385
+      },
+      "research_field_match": {
+        "mean": 5.293227592705133,
+        "std": 2.594017788812989,
+        "min": 1.017581011894924,
+        "max": 9.714175235723296
+      },
+      "skill_development": {
+        "mean": 6.643742432275824,
+        "std": 2.8039806021780462,
+        "min": 1.0448486178165723,
+        "max": 9.9970998050909
+      },
+      "lab_atmosphere": {
+        "mean": 4.6917411013728,
+        "std": 2.231601002447205,
+        "min": 1.0924947372181952,
+        "max": 9.657268418890169
+      },
+      "flexibility": {
+        "mean": 5.491082846932109,
+        "std": 2.4379720193682726,
+        "min": 1.314354170794366,
+        "max": 9.938636288869494
+      },
+      "publication_opportunity": {
+        "mean": 5.819553895209043,
+        "std": 2.0772308130813646,
+        "min": 1.1328107110551886,
+        "max": 9.831191248638234
+      },
+      "interdisciplinary": {
+        "mean": 4.42124362210011,
+        "std": 1.9662509224501792,
+        "min": 1.0325134427975042,
+        "max": 8.927736030648196
+      },
+      "communication_style": {
+        "mean": 5.238580454083827,
+        "std": 2.362463100575145,
+        "min": 1.0323244779899008,
+        "max": 9.976412196421137
+      }
+    },
+    "typical_field_interests": {
+      "vr_ar_media": {
+        "count": 10,
+        "frequency": 0.1724137931034483,
+        "mean_interest": 5.110149363020133
+      },
+      "system_ethics": {
+        "count": 6,
+        "frequency": 0.10344827586206896,
+        "mean_interest": 6.732608854720205
+      },
+      "embedded_iot": {
+        "count": 6,
+        "frequency": 0.10344827586206896,
+        "mean_interest": 4.775252172085696
+      },
+      "database_systems": {
+        "count": 6,
+        "frequency": 0.10344827586206896,
+        "mean_interest": 4.260092340299726
+      },
+      "sports_science": {
+        "count": 3,
+        "frequency": 0.05172413793103448,
+        "mean_interest": 3.0667424163452117
+      },
+      "network_security": {
+        "count": 23,
+        "frequency": 0.39655172413793105,
+        "mean_interest": 5.629271964206845
+      },
+      "education_linguistics": {
+        "count": 6,
+        "frequency": 0.10344827586206896,
+        "mean_interest": 6.133862382582027
+      },
+      "philosophy_humanities": {
+        "count": 5,
+        "frequency": 0.08620689655172414,
+        "mean_interest": 4.259338373679869
+      },
+      "natural_science_math": {
+        "count": 3,
+        "frequency": 0.05172413793103448,
+        "mean_interest": 8.235756780745364
+      },
+      "design_visual": {
+        "count": 2,
+        "frequency": 0.034482758620689655,
+        "mean_interest": 2.835578671972713
+      },
+      "business_decision": {
+        "count": 12,
+        "frequency": 0.20689655172413793,
+        "mean_interest": 5.342213200745413
+      },
+      "game_esports": {
+        "count": 7,
+        "frequency": 0.1206896551724138,
+        "mean_interest": 5.438932464959508
+      },
+      "medical_healthcare": {
+        "count": 7,
+        "frequency": 0.1206896551724138,
+        "mean_interest": 7.197276565231782
+      },
+      "ai_ml": {
+        "count": 4,
+        "frequency": 0.06896551724137931,
+        "mean_interest": 3.662513338400717
+      },
+      "video_animation": {
+        "count": 4,
+        "frequency": 0.06896551724137931,
+        "mean_interest": 4.523263996354748
+      },
+      "computer_music": {
+        "count": 1,
+        "frequency": 0.017241379310344827,
+        "mean_interest": 1.3860233545440086
+      },
+      "web_design": {
+        "count": 2,
+        "frequency": 0.034482758620689655,
+        "mean_interest": 3.115834986626319
+      },
+      "tourism_regional": {
+        "count": 2,
+        "frequency": 0.034482758620689655,
+        "mean_interest": 4.943730088642133
+      },
+      "image_processing": {
+        "count": 1,
+        "frequency": 0.017241379310344827,
+        "mean_interest": 3.3159588410413643
+      },
+      "audio_processing": {
+        "count": 2,
+        "frequency": 0.034482758620689655,
+        "mean_interest": 1.5460036165853506
+      }
+    },
+    "target_field_id": "network_security",
+    "target_field_in_top_rank_ratio": 0.39655172413793105
+  },
+  "summary": {
+    "top_3_influential_basic_params": [
+      "research_field_match",
+      "publication_opportunity",
+      "team_work"
+    ],
+    "research_field_match_impact": {
+      "rank_range": 9,
+      "best_value": 5,
+      "interpretation": "research_field_matchは順位に中程度の影響を与える（変動幅5-9）"
+    },
+    "field_interests_impact": {
+      "target_field_rank_range": 12,
+      "target_field": "network_security"
+    },
+    "top_rank_probability": 0.058,
+    "can_achieve_top_rank": true,
+    "recommendations": [
+      "この研究室は1位獲得が可能です（確率: 5.8%）",
+      "research_field_match の推奨値: 5",
+      "対象分野（network_security）への興味が重要（1位獲得時の40%で選択）"
+    ]
+  }
+}

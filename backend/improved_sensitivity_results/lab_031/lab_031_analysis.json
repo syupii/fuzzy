@@ -1,0 +1,1004 @@
+{
+  "lab_id": "lab_031",
+  "lab_name": "湯村ゼミ",
+  "analysis_date": "2025-12-19 13:48:46",
+  "phase1_basic_parameter_importance": {
+    "parameter_importance": {
+      "research_intensity": {
+        "score_range": 0.046501484817794925,
+        "rank_range": 3,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.6564296687099047,
+        "num_transitions": 4,
+        "transitions": [
+          {
+            "value": 3.7551020408163267,
+            "rank_before": 3,
+            "rank_after": 4,
+            "direction": "下降"
+          },
+          {
+            "value": 6.877551020408164,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 8.714285714285715,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 8.89795918367347,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.07650148481779492
+      },
+      "advisor_style": {
+        "score_range": 0.04634483824211355,
+        "rank_range": 0,
+        "optimal_value": 7.061224489795919,
+        "optimal_score": 0.6305845155603337,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.04634483824211355
+      },
+      "team_work": {
+        "score_range": 0.04652452641839311,
+        "rank_range": 4,
+        "optimal_value": 7.979591836734694,
+        "optimal_score": 0.6457599547366645,
+        "num_transitions": 5,
+        "transitions": [
+          {
+            "value": 1.3673469387755102,
+            "rank_before": 4,
+            "rank_after": 6,
+            "direction": "下降"
+          },
+          {
+            "value": 2.836734693877551,
+            "rank_before": 6,
+            "rank_after": 5,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.4897959183673475,
+            "rank_before": 5,
+            "rank_after": 4,
+            "direction": "上昇"
+          },
+          {
+            "value": 6.142857142857143,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 7.061224489795919,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.08652452641839312
+      },
+      "workload": {
+        "score_range": 0.04652452641839311,
+        "rank_range": 1,
+        "optimal_value": 7.979591836734694,
+        "optimal_score": 0.6457599547366645,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 2.836734693877551,
+            "rank_before": 3,
+            "rank_after": 4,
+            "direction": "下降"
+          },
+          {
+            "value": 6.6938775510204085,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05652452641839311
+      },
+      "theory_practice": {
+        "score_range": 0.04634483824211355,
+        "rank_range": 0,
+        "optimal_value": 7.061224489795919,
+        "optimal_score": 0.6305845155603337,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.04634483824211355
+      },
+      "research_field_match": {
+        "score_range": 0.3660891844725509,
+        "rank_range": 24,
+        "optimal_value": 10.0,
+        "optimal_score": 0.8,
+        "num_transitions": 14,
+        "transitions": [
+          {
+            "value": 1.183673469387755,
+            "rank_before": 25,
+            "rank_after": 24,
+            "direction": "上昇"
+          },
+          {
+            "value": 2.1020408163265305,
+            "rank_before": 24,
+            "rank_after": 21,
+            "direction": "上昇"
+          },
+          {
+            "value": 2.2857142857142856,
+            "rank_before": 21,
+            "rank_after": 20,
+            "direction": "上昇"
+          },
+          {
+            "value": 2.6530612244897958,
+            "rank_before": 20,
+            "rank_after": 19,
+            "direction": "上昇"
+          },
+          {
+            "value": 3.3877551020408165,
+            "rank_before": 19,
+            "rank_after": 15,
+            "direction": "上昇"
+          },
+          {
+            "value": 3.7551020408163267,
+            "rank_before": 15,
+            "rank_after": 10,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.122448979591837,
+            "rank_before": 10,
+            "rank_after": 9,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.3061224489795915,
+            "rank_before": 9,
+            "rank_after": 7,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.4897959183673475,
+            "rank_before": 7,
+            "rank_after": 6,
+            "direction": "上昇"
+          },
+          {
+            "value": 4.857142857142858,
+            "rank_before": 6,
+            "rank_after": 5,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.040816326530613,
+            "rank_before": 5,
+            "rank_after": 4,
+            "direction": "上昇"
+          },
+          {
+            "value": 5.959183673469388,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 6.326530612244898,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 6.6938775510204085,
+            "rank_before": 2,
+            "rank_after": 1,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.6060891844725509
+      },
+      "skill_development": {
+        "score_range": 0.03875123734816255,
+        "rank_range": 2,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.6498506252188747,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 7.979591836734694,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 9.448979591836736,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05875123734816255
+      },
+      "lab_atmosphere": {
+        "score_range": 0.03875123734816255,
+        "rank_range": 2,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.6498506252188747,
+        "num_transitions": 3,
+        "transitions": [
+          {
+            "value": 3.5714285714285716,
+            "rank_before": 3,
+            "rank_after": 4,
+            "direction": "下降"
+          },
+          {
+            "value": 7.061224489795919,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 7.979591836734694,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05875123734816255
+      },
+      "flexibility": {
+        "score_range": 0.038620698535094644,
+        "rank_range": 0,
+        "optimal_value": 7.061224489795919,
+        "optimal_score": 0.6283129975942322,
+        "num_transitions": 0,
+        "transitions": [],
+        "importance": 0.038620698535094644
+      },
+      "publication_opportunity": {
+        "score_range": 0.03875123734816244,
+        "rank_range": 2,
+        "optimal_value": 9.081632653061225,
+        "optimal_score": 0.6498506252188747,
+        "num_transitions": 2,
+        "transitions": [
+          {
+            "value": 6.6938775510204085,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 7.428571428571429,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          }
+        ],
+        "importance": 0.05875123734816244
+      },
+      "interdisciplinary": {
+        "score_range": 0.031016350945595406,
+        "rank_range": 2,
+        "optimal_value": 7.979591836734694,
+        "optimal_score": 0.6361584390790178,
+        "num_transitions": 3,
+        "transitions": [
+          {
+            "value": 7.061224489795919,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 8.16326530612245,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 9.26530612244898,
+            "rank_before": 2,
+            "rank_after": 3,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.05101635094559541
+      },
+      "communication_style": {
+        "score_range": 0.031016350945595406,
+        "rank_range": 2,
+        "optimal_value": 7.979591836734694,
+        "optimal_score": 0.6361584390790178,
+        "num_transitions": 3,
+        "transitions": [
+          {
+            "value": 6.510204081632653,
+            "rank_before": 4,
+            "rank_after": 3,
+            "direction": "上昇"
+          },
+          {
+            "value": 8.16326530612245,
+            "rank_before": 3,
+            "rank_after": 2,
+            "direction": "上昇"
+          },
+          {
+            "value": 9.26530612244898,
+            "rank_before": 2,
+            "rank_after": 3,
+            "direction": "下降"
+          }
+        ],
+        "importance": 0.05101635094559541
+      }
+    },
+    "top_3_influential": [
+      "research_field_match",
+      "team_work",
+      "research_intensity"
+    ],
+    "least_influential": [
+      "advisor_style",
+      "theory_practice",
+      "flexibility"
+    ]
+  },
+  "phase2_research_field_match_impact": {
+    "results_by_rfm": {
+      "1": {
+        "rank": 25,
+        "score": 0.43391081552744915,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.8134267415939265,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.7568344673743328,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "金ゼミ ",
+            "score": 0.7261132037749792,
+            "field_id": "korean_studies"
+          }
+        ],
+        "alpha": 0.1,
+        "beta": 0.9
+      },
+      "2": {
+        "rank": 22,
+        "score": 0.47458739157995483,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7852682147501568,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.7349639709994069,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6935948302519379,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.2,
+        "beta": 0.8
+      },
+      "3": {
+        "rank": 19,
+        "score": 0.5152639676324604,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7571096879063872,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.713093474624481,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6768954764704456,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.3,
+        "beta": 0.7
+      },
+      "4": {
+        "rank": 10,
+        "score": 0.5559405436849661,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.7289511610626176,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6912229782495551,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6601961226889534,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.4,
+        "beta": 0.6
+      },
+      "5": {
+        "rank": 4,
+        "score": 0.5966171197374718,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.700792634218848,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6693524818746293,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "守 ゼミ",
+            "score": 0.6434967689074611,
+            "field_id": "audio_processing"
+          }
+        ],
+        "alpha": 0.5,
+        "beta": 0.5
+      },
+      "6": {
+        "rank": 3,
+        "score": 0.6372936957899774,
+        "top_3": [
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6726341073750783,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6474819854997034,
+            "field_id": "image_processing"
+          },
+          {
+            "lab_name": "湯村ゼミ",
+            "score": 0.6372936957899774,
+            "field_id": "embedded_iot"
+          }
+        ],
+        "alpha": 0.6,
+        "beta": 0.4
+      },
+      "7": {
+        "rank": 1,
+        "score": 0.677970271842483,
+        "top_3": [
+          {
+            "lab_name": "湯村ゼミ",
+            "score": 0.677970271842483,
+            "field_id": "embedded_iot"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6444755805313087,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6256114891247776,
+            "field_id": "image_processing"
+          }
+        ],
+        "alpha": 0.7,
+        "beta": 0.30000000000000004
+      },
+      "8": {
+        "rank": 1,
+        "score": 0.7186468478949888,
+        "top_3": [
+          {
+            "lab_name": "湯村ゼミ",
+            "score": 0.7186468478949888,
+            "field_id": "embedded_iot"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.6163170536875391,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.6037409927498516,
+            "field_id": "image_processing"
+          }
+        ],
+        "alpha": 0.8,
+        "beta": 0.19999999999999996
+      },
+      "9": {
+        "rank": 1,
+        "score": 0.7593234239474944,
+        "top_3": [
+          {
+            "lab_name": "湯村ゼミ",
+            "score": 0.7593234239474944,
+            "field_id": "embedded_iot"
+          },
+          {
+            "lab_name": "齋藤健司ゼミ",
+            "score": 0.5881585268437696,
+            "field_id": "ai_ml"
+          },
+          {
+            "lab_name": "藤原ゼミ",
+            "score": 0.5818704963749258,
+            "field_id": "image_processing"
+          }
+        ],
+        "alpha": 0.9,
+        "beta": 0.09999999999999998
+      },
+      "10": {
+        "rank": 1,
+        "score": 0.8,
+        "top_3": [
+          {
+            "lab_name": "湯村ゼミ",
+            "score": 0.8,
+            "field_id": "embedded_iot"
+          },
+          {
+            "lab_name": "伊藤 正彦ゼミ",
+            "score": 0.5599999999999999,
+            "field_id": "database_systems"
+          },
+          {
+            "lab_name": "斎藤 一 ゼミ",
+            "score": 0.5599999999999999,
+            "field_id": "tourism_regional"
+          }
+        ],
+        "alpha": 1.0,
+        "beta": 0.0
+      }
+    },
+    "best_rfm": {
+      "value": 7,
+      "rank": 1,
+      "score": 0.677970271842483
+    },
+    "worst_rfm": {
+      "value": 1,
+      "rank": 25,
+      "score": 0.43391081552744915
+    },
+    "rank_range": 24,
+    "interpretation": "research_field_matchは順位に非常に大きな影響を与える（変動幅10以上）"
+  },
+  "phase3_field_interests_sensitivity": {
+    "target_field_analysis": {
+      "field_id": "embedded_iot",
+      "field_label": "組込み・IoT",
+      "results": [
+        {
+          "interest": 1.0,
+          "rank": 29,
+          "score": 0.3466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 2.0,
+          "rank": 29,
+          "score": 0.3466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 3.0,
+          "rank": 29,
+          "score": 0.3466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 4.0,
+          "rank": 24,
+          "score": 0.3966171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 5.0,
+          "rank": 16,
+          "score": 0.44661711973747176,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 6.0,
+          "rank": 10,
+          "score": 0.4966171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 7.0,
+          "rank": 6,
+          "score": 0.5466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 8.0,
+          "rank": 4,
+          "score": 0.5966171197374718,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 9.0,
+          "rank": 4,
+          "score": 0.6466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        {
+          "interest": 10.0,
+          "rank": 4,
+          "score": 0.6966171197374718,
+          "top_lab": "齋藤健司ゼミ"
+        }
+      ],
+      "rank_range": 25,
+      "score_range": 0.35000000000000003
+    },
+    "other_fields_analysis": {},
+    "pattern_analysis": {
+      "対象分野のみ高興味": {
+        "rank": 4,
+        "score": 0.6966171197374718,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "守 ゼミ"
+        ]
+      },
+      "対象分野低興味": {
+        "rank": 29,
+        "score": 0.3466171197374717,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "金ゼミ "
+        ]
+      },
+      "同カテゴリ高興味": {
+        "rank": 18,
+        "score": 0.4766171197374717,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "守 ゼミ"
+        ]
+      },
+      "異カテゴリ高興味": {
+        "rank": 29,
+        "score": 0.3466171197374717,
+        "top_lab": "綿谷ゼミ",
+        "top_3": [
+          "綿谷ゼミ",
+          "平山ゼミ",
+          "齋藤健司ゼミ"
+        ]
+      },
+      "全分野均等": {
+        "rank": 20,
+        "score": 0.44661711973747176,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "綿谷ゼミ"
+        ]
+      },
+      "分野興味なし": {
+        "rank": 29,
+        "score": 0.3466171197374717,
+        "top_lab": "齋藤健司ゼミ",
+        "top_3": [
+          "齋藤健司ゼミ",
+          "藤原ゼミ",
+          "金ゼミ "
+        ]
+      }
+    },
+    "category_analysis": {},
+    "interaction_analysis": {
+      "1": {
+        "1": {
+          "rank": 29,
+          "score": 0.3839108155274491,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "5": {
+          "rank": 27,
+          "score": 0.4039108155274491,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "10": {
+          "rank": 24,
+          "score": 0.45391081552744916,
+          "top_lab": "齋藤健司ゼミ"
+        }
+      },
+      "5": {
+        "1": {
+          "rank": 29,
+          "score": 0.3466171197374717,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "5": {
+          "rank": 16,
+          "score": 0.44661711973747176,
+          "top_lab": "齋藤健司ゼミ"
+        },
+        "10": {
+          "rank": 4,
+          "score": 0.6966171197374718,
+          "top_lab": "齋藤健司ゼミ"
+        }
+      },
+      "10": {
+        "1": {
+          "rank": 31,
+          "score": 0.3,
+          "top_lab": "坂本 ゼミ"
+        },
+        "5": {
+          "rank": 1,
+          "score": 0.5,
+          "top_lab": "湯村ゼミ"
+        },
+        "10": {
+          "rank": 1,
+          "score": 1.0,
+          "top_lab": "湯村ゼミ"
+        }
+      }
+    }
+  },
+  "phase4_top_rank_conditions": {
+    "num_samples": 1000,
+    "num_top_rank": 47,
+    "top_rank_probability": 0.047,
+    "found_top_rank": true,
+    "typical_profile": {
+      "research_intensity": {
+        "mean": 5.664137124146257,
+        "std": 2.990979492435821,
+        "min": 1.0941122818707263,
+        "max": 9.939060843447548
+      },
+      "advisor_style": {
+        "mean": 5.9977362896467525,
+        "std": 2.4551824568794602,
+        "min": 1.1063746582335743,
+        "max": 9.987242600271001
+      },
+      "team_work": {
+        "mean": 6.489435639461898,
+        "std": 2.380833005304456,
+        "min": 1.8525550118400087,
+        "max": 9.86180612951499
+      },
+      "workload": {
+        "mean": 5.595918598179624,
+        "std": 2.8686030859190947,
+        "min": 1.108136213073157,
+        "max": 9.71868955555701
+      },
+      "theory_practice": {
+        "mean": 5.057912337857755,
+        "std": 2.4998256548883817,
+        "min": 1.14246482138148,
+        "max": 9.767434193603686
+      },
+      "research_field_match": {
+        "mean": 6.425649440947202,
+        "std": 2.304041623579785,
+        "min": 1.2908148679726645,
+        "max": 9.941022278076423
+      },
+      "skill_development": {
+        "mean": 5.537743782520743,
+        "std": 2.806843225033142,
+        "min": 1.2623009488488852,
+        "max": 9.845941551716628
+      },
+      "lab_atmosphere": {
+        "mean": 5.520669093656889,
+        "std": 2.7887252858041203,
+        "min": 1.010355504803431,
+        "max": 9.827888428912333
+      },
+      "flexibility": {
+        "mean": 5.812666574969135,
+        "std": 2.422995117214158,
+        "min": 1.03814964589714,
+        "max": 9.093264555264003
+      },
+      "publication_opportunity": {
+        "mean": 6.850709410150454,
+        "std": 2.588171235563666,
+        "min": 1.336454787047923,
+        "max": 9.959751067475757
+      },
+      "interdisciplinary": {
+        "mean": 5.654871215850588,
+        "std": 2.757077803731737,
+        "min": 1.1293867042721888,
+        "max": 9.53844017655771
+      },
+      "communication_style": {
+        "mean": 5.4701002034740025,
+        "std": 2.7060056487576425,
+        "min": 1.1134304989826758,
+        "max": 9.762084959578711
+      }
+    },
+    "typical_field_interests": {
+      "network_security": {
+        "count": 5,
+        "frequency": 0.10638297872340426,
+        "mean_interest": 3.9506320489686373
+      },
+      "embedded_iot": {
+        "count": 32,
+        "frequency": 0.6808510638297872,
+        "mean_interest": 7.639758621157153
+      },
+      "tourism_regional": {
+        "count": 3,
+        "frequency": 0.06382978723404255,
+        "mean_interest": 5.725147498084731
+      },
+      "system_ethics": {
+        "count": 6,
+        "frequency": 0.1276595744680851,
+        "mean_interest": 5.934439923756318
+      },
+      "philosophy_humanities": {
+        "count": 5,
+        "frequency": 0.10638297872340426,
+        "mean_interest": 5.601114654653384
+      },
+      "business_decision": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 5.12251046315979
+      },
+      "web_design": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 8.360558721700485
+      },
+      "medical_healthcare": {
+        "count": 5,
+        "frequency": 0.10638297872340426,
+        "mean_interest": 5.8621566450048395
+      },
+      "audio_processing": {
+        "count": 4,
+        "frequency": 0.0851063829787234,
+        "mean_interest": 5.061952942255498
+      },
+      "computer_music": {
+        "count": 4,
+        "frequency": 0.0851063829787234,
+        "mean_interest": 5.025425229682214
+      },
+      "image_processing": {
+        "count": 5,
+        "frequency": 0.10638297872340426,
+        "mean_interest": 4.767147616422611
+      },
+      "database_systems": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 7.687460217961915
+      },
+      "video_animation": {
+        "count": 4,
+        "frequency": 0.0851063829787234,
+        "mean_interest": 6.711820407000403
+      },
+      "game_esports": {
+        "count": 10,
+        "frequency": 0.2127659574468085,
+        "mean_interest": 6.478456911102606
+      },
+      "sports_science": {
+        "count": 3,
+        "frequency": 0.06382978723404255,
+        "mean_interest": 3.649693925992994
+      },
+      "ai_ml": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 6.363809424242807
+      },
+      "education_linguistics": {
+        "count": 3,
+        "frequency": 0.06382978723404255,
+        "mean_interest": 6.82479551774814
+      },
+      "vr_ar_media": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 3.2039086668462886
+      },
+      "design_visual": {
+        "count": 4,
+        "frequency": 0.0851063829787234,
+        "mean_interest": 4.9884900291903564
+      },
+      "natural_science_math": {
+        "count": 2,
+        "frequency": 0.0425531914893617,
+        "mean_interest": 8.115647342624602
+      }
+    },
+    "target_field_id": "embedded_iot",
+    "target_field_in_top_rank_ratio": 0.6808510638297872
+  },
+  "summary": {
+    "top_3_influential_basic_params": [
+      "research_field_match",
+      "team_work",
+      "research_intensity"
+    ],
+    "research_field_match_impact": {
+      "rank_range": 24,
+      "best_value": 7,
+      "interpretation": "research_field_matchは順位に非常に大きな影響を与える（変動幅10以上）"
+    },
+    "field_interests_impact": {
+      "target_field_rank_range": 25,
+      "target_field": "embedded_iot"
+    },
+    "top_rank_probability": 0.047,
+    "can_achieve_top_rank": true,
+    "recommendations": [
+      "この研究室は1位獲得が可能です（確率: 4.7%）",
+      "research_field_match の推奨値: 7",
+      "対象分野（embedded_iot）への興味が重要（1位獲得時の68%で選択）"
+    ]
+  }
+}
