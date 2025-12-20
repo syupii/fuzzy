@@ -1,7 +1,7 @@
 {
   "lab_id": "lab_005",
   "lab_name": "飯嶋 ゼミ",
-  "analysis_date": "2025-12-19 13:47:57",
+  "analysis_date": "2025-12-20 17:45:21",
   "phase1_basic_parameter_importance": {
     "parameter_importance": {
       "research_intensity": {
@@ -931,178 +931,178 @@
   },
   "phase4_top_rank_conditions": {
     "num_samples": 1000,
-    "num_top_rank": 26,
-    "top_rank_probability": 0.026,
+    "num_top_rank": 32,
+    "top_rank_probability": 0.032,
     "found_top_rank": true,
     "typical_profile": {
       "research_intensity": {
-        "mean": 3.8564108387914544,
-        "std": 1.7636015944896395,
-        "min": 1.3225112899975962,
-        "max": 8.443957987775601
+        "mean": 3.9975113016621666,
+        "std": 1.8441475776271534,
+        "min": 1.2379613457221668,
+        "max": 9.693361299018875
       },
       "advisor_style": {
-        "mean": 6.714568938831615,
-        "std": 2.620238761070027,
-        "min": 1.1935554243470294,
-        "max": 9.889412130097844
+        "mean": 6.796778255407022,
+        "std": 2.5587485265942265,
+        "min": 1.4390329555511183,
+        "max": 9.878660243405227
       },
       "team_work": {
-        "mean": 4.784475350232952,
-        "std": 2.473625525778332,
-        "min": 1.0532700363485255,
-        "max": 9.840344740285175
+        "mean": 5.33162756406877,
+        "std": 2.834629685213963,
+        "min": 1.1713479855362987,
+        "max": 9.966904196585787
       },
       "workload": {
-        "mean": 3.9467612337179956,
-        "std": 2.494751645850105,
-        "min": 1.0380568604538136,
-        "max": 9.7192245143702
+        "mean": 3.8694928888974207,
+        "std": 2.1540899872193116,
+        "min": 1.0419893060658232,
+        "max": 8.736076294507921
       },
       "theory_practice": {
-        "mean": 3.812361157488687,
-        "std": 2.0274856727564363,
-        "min": 1.0361951043569644,
-        "max": 8.573902325137496
+        "mean": 3.5688092003596763,
+        "std": 2.518321642394671,
+        "min": 1.0927286292692262,
+        "max": 9.760200669019072
       },
       "research_field_match": {
-        "mean": 4.143211962911175,
-        "std": 2.5217207447696977,
-        "min": 1.0909393732035304,
-        "max": 9.972764112247885
+        "mean": 4.346661579288494,
+        "std": 2.2767731590066793,
+        "min": 1.1999142693482785,
+        "max": 9.223655413199097
       },
       "skill_development": {
-        "mean": 4.431207170359593,
-        "std": 2.274570091769785,
-        "min": 1.2064791204693774,
-        "max": 8.69120720184047
+        "mean": 3.863509494799983,
+        "std": 2.4848948352257905,
+        "min": 1.1719976247043307,
+        "max": 9.71807254850022
       },
       "lab_atmosphere": {
-        "mean": 6.415261272622796,
-        "std": 2.7261522859840577,
-        "min": 1.3596780789322334,
-        "max": 9.412679466996716
+        "mean": 6.297331754933636,
+        "std": 2.5286046965966813,
+        "min": 1.5169378507182656,
+        "max": 9.97641376538204
       },
       "flexibility": {
-        "mean": 6.65112274899427,
-        "std": 2.777073861395619,
-        "min": 1.4726684854574497,
-        "max": 9.972358174819144
+        "mean": 5.402465210513376,
+        "std": 2.728308737616554,
+        "min": 1.253393723319383,
+        "max": 9.940153466721032
       },
       "publication_opportunity": {
-        "mean": 4.860279428428405,
-        "std": 2.7465136069003875,
-        "min": 1.2640368752171955,
-        "max": 9.939818059573293
+        "mean": 4.4382584290440885,
+        "std": 2.5756448743177467,
+        "min": 1.157126756194494,
+        "max": 9.249845245890668
       },
       "interdisciplinary": {
-        "mean": 6.522422018061724,
-        "std": 1.901516914797314,
-        "min": 3.4820621716460525,
-        "max": 9.850442241092374
+        "mean": 5.9897310512429875,
+        "std": 2.4707050640303376,
+        "min": 1.739121677466013,
+        "max": 9.989905590054828
       },
       "communication_style": {
-        "mean": 5.863626161391806,
-        "std": 2.648477595556376,
-        "min": 1.0697720719658244,
-        "max": 9.955498635055672
+        "mean": 6.944588873115956,
+        "std": 1.5499320150042488,
+        "min": 2.2159710071937306,
+        "max": 9.794333797418552
       }
     },
     "typical_field_interests": {
-      "web_design": {
-        "count": 2,
-        "frequency": 0.07692307692307693,
-        "mean_interest": 3.7826916661713756
-      },
-      "vr_ar_media": {
-        "count": 6,
-        "frequency": 0.23076923076923078,
-        "mean_interest": 6.687478879718441
-      },
-      "system_ethics": {
+      "network_security": {
         "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 3.9330859933414146
+        "frequency": 0.09375,
+        "mean_interest": 5.183327187732255
       },
-      "sports_science": {
-        "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 2.1974001507068794
-      },
-      "business_decision": {
-        "count": 7,
-        "frequency": 0.2692307692307692,
-        "mean_interest": 4.378942666460509
+      "natural_science_math": {
+        "count": 8,
+        "frequency": 0.25,
+        "mean_interest": 4.734454936327042
       },
       "medical_healthcare": {
         "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 3.392772543457168
+        "frequency": 0.09375,
+        "mean_interest": 2.3954091437085974
+      },
+      "computer_music": {
+        "count": 5,
+        "frequency": 0.15625,
+        "mean_interest": 4.5113016450758305
+      },
+      "system_ethics": {
+        "count": 3,
+        "frequency": 0.09375,
+        "mean_interest": 2.8553342446229006
+      },
+      "vr_ar_media": {
+        "count": 6,
+        "frequency": 0.1875,
+        "mean_interest": 6.675982767006475
       },
       "game_esports": {
-        "count": 6,
-        "frequency": 0.23076923076923078,
-        "mean_interest": 4.011239625267294
-      },
-      "network_security": {
         "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 6.15226913168513
-      },
-      "database_systems": {
-        "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 3.537833828514666
-      },
-      "image_processing": {
-        "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 4.608629396839765
+        "frequency": 0.09375,
+        "mean_interest": 3.7304680914695285
       },
       "tourism_regional": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 4.476646739008245
-      },
-      "embedded_iot": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 1.791841656282209
-      },
-      "design_visual": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 3.005018704684635
+        "count": 3,
+        "frequency": 0.09375,
+        "mean_interest": 3.2958648885120714
       },
       "audio_processing": {
         "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 7.310617185539725
+        "frequency": 0.03125,
+        "mean_interest": 4.777624049944606
       },
-      "education_linguistics": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 5.046507747045722
+      "database_systems": {
+        "count": 3,
+        "frequency": 0.09375,
+        "mean_interest": 5.289913505909077
       },
-      "computer_music": {
+      "design_visual": {
         "count": 2,
-        "frequency": 0.07692307692307693,
-        "mean_interest": 3.0228959355771705
+        "frequency": 0.0625,
+        "mean_interest": 3.6275120750954817
+      },
+      "web_design": {
+        "count": 3,
+        "frequency": 0.09375,
+        "mean_interest": 5.2018897834124305
+      },
+      "embedded_iot": {
+        "count": 2,
+        "frequency": 0.0625,
+        "mean_interest": 4.963438499716104
+      },
+      "image_processing": {
+        "count": 2,
+        "frequency": 0.0625,
+        "mean_interest": 2.410772926169022
+      },
+      "ai_ml": {
+        "count": 2,
+        "frequency": 0.0625,
+        "mean_interest": 1.237219288260483
       },
       "philosophy_humanities": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 3.841483178414512
+        "count": 2,
+        "frequency": 0.0625,
+        "mean_interest": 3.525042397847926
+      },
+      "education_linguistics": {
+        "count": 2,
+        "frequency": 0.0625,
+        "mean_interest": 4.894211467646035
       },
       "video_animation": {
         "count": 3,
-        "frequency": 0.11538461538461539,
-        "mean_interest": 5.772204321288744
+        "frequency": 0.09375,
+        "mean_interest": 2.8773729849383947
       },
-      "ai_ml": {
-        "count": 1,
-        "frequency": 0.038461538461538464,
-        "mean_interest": 1.4710507106473205
+      "business_decision": {
+        "count": 4,
+        "frequency": 0.125,
+        "mean_interest": 4.422229528153076
       }
     },
     "target_field_id": "japanese_education",
@@ -1123,10 +1123,10 @@
       "target_field_rank_range": 24,
       "target_field": "japanese_education"
     },
-    "top_rank_probability": 0.026,
+    "top_rank_probability": 0.032,
     "can_achieve_top_rank": true,
     "recommendations": [
-      "この研究室は1位獲得が可能です（確率: 2.6%）",
+      "この研究室は1位獲得が可能です（確率: 3.2%）",
       "research_field_match の推奨値: 6",
       "対象分野（japanese_education）への興味が重要（1位獲得時の0%で選択）"
     ]

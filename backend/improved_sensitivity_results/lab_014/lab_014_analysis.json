@@ -1,7 +1,7 @@
 {
   "lab_id": "lab_014",
   "lab_name": "隼田ゼミ",
-  "analysis_date": "2025-12-19 13:48:15",
+  "analysis_date": "2025-12-20 17:45:39",
   "phase1_basic_parameter_importance": {
     "parameter_importance": {
       "research_intensity": {
@@ -634,13 +634,92 @@
   },
   "phase4_top_rank_conditions": {
     "num_samples": 1000,
-    "num_top_rank": 0,
-    "top_rank_probability": 0.0,
-    "found_top_rank": false,
-    "typical_profile": {},
-    "typical_field_interests": {},
+    "num_top_rank": 1,
+    "top_rank_probability": 0.001,
+    "found_top_rank": true,
+    "typical_profile": {
+      "research_intensity": {
+        "mean": 9.384898890892012,
+        "std": 0.0,
+        "min": 9.384898890892012,
+        "max": 9.384898890892012
+      },
+      "advisor_style": {
+        "mean": 8.701240951506577,
+        "std": 0.0,
+        "min": 8.701240951506577,
+        "max": 8.701240951506577
+      },
+      "team_work": {
+        "mean": 7.818810957178511,
+        "std": 0.0,
+        "min": 7.818810957178511,
+        "max": 7.818810957178511
+      },
+      "workload": {
+        "mean": 1.8563071420615236,
+        "std": 0.0,
+        "min": 1.8563071420615236,
+        "max": 1.8563071420615236
+      },
+      "theory_practice": {
+        "mean": 6.805458514286896,
+        "std": 0.0,
+        "min": 6.805458514286896,
+        "max": 6.805458514286896
+      },
+      "research_field_match": {
+        "mean": 9.089135342989065,
+        "std": 0.0,
+        "min": 9.089135342989065,
+        "max": 9.089135342989065
+      },
+      "skill_development": {
+        "mean": 7.6234161426107665,
+        "std": 0.0,
+        "min": 7.6234161426107665,
+        "max": 7.6234161426107665
+      },
+      "lab_atmosphere": {
+        "mean": 6.626323775259121,
+        "std": 0.0,
+        "min": 6.626323775259121,
+        "max": 6.626323775259121
+      },
+      "flexibility": {
+        "mean": 9.568205280815757,
+        "std": 0.0,
+        "min": 9.568205280815757,
+        "max": 9.568205280815757
+      },
+      "publication_opportunity": {
+        "mean": 5.9951421573959935,
+        "std": 0.0,
+        "min": 5.9951421573959935,
+        "max": 5.9951421573959935
+      },
+      "interdisciplinary": {
+        "mean": 7.878875449721318,
+        "std": 0.0,
+        "min": 7.878875449721318,
+        "max": 7.878875449721318
+      },
+      "communication_style": {
+        "mean": 9.930136021411714,
+        "std": 0.0,
+        "min": 9.930136021411714,
+        "max": 9.930136021411714
+      }
+    },
+    "typical_field_interests": {
+      "embedded_iot": {
+        "count": 1,
+        "frequency": 1.0,
+        "mean_interest": 2.747499521393406
+      }
+    },
     "target_field_id": "media_art",
-    "target_field_in_top_rank_ratio": 0
+    "target_field_in_top_rank_ratio": 0.0
   },
   "summary": {
     "top_3_influential_basic_params": [
@@ -657,10 +736,12 @@
       "target_field_rank_range": 15,
       "target_field": "media_art"
     },
-    "top_rank_probability": 0.0,
-    "can_achieve_top_rank": false,
+    "top_rank_probability": 0.001,
+    "can_achieve_top_rank": true,
     "recommendations": [
-      "この研究室は1位獲得が困難です"
+      "この研究室は1位獲得が可能です（確率: 0.1%）",
+      "research_field_match の推奨値: 5",
+      "対象分野（media_art）への興味が重要（1位獲得時の0%で選択）"
     ]
   }
 }
