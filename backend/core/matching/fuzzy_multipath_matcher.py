@@ -1,6 +1,7 @@
 # backend/core/matching/fuzzy_multipath_matcher.py
 """
 ファジィ決定木マッチャー - 技術資料完全準拠版（分野重視改善版）
++ 詳細説明機能追加
 
 【パラメータ調整ガイド】
 ====================================
@@ -44,6 +45,26 @@ from typing import Dict, List, Any, Tuple
 from dataclasses import dataclass
 import math
 
+# ★★★ 追加: 詳細説明生成モジュールをインポート ★★★
+try:
+    from core.matching.explanation_generator import (
+        generate_detailed_explanation,
+        generate_short_explanation
+    )
+    EXPLANATION_GENERATOR_AVAILABLE = True
+    print("✅ explanation_generator モジュール読み込み成功")
+except ImportError:
+    try:
+        from .explanation_generator import (
+            generate_detailed_explanation,
+            generate_short_explanation
+        )
+        EXPLANATION_GENERATOR_AVAILABLE = True
+        print("✅ explanation_generator モジュール読み込み成功（相対）")
+    except ImportError:
+        EXPLANATION_GENERATOR_AVAILABLE = False
+        print("⚠️ explanation_generator モジュールが見つかりません。従来の説明を使用します。")
+
 
 @dataclass
 class FuzzyPath:
@@ -71,6 +92,10 @@ class CompatibilityResult:
     # 説明
     explanation: str
     recommendation: str
+    
+    # ★★★ 追加: 詳細説明（自然言語版） ★★★
+    explanation_detailed: str = ""
+    explanation_short: str = ""
 
 
 class MembershipFunctions:
@@ -204,6 +229,7 @@ class FuzzyMultiPathMatcher:
         print(f"   - 分野減衰係数 = {self.CATEGORY_DECAY}")
         print(f"   - 完全一致ボーナス = {self.FIELD_EXACT_BONUS}")
         print(f"   - 不一致ペナルティ = {self.FIELD_MISMATCH_PENALTY}")
+        print(f"   - 詳細説明機能 = {'有効' if EXPLANATION_GENERATOR_AVAILABLE else '無効'}")
     
     def calculate_compatibility(
         self,
@@ -380,7 +406,9 @@ class FuzzyMultiPathMatcher:
         print(f"✅ 【Step 6完了】最終適合度 = {total:.4f}")
         print(f"{'='*70}\n")
         
-        # 説明文生成
+        # ========================================
+        # 説明文生成（従来版 - 元のコードを保持）
+        # ========================================
         explanation = self._generate_explanation(
             total, basic_score, field_score, alpha, beta,
             field_detail, len(fuzzy_paths),
@@ -388,6 +416,41 @@ class FuzzyMultiPathMatcher:
             lab=lab,
             criteria_scores=criteria_scores
         )
+        
+        # ========================================
+        # ★★★ 追加: 詳細説明文生成（自然言語版） ★★★
+        # ========================================
+        explanation_detailed = ""
+        explanation_short = ""
+        
+        if EXPLANATION_GENERATOR_AVAILABLE:
+            try:
+                explanation_detailed = generate_detailed_explanation(
+                    lab=lab,
+                    student=student,
+                    criteria_scores=criteria_scores,
+                    field_score=field_score,
+                    field_detail=field_detail,
+                    final_score=total,
+                    alpha=alpha,
+                    beta=beta
+                )
+                
+                explanation_short = generate_short_explanation(
+                    criteria_scores=criteria_scores,
+                    field_detail=field_detail,
+                    final_score=total,
+                    student=student
+                )
+                print(f"✅ 詳細説明生成完了")
+            except Exception as e:
+                print(f"⚠️ 詳細説明生成エラー: {e}")
+                explanation_detailed = explanation
+                explanation_short = explanation
+        else:
+            # フォールバック: 従来の説明を使用
+            explanation_detailed = explanation
+            explanation_short = explanation
         
         # 推薦レベル
         recommendation = self._get_recommendation(total)
@@ -398,7 +461,8 @@ class FuzzyMultiPathMatcher:
         print(f"{'#'*70}")
         print(f"   総合適合度: {total:.4f}")
         print(f"   推薦レベル: {recommendation}")
-        print(f"   説明: {explanation}")
+        print(f"   説明（従来版）: {explanation}")
+        print(f"   説明（詳細版）: {explanation_detailed[:100]}..." if len(explanation_detailed) > 100 else f"   説明（詳細版）: {explanation_detailed}")
         print(f"{'#'*70}\n")
         
         return CompatibilityResult(
@@ -411,7 +475,9 @@ class FuzzyMultiPathMatcher:
             fuzzy_paths=fuzzy_paths,
             field_detail=field_detail,
             explanation=explanation,
-            recommendation=recommendation
+            recommendation=recommendation,
+            explanation_detailed=explanation_detailed,
+            explanation_short=explanation_short
         )
     
     def _get_sorted_priorities(
@@ -776,6 +842,7 @@ class FuzzyMultiPathMatcher:
     ) -> str:
         """
         説得力のある説明文を動的に生成する（ナラティブエンジン）
+        ★★★ 元のコードをそのまま保持 ★★★
         """
         # データが不足している場合は簡易メッセージを返す
         if student is None or lab is None or criteria_scores is None:
@@ -881,7 +948,7 @@ if __name__ == "__main__":
     student = {
         "research_intensity": 9,
         "advisor_style": 7,
-        "team_work": 5,
+        "team_work": 3,  # 個人作業を好む
         "workload": 8,
         "theory_practice": 6,
         "research_field_match": 9,  # 分野重視
@@ -894,37 +961,57 @@ if __name__ == "__main__":
         
         # 優先度
         "research_intensity_priority": 10,
-        "publication_opportunity_priority": 10,
+        "team_work_priority": 8,
+        "publication_opportunity_priority": 9,
         "workload_priority": 7,
         "skill_development_priority": 6,
         
         # 分野興味
-        "field_interests": {"ai_ml": 10, "image_processing": 7}
+        "field_interests": {"game_dev": 10, "ai_ml": 7}
     }
     
     # テスト用研究室プロファイル
     lab = {
-        "research_intensity": 9,
+        "name": "河原ゼミ",
+        "research_area": "ゲームプログラミング",
+        "field_id": "game_dev",
+        "research_intensity": 8,
         "advisor_style": 7,
-        "team_work": 8,
-        "workload": 8,
-        "theory_practice": 6,
+        "team_work": 8,  # チーム活動が多い（学生の希望と差がある）
+        "workload": 7,
+        "theory_practice": 8,
         "skill_development": 8,
         "lab_atmosphere": 7,
         "flexibility": 6,
-        "publication_opportunity": 9,
+        "publication_opportunity": 8,
         "interdisciplinary": 5,
         "communication_style": 7,
-        "field_id": "ai_ml"
     }
     
     result = matcher.calculate_compatibility(student, lab)
     
-    print(f"\n総合適合度: {result.total_compatibility:.3f}")
+    print(f"\n{'='*60}")
+    print(f"計算結果サマリー")
+    print(f"{'='*60}")
+    print(f"総合適合度: {result.total_compatibility:.3f}")
     print(f"基本スコア: {result.basic_score:.3f}")
     print(f"分野スコア: {result.field_score:.3f}")
     print(f"分野比重α: {result.field_weight_alpha:.3f}")
     print(f"基本比重β: {result.basic_weight_beta:.3f}")
     print(f"評価パス数: {len(result.fuzzy_paths)}")
     print(f"推薦: {result.recommendation}")
-    print(f"説明: {result.explanation}")
+    
+    print(f"\n{'='*60}")
+    print(f"説明（従来版）")
+    print(f"{'='*60}")
+    print(result.explanation)
+    
+    print(f"\n{'='*60}")
+    print(f"説明（詳細版）")
+    print(f"{'='*60}")
+    print(result.explanation_detailed)
+    
+    print(f"\n{'='*60}")
+    print(f"説明（短縮版）")
+    print(f"{'='*60}")
+    print(result.explanation_short)

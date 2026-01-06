@@ -340,7 +340,7 @@ const EvaluationForm: React.FC<EvaluationFormProps> = ({ onResults, onError }) =
                   {/* 重要度 */}
                   <Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <Typography variant="caption" sx={{ fontWeight: 500 }}>重要度</Typography>
+                      <Typography variant="caption" sx={{ fontWeight: 500 }}>優先度</Typography>
                       <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold' }}>
                         {preferences[`${criterionKey}_priority` as keyof EvaluationPreferencesWithPriority]}
                       </Typography>

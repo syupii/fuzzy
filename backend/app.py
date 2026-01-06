@@ -2,6 +2,7 @@
 """
 研究室選択支援システム - FastAPI バックエンド（詳細情報追加版）
 評価が0になる問題を修正 + field_interestsのデータ形式を修正 + 研究室詳細情報を追加
++ 詳細説明機能追加（explanation_detailed, explanation_short）
 """
 
 import os
@@ -41,7 +42,7 @@ except ImportError as e:
 app = FastAPI(
     title="研究室選択支援システム",
     description="ファジィ決定木による高精度マッチングシステム",
-    version="3.1.2-with-details"
+    version="3.1.3-with-detailed-explanation"
 )
 
 # --- CORS設定 ---
@@ -169,7 +170,7 @@ initialize_system()
 @app.get("/")
 async def root():
     """ルートエンドポイント"""
-    return { "message": "研究室選択支援システム API", "version": "3.1.2-with-details" }
+    return { "message": "研究室選択支援システム API", "version": "3.1.3-with-detailed-explanation" }
 
 
 @app.get("/api/health")
@@ -311,8 +312,10 @@ async def evaluate_labs(student_profile: Dict[str, Any] = Body(...)):
                 "leaf_criteria": getattr(result, 'leaf_criteria', []),
                 "fuzzy_paths": getattr(result, 'fuzzy_paths', []),
                 
-                # 推薦情報
-                "explanation": result.explanation,
+                # ★★★ 推薦情報（従来版 + 詳細版） ★★★
+                "explanation": result.explanation,  # 従来の説明（元のコード）
+                "explanation_detailed": getattr(result, 'explanation_detailed', result.explanation),  # 詳細説明（自然言語版）
+                "explanation_short": getattr(result, 'explanation_short', result.explanation),  # 短縮版
                 "recommendation": result.recommendation,
                 "confidence": getattr(result, 'confidence', 0.85),
                 
