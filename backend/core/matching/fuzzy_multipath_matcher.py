@@ -1,6 +1,7 @@
 # backend/core/matching/fuzzy_multipath_matcher.py
 """
 ファジィ決定木マッチャー - 技術資料完全準拠版（分野重視改善版）
+★★★ 説明生成機能追加版 ★★★
 
 【パラメータ調整ガイド】
 ====================================
@@ -40,10 +41,22 @@
 """
 
 import numpy as np
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass
 import math
 
+# 説明生成モジュールをインポート
+try:
+    from .explanation_generator import generate_detailed_explanation, generate_short_explanation
+except ImportError:
+    try:
+        from explanation_generator import generate_detailed_explanation, generate_short_explanation
+    except ImportError:
+        # フォールバック: インポートできない場合は空の説明を返す
+        def generate_detailed_explanation(*args, **kwargs):
+            return ""
+        def generate_short_explanation(*args, **kwargs):
+            return ""
 
 
 @dataclass
@@ -69,9 +82,12 @@ class CompatibilityResult:
     fuzzy_paths: List[FuzzyPath]
     field_detail: Dict[str, Any]
     
-    # 説明
-    explanation: str
-    recommendation: str
+    # 説明（3種類）
+    explanation: str                          # 従来版（ナラティブエンジン）
+    explanation_detailed: Optional[str] = ""  # ★追加: 詳細版（セクション分け）
+    explanation_short: Optional[str] = ""     # ★追加: 短縮版（カード表示用）
+    
+    recommendation: str = ""
 
 
 class MembershipFunctions:
@@ -197,7 +213,7 @@ class FuzzyMultiPathMatcher:
     # ============================================================
     
     def __init__(self):
-        print("✅ FuzzyMultiPathMatcher 初期化完了（分野重視改善版）")
+        print("✅ FuzzyMultiPathMatcher 初期化完了（分野重視改善版 + 説明生成機能）")
         print(f"   - σ = {self.SIMILARITY_SIGMA}")
         print(f"   - 高優先度閾値 = {self.HIGH_PRIORITY_THRESHOLD}")
         print(f"   - 中優先度閾値 = {self.MID_PRIORITY_THRESHOLD}")
@@ -381,13 +397,21 @@ class FuzzyMultiPathMatcher:
         print(f"✅ 【Step 6完了】最終適合度 = {total:.4f}")
         print(f"{'='*70}\n")
         
-        # 説明文生成
+        # 従来の説明文生成（ナラティブエンジン）
         explanation = self._generate_explanation(
             total, basic_score, field_score, alpha, beta,
             field_detail, len(fuzzy_paths),
             student=student,
             lab=lab,
             criteria_scores=criteria_scores
+        )
+        
+        # ★★★ 追加: 詳細説明・短縮説明を生成 ★★★
+        explanation_detailed = generate_detailed_explanation(
+            lab, student, criteria_scores, field_score, total
+        )
+        explanation_short = generate_short_explanation(
+            lab, student, criteria_scores, field_score, total
         )
         
         # 推薦レベル
@@ -412,6 +436,8 @@ class FuzzyMultiPathMatcher:
             fuzzy_paths=fuzzy_paths,
             field_detail=field_detail,
             explanation=explanation,
+            explanation_detailed=explanation_detailed,
+            explanation_short=explanation_short,
             recommendation=recommendation
         )
     
@@ -873,7 +899,7 @@ class FuzzyMultiPathMatcher:
 # テスト用
 if __name__ == "__main__":
     print("=" * 60)
-    print("FuzzyMultiPathMatcher テスト（分野重視改善版）")
+    print("FuzzyMultiPathMatcher テスト（分野重視改善版 + 説明生成）")
     print("=" * 60)
     
     matcher = FuzzyMultiPathMatcher()
@@ -905,6 +931,8 @@ if __name__ == "__main__":
     
     # テスト用研究室プロファイル
     lab = {
+        "name": "AI研究室",
+        "research_area": "人工知能・機械学習",
         "research_intensity": 9,
         "advisor_style": 7,
         "team_work": 8,
@@ -928,4 +956,9 @@ if __name__ == "__main__":
     print(f"基本比重β: {result.basic_weight_beta:.3f}")
     print(f"評価パス数: {len(result.fuzzy_paths)}")
     print(f"推薦: {result.recommendation}")
-    print(f"説明: {result.explanation}")
+    print(f"\n【従来版説明】")
+    print(result.explanation)
+    print(f"\n【詳細版説明】")
+    print(result.explanation_detailed)
+    print(f"\n【短縮版説明】")
+    print(result.explanation_short)

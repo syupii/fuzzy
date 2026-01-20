@@ -1,4 +1,5 @@
-// frontend/src/components/ResultsList.tsx - 見やすいUI版
+// frontend/src/components/ResultsList.tsx - パターンB説明表示対応版
+// ★★★ 元のコードを完全維持 + explanation_detailed/explanation_short表示を追加 ★★★
 import React, { useState } from 'react';
 import {
     Box,
@@ -64,6 +65,10 @@ interface LabResult {
 
     recommendation?: string;
     explanation?: string;
+
+    // ★★★ 追加: 詳細版・短縮版の説明 ★★★
+    explanation_detailed?: string;
+    explanation_short?: string;
 
     priority_analysis?: {
         high_priority_match: number;
@@ -145,6 +150,16 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
 
     const handleCardToggle = (labId: string) => {
         setExpandedCard(expandedCard === labId ? null : labId);
+    };
+
+    // ★★★ 追加: 説明文を取得するヘルパー関数 ★★★
+    const getExplanation = (lab: LabResult, type: 'detailed' | 'short' | 'legacy' = 'detailed'): string => {
+        if (type === 'detailed') {
+            return lab.explanation_detailed || lab.explanation || '';
+        } else if (type === 'short') {
+            return lab.explanation_short || lab.explanation || '';
+        }
+        return lab.explanation || '';
     };
 
     const renderLabCard = (lab: LabResult, index: number) => {
@@ -276,8 +291,8 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                         </Grid>
                     </Paper>
 
-                    {/* ゼミの説明 */}
-                    {lab.description && (
+                    {/* ★★★ 追加: 短縮版の推薦ポイント（カード表示用） ★★★ */}
+                    {getExplanation(lab, 'short') && (
                         <Paper
                             variant="outlined"
                             sx={{
@@ -290,9 +305,34 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                             }}
                         >
                             <Stack direction="row" spacing={1.5} alignItems="flex-start">
-                                <Description color="primary" sx={{ mt: 0.5 }} />
+                                <Star color="primary" sx={{ mt: 0.5 }} />
                                 <Box>
                                     <Typography variant="subtitle2" color="primary" gutterBottom fontWeight={600}>
+                                        推薦ポイント
+                                    </Typography>
+                                    <Typography variant="body2" color="text.primary" sx={{ lineHeight: 1.7 }}>
+                                        {getExplanation(lab, 'short')}
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                        </Paper>
+                    )}
+
+                    {/* ゼミの説明 */}
+                    {lab.description && (
+                        <Paper
+                            variant="outlined"
+                            sx={{
+                                p: 2.5,
+                                mb: 3,
+                                bgcolor: 'grey.50',
+                                borderRadius: 2,
+                            }}
+                        >
+                            <Stack direction="row" spacing={1.5} alignItems="flex-start">
+                                <Description color="action" sx={{ mt: 0.5 }} />
+                                <Box>
+                                    <Typography variant="subtitle2" color="text.secondary" gutterBottom fontWeight={600}>
                                         ゼミについて
                                     </Typography>
                                     <Typography variant="body2" color="text.primary" sx={{ lineHeight: 1.7 }}>
@@ -306,6 +346,39 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                     {/* 展開時の詳細情報 */}
                     <Collapse in={isExpanded} timeout={400}>
                         <Box sx={{ mt: 3 }}>
+                            {/* ★★★ 追加: 詳細説明（自然言語版） ★★★ */}
+                            {getExplanation(lab, 'detailed') && (
+                                <Box sx={{ mb: 3 }}>
+                                    <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', color: 'primary.main' }}>
+                                        <Star sx={{ mr: 1, fontSize: 20 }} />
+                                        AIによる詳細分析
+                                    </Typography>
+                                    <Paper
+                                        variant="outlined"
+                                        sx={{
+                                            p: 2.5,
+                                            borderRadius: 2,
+                                            bgcolor: 'aliceblue',
+                                            borderColor: 'primary.light',
+                                            borderLeft: 4,
+                                            borderLeftColor: 'primary.main'
+                                        }}
+                                    >
+                                        {/* ★★★ whiteSpace: 'pre-wrap' で改行を反映 ★★★ */}
+                                        <Typography
+                                            variant="body2"
+                                            sx={{
+                                                lineHeight: 1.9,
+                                                fontSize: '0.95rem',
+                                                whiteSpace: 'pre-wrap'
+                                            }}
+                                        >
+                                            {getExplanation(lab, 'detailed')}
+                                        </Typography>
+                                    </Paper>
+                                </Box>
+                            )}
+
                             {/* 専門分野 */}
                             {lab.specialization && (
                                 <Paper
@@ -573,8 +646,8 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                                 </Paper>
                             )}
 
-                            {/* 説明：AIによる分析結果 */}
-                            {lab.explanation && (
+                            {/* 従来の説明（詳細版がない場合のフォールバック） */}
+                            {!getExplanation(lab, 'detailed') && lab.explanation && (
                                 <Box sx={{ mb: 3 }}>
                                     <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 700, display: 'flex', alignItems: 'center', color: 'primary.main' }}>
                                         <Star sx={{ mr: 1, fontSize: 20 }} />
@@ -734,6 +807,37 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                         </Grid>
 
                         <Divider sx={{ my: 3 }} />
+
+                        {/* ★★★ 追加: ダイアログでの詳細説明表示 ★★★ */}
+                        {getExplanation(selectedLab, 'detailed') && (
+                            <Box sx={{ mb: 4 }}>
+                                <Typography variant="h6" gutterBottom fontWeight={700} sx={{ display: 'flex', alignItems: 'center' }}>
+                                    <Star sx={{ mr: 1, color: 'primary.main' }} />
+                                    AIによる詳細分析
+                                </Typography>
+                                <Paper
+                                    variant="outlined"
+                                    sx={{
+                                        p: 3,
+                                        borderRadius: 2,
+                                        bgcolor: 'aliceblue',
+                                        borderColor: 'primary.light',
+                                        borderLeft: 4,
+                                        borderLeftColor: 'primary.main'
+                                    }}
+                                >
+                                    <Typography
+                                        variant="body1"
+                                        sx={{
+                                            lineHeight: 2,
+                                            whiteSpace: 'pre-wrap'
+                                        }}
+                                    >
+                                        {getExplanation(selectedLab, 'detailed')}
+                                    </Typography>
+                                </Paper>
+                            </Box>
+                        )}
 
                         {/* 詳細な類似度比較 */}
                         {studentProfile && (selectedLab.criteria_scores || selectedLab.feature_scores) && (
