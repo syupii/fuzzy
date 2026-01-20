@@ -813,7 +813,7 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                             <Box sx={{ mb: 4 }}>
                                 <Typography variant="h6" gutterBottom fontWeight={700} sx={{ display: 'flex', alignItems: 'center' }}>
                                     <Star sx={{ mr: 1, color: 'primary.main' }} />
-                                    AIによる詳細分析
+                                    詳細分析
                                 </Typography>
                                 <Paper
                                     variant="outlined"

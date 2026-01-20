@@ -408,10 +408,20 @@ class FuzzyMultiPathMatcher:
         
         # ★★★ 追加: 詳細説明・短縮説明を生成 ★★★
         explanation_detailed = generate_detailed_explanation(
-            lab, student, criteria_scores, field_score, total
+            lab=lab,
+            student=student,
+            criteria_scores=criteria_scores,
+            field_score=field_score,
+            field_detail=field_detail,
+            final_score=total,
+            alpha=alpha,
+            beta=beta
         )
         explanation_short = generate_short_explanation(
-            lab, student, criteria_scores, field_score, total
+            criteria_scores=criteria_scores,
+            field_detail=field_detail,
+            final_score=total,
+            student=student
         )
         
         # 推薦レベル
