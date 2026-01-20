@@ -123,21 +123,6 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
         return 'linear-gradient(135deg, #ef5350 0%, #e53935 100%)';
     };
 
-    const getRecommendationColor = (recommendation?: string): 'success' | 'warning' | 'info' | 'error' => {
-        switch (recommendation) {
-            case '最優先推薦':
-            case '強く推薦':
-                return 'success';
-            case '優先推薦':
-            case '推薦':
-                return 'warning';
-            case '検討可能':
-                return 'info';
-            default:
-                return 'error';
-        }
-    };
-
     const scaleToDisplay = (normalizedValue: number): number => {
         return Math.round(normalizedValue * 9 + 1);
     };
@@ -813,7 +798,7 @@ const ResultsList: React.FC<ResultsListProps> = ({ results, metadata, studentPro
                             <Box sx={{ mb: 4 }}>
                                 <Typography variant="h6" gutterBottom fontWeight={700} sx={{ display: 'flex', alignItems: 'center' }}>
                                     <Star sx={{ mr: 1, color: 'primary.main' }} />
-                                    詳細分析
+                                    AIによる詳細分析
                                 </Typography>
                                 <Paper
                                     variant="outlined"
