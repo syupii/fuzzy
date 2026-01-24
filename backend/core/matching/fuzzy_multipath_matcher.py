@@ -1,41 +1,31 @@
 # backend/core/matching/fuzzy_multipath_matcher.py
 """
-ファジィ決定木マッチャー - 統合版（重み付き平均分野スコア対応）
+ファジィ決定木マッチャー - 統合版 v2.2
+
+【改善点】
+- 正規化: value / 10
+- 3分岐メンバーシップ関数: 低=三角、中=台形、高=三角
+- 2分岐メンバーシップ関数: 低=三角、高=三角（別途定義）
+- 重なり領域を適切に設計し、枝刈りのバランスを改善
+- 分野スコア: 重み付き平均方式
+- ボーナス/ペナルティ: 削除
+- 分野重視度: λ = 分野重視度 / 10
 
 【基本スコアの計算方法】
-====================================
 S_basic = γ × S_fuzzy + (1 - γ) × S_gaussian
 
-- S_fuzzy: ファジィ決定木スコア（カテゴリ一致度）
-- S_gaussian: ガウス類似度スコア（数値の近さ）
-- γ: 統合係数（デフォルト 0.5）
-
 【分野スコアの計算方法】
-====================================
 S_field = Σ(match_score_i × interest_i) / Σ(interest_i)
 
-- 学生が選択した全ての興味分野について
-- 研究室とのマッチ度を計算し
-- 興味度で重み付き平均を取る
-====================================
+【最終適合度の計算方法】
+λ = 分野重視度 / 10
+S = (1 - λ) × S_basic + λ × S_field
 """
 
 import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from dataclasses import dataclass
 import math
-
-# 説明生成モジュールをインポート
-try:
-    from .explanation_generator import generate_detailed_explanation, generate_short_explanation
-except ImportError:
-    try:
-        from explanation_generator import generate_detailed_explanation, generate_short_explanation
-    except ImportError:
-        def generate_detailed_explanation(*args, **kwargs):
-            return ""
-        def generate_short_explanation(*args, **kwargs):
-            return ""
 
 
 @dataclass
@@ -51,308 +41,381 @@ class FuzzyPath:
 class CompatibilityResult:
     """適合度計算結果"""
     total_compatibility: float
-    basic_score: float      # 統合基本スコア（S_fuzzy + S_gaussian）
-    fuzzy_score: float      # ファジィ決定木スコア（S_fuzzy）
-    gaussian_score: float   # ガウス類似度スコア（S_gaussian）
+    basic_score: float
+    fuzzy_score: float
+    gaussian_score: float
     field_score: float
-    field_weight_alpha: float
-    basic_weight_beta: float
+    field_weight_lambda: float
+    basic_weight: float
     
-    # 詳細情報
-    criteria_scores: Dict[str, float]  # ガウス類似度の項目別スコア
+    criteria_scores: Dict[str, float]
     fuzzy_paths: List[FuzzyPath]
     field_detail: Dict[str, Any]
     
-    # 説明
     explanation: str
     explanation_detailed: Optional[str] = ""
     explanation_short: Optional[str] = ""
-    
     recommendation: str = ""
 
 
 class MembershipFunctions:
     """
-    メンバーシップ関数
+    メンバーシップ関数（改善版 v2.1）
     
-    【重要な性質】
-    ∀x ∈ [0,1]: μ_low(x) + μ_medium(x) + μ_high(x) = 1
+    【3分岐（優先度 ≥ 8）】
+    - 低（三角）: ピーク 0.1、終了 0.5
+    - 中（台形）: 開始 0.2、上辺 0.4-0.7、終了 0.9
+    - 高（三角）: 開始 0.6、ピーク 1.0
+    
+    【2分岐（優先度 5〜7）】
+    - 低（三角）: ピーク 0.1、終了 0.6
+    - 高（三角）: 開始 0.4、ピーク 1.0
     """
     
+    # ========================================
+    # 3分岐用メンバーシップ関数
+    # ========================================
+    
     @staticmethod
-    def low(x: float) -> float:
-        """「低い」への所属度"""
-        if x <= 0.3:
+    def low_3level(x: float) -> float:
+        """
+        低（三角形）- 3分岐用
+        
+        ピーク: x = 0.1 で μ = 1.0
+        終了: x = 0.5 で μ = 0.0
+        """
+        if x <= 0.1:
             return 1.0
         elif x < 0.5:
-            return (0.5 - x) / 0.2
+            return (0.5 - x) / 0.4
         else:
             return 0.0
     
     @staticmethod
-    def medium(x: float) -> float:
-        """「中」への所属度"""
-        if x <= 0.3 or x >= 0.9:
+    def medium_3level(x: float) -> float:
+        """
+        中（台形）- 3分岐用
+        
+        開始: x = 0.2 で μ = 0.0
+        上辺: x = 0.4〜0.7 で μ = 1.0
+        終了: x = 0.9 で μ = 0.0
+        """
+        if x <= 0.2:
             return 0.0
-        elif x < 0.5:
-            return (x - 0.3) / 0.2
+        elif x < 0.4:
+            return (x - 0.2) / 0.2
         elif x <= 0.7:
             return 1.0
-        else:
+        elif x < 0.9:
             return (0.9 - x) / 0.2
+        else:
+            return 0.0
     
     @staticmethod
-    def high(x: float) -> float:
-        """「高い」への所属度"""
-        if x <= 0.7:
+    def high_3level(x: float) -> float:
+        """
+        高（三角形）- 3分岐用
+        
+        開始: x = 0.6 で μ = 0.0
+        ピーク: x = 1.0 で μ = 1.0
+        """
+        if x <= 0.6:
             return 0.0
-        elif x < 0.9:
-            return (x - 0.7) / 0.2
+        elif x < 1.0:
+            return (x - 0.6) / 0.4
         else:
             return 1.0
     
+    # ========================================
+    # 2分岐用メンバーシップ関数
+    # ========================================
+    
     @staticmethod
-    def fuzzify(x: float) -> Dict[str, float]:
-        """値をファジィ化（3段階: 低・中・高）"""
-        return {
-            "low": MembershipFunctions.low(x),
-            "medium": MembershipFunctions.medium(x),
-            "high": MembershipFunctions.high(x)
-        }
+    def low_2level(x: float) -> float:
+        """
+        低（三角形）- 2分岐用
+        
+        ピーク: x = 0.1 で μ = 1.0
+        終了: x = 0.6 で μ = 0.0
+        """
+        if x <= 0.1:
+            return 1.0
+        elif x < 0.6:
+            return (0.6 - x) / 0.5
+        else:
+            return 0.0
+    
+    @staticmethod
+    def high_2level(x: float) -> float:
+        """
+        高（三角形）- 2分岐用
+        
+        開始: x = 0.4 で μ = 0.0
+        ピーク: x = 1.0 で μ = 1.0
+        """
+        if x <= 0.4:
+            return 0.0
+        elif x < 1.0:
+            return (x - 0.4) / 0.6
+        else:
+            return 1.0
+    
+    # ========================================
+    # ファジィ化関数
+    # ========================================
+    
+    @staticmethod
+    def fuzzify_3level(x: float) -> Dict[str, float]:
+        """
+        値をファジィ化（3段階: 低・中・高）
+        
+        ※ 合計が1になるように正規化
+        """
+        raw_low = MembershipFunctions.low_3level(x)
+        raw_medium = MembershipFunctions.medium_3level(x)
+        raw_high = MembershipFunctions.high_3level(x)
+        
+        total = raw_low + raw_medium + raw_high
+        
+        if total > 0:
+            return {
+                "low": raw_low / total,
+                "medium": raw_medium / total,
+                "high": raw_high / total
+            }
+        else:
+            return {"low": 0.0, "medium": 1.0, "high": 0.0}
     
     @staticmethod
     def fuzzify_2level(x: float) -> Dict[str, float]:
-        """値をファジィ化（2段階: 低・高）"""
-        if x <= 0.5:
-            low_val = 1.0 - x / 0.5
-            high_val = x / 0.5
+        """
+        値をファジィ化（2段階: 低・高）
+        
+        ※ 合計が1になるように正規化
+        """
+        raw_low = MembershipFunctions.low_2level(x)
+        raw_high = MembershipFunctions.high_2level(x)
+        
+        total = raw_low + raw_high
+        
+        if total > 0:
+            return {
+                "low": raw_low / total,
+                "high": raw_high / total
+            }
         else:
-            low_val = 0.0
-            high_val = 1.0
-        return {"low": low_val, "high": high_val}
+            return {"low": 0.5, "high": 0.5}
+    
+    # ========================================
+    # 事前計算用テーブル
+    # ========================================
+    
+    @staticmethod
+    def get_membership_table_3level() -> Dict[int, Dict[str, float]]:
+        """
+        入力値1-10に対する3分岐メンバーシップ値のテーブル
+        """
+        table = {}
+        for value in range(1, 11):
+            normalized = value / 10.0
+            table[value] = MembershipFunctions.fuzzify_3level(normalized)
+        return table
+    
+    @staticmethod
+    def get_membership_table_2level() -> Dict[int, Dict[str, float]]:
+        """
+        入力値1-10に対する2分岐メンバーシップ値のテーブル
+        """
+        table = {}
+        for value in range(1, 11):
+            normalized = value / 10.0
+            table[value] = MembershipFunctions.fuzzify_2level(normalized)
+        return table
 
 
 class FuzzyMultiPathMatcher:
     """
-    ファジィ決定木マッチャー（統合版 + 重み付き平均分野スコア）
+    ファジィ決定木マッチャー（統合版 v2.2）
     
-    【基本スコアの計算】
-    S_basic = γ × S_fuzzy + (1 - γ) × S_gaussian
-    
-    【分野スコアの計算】
-    S_field = Σ(match_score_i × interest_i) / Σ(interest_i)
+    【変更点 v2.2】
+    - ボーナス/ペナルティを削除
+    - 分野重視度の計算を変更: λ = 分野重視度 / 10
+    - 最終適合度: S = (1 - λ) × S_basic + λ × S_field
     """
     
-    # 評価基準（12項目）
     CRITERIA = [
         "research_intensity", "advisor_style", "team_work",
         "workload", "theory_practice", "skill_development",
         "lab_atmosphere", "flexibility", "publication_opportunity",
-        "interdisciplinary", "communication_style", "research_field_match"
+        "interdisciplinary", "communication_style"
     ]
     
-    # ============================================================
-    # パラメータ設定
-    # ============================================================
-    
-    # 類似度計算パラメータ
+    # パラメータ
     SIMILARITY_SIGMA = 0.3
-    
-    # 枝刈り閾値
     PRUNING_THRESHOLD = 0.01
-    
-    # 優先度閾値
     HIGH_PRIORITY_THRESHOLD = 8.0
     MID_PRIORITY_THRESHOLD = 5.0
+    FUZZY_GAUSSIAN_GAMMA = 0.5
     
-    # ★★★ 統合係数 ★★★
-    FUZZY_GAUSSIAN_GAMMA = 0.5  # γ: S_fuzzyの比重
-    
-    # 分野マッチングパラメータ
-    FIELD_EXACT_MATCH_SCORE = 1.0     # 完全一致時のスコア
-    FIELD_CATEGORY_DECAY = 0.7        # カテゴリ一致時の減衰係数
-    FIELD_NO_MATCH_SCORE = 0.3        # 不一致時のスコア
-    FIELD_EXACT_BONUS = 0.15          # 完全一致ボーナス係数
-    FIELD_MISMATCH_PENALTY = 0.15     # 不一致ペナルティ係数
-    
-    # ============================================================
+    # 分野マッチング
+    FIELD_EXACT_MATCH_SCORE = 1.0
+    FIELD_CATEGORY_DECAY = 0.7
+    FIELD_NO_MATCH_SCORE = 0.3
     
     def __init__(self):
-        print("✅ FuzzyMultiPathMatcher 初期化完了（統合版 + 重み付き平均分野スコア）")
-        print(f"   - σ = {self.SIMILARITY_SIGMA}")
-        print(f"   - γ (S_fuzzy比重) = {self.FUZZY_GAUSSIAN_GAMMA}")
-        print(f"   - 高優先度閾値 = {self.HIGH_PRIORITY_THRESHOLD}")
-        print(f"   - 中優先度閾値 = {self.MID_PRIORITY_THRESHOLD}")
-        print(f"   - 分野完全一致スコア = {self.FIELD_EXACT_MATCH_SCORE}")
-        print(f"   - 分野カテゴリ減衰 = {self.FIELD_CATEGORY_DECAY}")
-        print(f"   - 分野不一致スコア = {self.FIELD_NO_MATCH_SCORE}")
+        print("=" * 70)
+        print("FuzzyMultiPathMatcher v2.2 初期化")
+        print("=" * 70)
+        print(f"  正規化方式: value / 10")
+        print(f"  3分岐メンバーシップ: 低=三角(~0.5), 中=台形(0.2~0.9), 高=三角(0.6~)")
+        print(f"  2分岐メンバーシップ: 低=三角(~0.6), 高=三角(0.4~)")
+        print(f"  σ (ガウス類似度) = {self.SIMILARITY_SIGMA}")
+        print(f"  γ (S_fuzzy比重) = {self.FUZZY_GAUSSIAN_GAMMA}")
+        print(f"  枝刈り閾値 = {self.PRUNING_THRESHOLD}")
+        print(f"  分野重視度計算: λ = 分野重視度 / 10")
+        print(f"  最終適合度: S = (1-λ)×S_basic + λ×S_field")
+        print("=" * 70)
+        
+        # メンバーシップテーブルを事前計算
+        self._membership_table_3level = MembershipFunctions.get_membership_table_3level()
+        self._membership_table_2level = MembershipFunctions.get_membership_table_2level()
+        
+        print("\n【3分岐メンバーシップ値テーブル】")
+        print("-" * 55)
+        print(f"{'入力値':>6} | {'μ_低':>8} | {'μ_中':>8} | {'μ_高':>8}")
+        print("-" * 55)
+        for value, memberships in self._membership_table_3level.items():
+            print(f"{value:>6} | {memberships['low']:>8.4f} | {memberships['medium']:>8.4f} | {memberships['high']:>8.4f}")
+        print("-" * 55)
+        
+        print("\n【2分岐メンバーシップ値テーブル】")
+        print("-" * 40)
+        print(f"{'入力値':>6} | {'μ_低':>8} | {'μ_高':>8}")
+        print("-" * 40)
+        for value, memberships in self._membership_table_2level.items():
+            print(f"{value:>6} | {memberships['low']:>8.4f} | {memberships['high']:>8.4f}")
+        print("-" * 40)
+    
+    def _normalize_value(self, value: float) -> float:
+        """
+        値を0-1に正規化
+        
+        入力: [1, 10] → 出力: [0.1, 1.0]
+        """
+        if value >= 1.0 and value <= 10.0:
+            return value / 10.0
+        elif value > 1.0:
+            return min(value / 10.0, 1.0)
+        return value
     
     def calculate_compatibility(
         self,
         student: Dict[str, Any],
         lab: Dict[str, Any]
     ) -> CompatibilityResult:
-        """適合度計算（統合版）"""
+        """適合度計算（メイン関数）"""
         
         print(f"\n{'#'*70}")
         print(f"### 適合度計算開始 ###")
+        print(f"### 研究室: {lab.get('name', 'Unknown')} ###")
         print(f"{'#'*70}")
         
-        # ========================================
-        # 第1段階: 優先度による決定木の構築
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【第1段階】優先度による決定木の構築")
-        print(f"{'='*60}")
-        
+        # 第1段階: 決定木構築
         priorities = self._get_sorted_priorities(student)
         tree_layers = self._build_fuzzy_tree(priorities)
         
-        print(f"\n決定木構造:")
+        print(f"\n【第1段階】決定木構築")
+        print(f"  レイヤー数: {len(tree_layers)}")
         for i, layer in enumerate(tree_layers, 1):
-            print(f"  Layer {i}: {layer['criterion']} ({layer['branches']}分岐)")
+            print(f"  Layer {i}: {layer['criterion']} ({layer['branches']}分岐, 優先度{layer['priority']})")
         
-        # ========================================
-        # 第2段階: 研究室からパスの所属度を計算
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【第2段階】研究室からパスの所属度を計算")
-        print(f"{'='*60}")
-        
+        # 第2段階: 研究室のパス所属度
         lab_fuzzified = self._fuzzify_lab(lab, tree_layers)
+        
+        print(f"\n【第2段階】研究室のファジィ化")
+        for criterion, memberships in lab_fuzzified.items():
+            layer = next((l for l in tree_layers if l['criterion'] == criterion), None)
+            if layer:
+                if layer['branches'] == 3:
+                    print(f"  {criterion}: 低={memberships['low']:.4f}, 中={memberships['medium']:.4f}, 高={memberships['high']:.4f}")
+                else:
+                    print(f"  {criterion}: 低={memberships['low']:.4f}, 高={memberships['high']:.4f}")
+        
         fuzzy_paths = self._generate_paths_from_lab(tree_layers, lab_fuzzified)
         fuzzy_paths = self._prune_and_normalize_paths(fuzzy_paths)
         
-        print(f"\n有効パス数: {len(fuzzy_paths)}")
+        print(f"\n  有効パス数: {len(fuzzy_paths)}")
         for path in fuzzy_paths:
-            path_labels = "-".join([layer[1][0].upper() for layer in path.layers])
-            print(f"  パス「{path_labels}」: 所属度 = {path.total_membership:.4f}")
+            labels = "-".join([l[1][0].upper() for l in path.layers])
+            print(f"    パス「{labels}」: 所属度 = {path.total_membership:.4f}")
         
-        # ========================================
-        # 第3段階: 学生からリーフ値を計算
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【第3段階】学生からリーフ値を計算")
-        print(f"{'='*60}")
-        
+        # 第3段階: リーフ値計算
         student_fuzzified = self._fuzzify_student(student, tree_layers)
+        
+        print(f"\n【第3段階】学生のファジィ化")
+        for criterion, memberships in student_fuzzified.items():
+            layer = next((l for l in tree_layers if l['criterion'] == criterion), None)
+            if layer:
+                if layer['branches'] == 3:
+                    print(f"  {criterion}: 低={memberships['low']:.4f}, 中={memberships['medium']:.4f}, 高={memberships['high']:.4f}")
+                else:
+                    print(f"  {criterion}: 低={memberships['low']:.4f}, 高={memberships['high']:.4f}")
+        
         fuzzy_paths = self._calculate_leaf_values(
             fuzzy_paths, student_fuzzified, tree_layers, student
         )
         
-        print(f"\nリーフ値計算結果:")
+        print(f"\n  リーフ値計算結果:")
         for path in fuzzy_paths:
-            path_labels = "-".join([layer[1][0].upper() for layer in path.layers])
-            print(f"  パス「{path_labels}」: 所属度={path.total_membership:.4f}, リーフ値={path.leaf_value:.4f}")
+            labels = "-".join([l[1][0].upper() for l in path.layers])
+            print(f"    パス「{labels}」: 所属度={path.total_membership:.4f}, リーフ値={path.leaf_value:.4f}")
         
-        # ========================================
-        # 第4段階: S_fuzzy の計算
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【第4段階】S_fuzzy の計算")
-        print(f"{'='*60}")
-        
+        # 第4段階: S_fuzzy
         fuzzy_score = self._calculate_fuzzy_score(fuzzy_paths)
-        print(f"\n★ S_fuzzy = {fuzzy_score:.4f}")
+        print(f"\n【第4段階】S_fuzzy = {fuzzy_score:.4f}")
         
-        # ========================================
-        # ガウス類似度スコア（S_gaussian）の計算
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【ガウス類似度スコア】S_gaussian の計算")
-        print(f"{'='*60}")
-        
+        # S_gaussian
         gaussian_score, criteria_scores = self._calculate_gaussian_score(student, lab)
-        print(f"\n★ S_gaussian = {gaussian_score:.4f}")
+        print(f"\n【ガウス類似度】S_gaussian = {gaussian_score:.4f}")
         
-        # ========================================
-        # ★★★ 基本スコアの統合 ★★★
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【基本スコアの統合】S_basic = γ × S_fuzzy + (1-γ) × S_gaussian")
-        print(f"{'='*60}")
-        
+        # 基本スコア統合
         gamma = self.FUZZY_GAUSSIAN_GAMMA
         basic_score = gamma * fuzzy_score + (1 - gamma) * gaussian_score
+        print(f"\n【基本スコア統合】")
+        print(f"  S_basic = {gamma} × {fuzzy_score:.4f} + {1-gamma} × {gaussian_score:.4f} = {basic_score:.4f}")
         
-        print(f"\n  γ = {gamma}")
-        print(f"  S_fuzzy = {fuzzy_score:.4f}")
-        print(f"  S_gaussian = {gaussian_score:.4f}")
-        print(f"  S_basic = {gamma} × {fuzzy_score:.4f} + {1-gamma} × {gaussian_score:.4f}")
-        print(f"         = {gamma * fuzzy_score:.4f} + {(1-gamma) * gaussian_score:.4f}")
-        print(f"         = {basic_score:.4f}")
-        print(f"\n★ S_basic = {basic_score:.4f}")
-        
-        # ========================================
-        # ★★★ 分野マッチング（重み付き平均） ★★★
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【分野マッチング】重み付き平均方式")
-        print(f"{'='*60}")
-        
+        # 分野マッチング
         field_interests = student.get("field_interests", {})
         lab_field = lab.get("field_id", "")
         field_score, field_detail = self._calculate_field_match_weighted_average(
             field_interests, lab_field
         )
-        print(f"\n★ 分野スコア = {field_score:.4f}")
+        print(f"\n【分野マッチング】S_field = {field_score:.4f}")
         
-        # ========================================
-        # 最終スコア統合
-        # ========================================
-        print(f"\n{'='*60}")
-        print(f"【最終スコア統合】")
-        print(f"{'='*60}")
+        # 最終スコア計算
+        # λ = 分野重視度 / 10
+        field_priority = student.get("field_priority", 5.0)
+        lambda_weight = field_priority / 10.0
         
-        rfm = student.get("research_field_match", 5.0)
+        # S = (1 - λ) × S_basic + λ × S_field
+        total = (1 - lambda_weight) * basic_score + lambda_weight * field_score
         
-        if rfm >= 5.0:
-            alpha = 0.5 + (rfm - 5.0) / 5.0 * 0.4
-        else:
-            alpha = 0.2 + rfm / 5.0 * 0.3
-        beta = 1.0 - alpha
-        
-        print(f"\n  alpha (分野比重) = {alpha:.4f}")
-        print(f"  beta (基本比重) = {beta:.4f}")
-        print(f"\n  total = beta × S_basic + alpha × field_score")
-        print(f"        = {beta:.4f} × {basic_score:.4f} + {alpha:.4f} × {field_score:.4f}")
-        
-        total = beta * basic_score + alpha * field_score
-        print(f"        = {total:.4f}")
-        
-        # ボーナス/ペナルティ
-        match_type = field_detail.get("primary_match_type", "unknown")
-        if match_type == "exact":
-            bonus = self.FIELD_EXACT_BONUS * alpha
-            total += bonus
-            print(f"\n  完全一致ボーナス: +{bonus:.4f}")
-            field_detail["bonus_applied"] = True
-            field_detail["bonus_value"] = bonus
-        elif match_type == "no_match":
-            penalty = self.FIELD_MISMATCH_PENALTY * alpha
-            total -= penalty
-            print(f"\n  不一致ペナルティ: -{penalty:.4f}")
-            field_detail["penalty_applied"] = True
-            field_detail["penalty_value"] = penalty
-        
+        # 0〜1の範囲にクリップ
         total = max(0.0, min(1.0, total))
-        print(f"\n★★★ 最終適合度 = {total:.4f} ★★★")
         
-        # 説明生成
+        print(f"\n【最終スコア】")
+        print(f"  分野重視度 = {field_priority}")
+        print(f"  λ = {field_priority} / 10 = {lambda_weight:.2f}")
+        print(f"  S = (1 - {lambda_weight:.2f}) × {basic_score:.4f} + {lambda_weight:.2f} × {field_score:.4f}")
+        print(f"    = {1 - lambda_weight:.2f} × {basic_score:.4f} + {lambda_weight:.2f} × {field_score:.4f}")
+        print(f"    = {(1 - lambda_weight) * basic_score:.4f} + {lambda_weight * field_score:.4f}")
+        print(f"    = {total:.4f}")
+        print(f"\n★★★ 最終適合度 = {total:.4f} ({total*100:.2f}%) ★★★")
+        
         explanation = self._generate_explanation(
-            total, basic_score, field_score, alpha, beta,
+            total, basic_score, field_score, lambda_weight,
             field_detail, len(fuzzy_paths),
             student=student, lab=lab, criteria_scores=criteria_scores
-        )
-        
-        explanation_detailed = generate_detailed_explanation(
-            lab=lab, student=student, criteria_scores=criteria_scores,
-            field_score=field_score, field_detail=field_detail,
-            final_score=total, alpha=alpha, beta=beta
-        )
-        explanation_short = generate_short_explanation(
-            criteria_scores=criteria_scores, field_detail=field_detail,
-            final_score=total, student=student
         )
         
         recommendation = self._get_recommendation(total)
@@ -363,56 +426,33 @@ class FuzzyMultiPathMatcher:
             fuzzy_score=fuzzy_score,
             gaussian_score=gaussian_score,
             field_score=field_score,
-            field_weight_alpha=alpha,
-            basic_weight_beta=beta,
+            field_weight_lambda=lambda_weight,
+            basic_weight=1 - lambda_weight,
             criteria_scores=criteria_scores,
             fuzzy_paths=fuzzy_paths,
             field_detail=field_detail,
             explanation=explanation,
-            explanation_detailed=explanation_detailed,
-            explanation_short=explanation_short,
             recommendation=recommendation
         )
     
     # ========================================
-    # 第1段階: 優先度による決定木の構築
+    # 第1段階: 決定木構築
     # ========================================
     
-    def _get_sorted_priorities(
-        self, 
-        student: Dict[str, Any]
-    ) -> List[Dict[str, Any]]:
-        """優先度ソート"""
+    def _get_sorted_priorities(self, student: Dict[str, Any]) -> List[Dict[str, Any]]:
         priorities = []
-        
         for criterion in self.CRITERIA:
             priority_key = f"{criterion}_priority"
             priority = student.get(priority_key, 5.0)
-            priorities.append({
-                "criterion": criterion,
-                "priority": priority
-            })
-        
+            priorities.append({"criterion": criterion, "priority": priority})
         priorities.sort(key=lambda x: x["priority"], reverse=True)
         return priorities
     
-    def _build_fuzzy_tree(
-        self, 
-        priorities: List[Dict[str, Any]]
-    ) -> List[Dict[str, Any]]:
-        """
-        適応的決定木構築
-        
-        優先度 ≥ 8: 3分岐（低・中・高）
-        優先度 5〜7: 2分岐（低・高）
-        優先度 < 5: 木に含めない
-        """
+    def _build_fuzzy_tree(self, priorities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         tree_layers = []
-        
         for item in priorities:
             priority = item["priority"]
             criterion = item["criterion"]
-            
             if priority >= self.HIGH_PRIORITY_THRESHOLD:
                 tree_layers.append({
                     "criterion": criterion,
@@ -427,11 +467,10 @@ class FuzzyMultiPathMatcher:
                     "branches": 2,
                     "labels": ["low", "high"]
                 })
-        
         return tree_layers
     
     # ========================================
-    # 第2段階: 研究室からパスの所属度を計算
+    # 第2段階: 研究室のパス所属度
     # ========================================
     
     def _fuzzify_lab(
@@ -441,19 +480,18 @@ class FuzzyMultiPathMatcher:
     ) -> Dict[str, Dict[str, float]]:
         """研究室の各項目をファジィ化"""
         lab_fuzzified = {}
-        
         for layer in tree_layers:
             criterion = layer["criterion"]
-            labels = layer["labels"]
-            lab_value = self._normalize_value(lab.get(criterion, 5.0))
+            branches = layer["branches"]
+            raw_value = lab.get(criterion, 5.0)
+            normalized = self._normalize_value(raw_value)
             
-            if len(labels) == 3:
-                memberships = MembershipFunctions.fuzzify(lab_value)
+            if branches == 3:
+                memberships = MembershipFunctions.fuzzify_3level(normalized)
             else:
-                memberships = MembershipFunctions.fuzzify_2level(lab_value)
+                memberships = MembershipFunctions.fuzzify_2level(normalized)
             
             lab_fuzzified[criterion] = memberships
-        
         return lab_fuzzified
     
     def _generate_paths_from_lab(
@@ -461,20 +499,11 @@ class FuzzyMultiPathMatcher:
         tree_layers: List[Dict[str, Any]],
         lab_fuzzified: Dict[str, Dict[str, float]]
     ) -> List[FuzzyPath]:
-        """研究室のファジィ化結果からパスを生成"""
         if not tree_layers:
-            return [FuzzyPath(
-                path_id=0,
-                layers=[],
-                total_membership=1.0,
-                leaf_value=0.0
-            )]
+            return [FuzzyPath(path_id=0, layers=[], total_membership=1.0, leaf_value=0.0)]
         
         all_paths = []
-        self._generate_paths_recursive(
-            tree_layers, lab_fuzzified, 0, [], 1.0, all_paths
-        )
-        
+        self._generate_paths_recursive(tree_layers, lab_fuzzified, 0, [], 1.0, all_paths)
         return all_paths
     
     def _generate_paths_recursive(
@@ -486,7 +515,6 @@ class FuzzyMultiPathMatcher:
         cumulative_membership: float,
         all_paths: List[FuzzyPath]
     ):
-        """パスを再帰的に生成"""
         if layer_idx >= len(tree_layers):
             all_paths.append(FuzzyPath(
                 path_id=len(all_paths),
@@ -514,26 +542,18 @@ class FuzzyMultiPathMatcher:
                 new_path, new_membership, all_paths
             )
     
-    def _prune_and_normalize_paths(
-        self, 
-        paths: List[FuzzyPath]
-    ) -> List[FuzzyPath]:
-        """パスの枝刈りと正規化"""
+    def _prune_and_normalize_paths(self, paths: List[FuzzyPath]) -> List[FuzzyPath]:
         paths = [p for p in paths if p.total_membership >= self.PRUNING_THRESHOLD]
-        
         if not paths:
             return paths
-        
-        total_membership = sum(p.total_membership for p in paths)
-        
-        if total_membership > 0:
+        total = sum(p.total_membership for p in paths)
+        if total > 0:
             for path in paths:
-                path.total_membership = path.total_membership / total_membership
-        
+                path.total_membership = path.total_membership / total
         return paths
     
     # ========================================
-    # 第3段階: 学生からリーフ値を計算
+    # 第3段階: リーフ値計算
     # ========================================
     
     def _fuzzify_student(
@@ -541,21 +561,19 @@ class FuzzyMultiPathMatcher:
         student: Dict[str, Any],
         tree_layers: List[Dict[str, Any]]
     ) -> Dict[str, Dict[str, float]]:
-        """学生の各項目をファジィ化"""
         student_fuzzified = {}
-        
         for layer in tree_layers:
             criterion = layer["criterion"]
-            labels = layer["labels"]
-            student_value = self._normalize_value(student.get(criterion, 5.0))
+            branches = layer["branches"]
+            raw_value = student.get(criterion, 5.0)
+            normalized = self._normalize_value(raw_value)
             
-            if len(labels) == 3:
-                memberships = MembershipFunctions.fuzzify(student_value)
+            if branches == 3:
+                memberships = MembershipFunctions.fuzzify_3level(normalized)
             else:
-                memberships = MembershipFunctions.fuzzify_2level(student_value)
+                memberships = MembershipFunctions.fuzzify_2level(normalized)
             
             student_fuzzified[criterion] = memberships
-        
         return student_fuzzified
     
     def _calculate_leaf_values(
@@ -565,11 +583,6 @@ class FuzzyMultiPathMatcher:
         tree_layers: List[Dict[str, Any]],
         student: Dict[str, Any]
     ) -> List[FuzzyPath]:
-        """
-        各パスのリーフ値を計算
-        
-        リーフ値 = Σ(学生のμ_label × 重み) / Σ(重み)
-        """
         for path in paths:
             weighted_sum = 0.0
             total_weight = 0.0
@@ -583,31 +596,20 @@ class FuzzyMultiPathMatcher:
                 weighted_sum += student_membership * weight
                 total_weight += weight
             
-            if total_weight > 0:
-                path.leaf_value = weighted_sum / total_weight
-            else:
-                path.leaf_value = 0.5
-        
+            path.leaf_value = weighted_sum / total_weight if total_weight > 0 else 0.5
         return paths
     
     # ========================================
-    # 第4段階: S_fuzzy の計算
+    # 第4段階: S_fuzzy
     # ========================================
     
-    def _calculate_fuzzy_score(
-        self,
-        paths: List[FuzzyPath]
-    ) -> float:
-        """
-        S_fuzzy = Σ（所属度 × リーフ値）
-        """
+    def _calculate_fuzzy_score(self, paths: List[FuzzyPath]) -> float:
         if not paths:
             return 0.5
-        
         return sum(path.total_membership * path.leaf_value for path in paths)
     
     # ========================================
-    # ガウス類似度スコア
+    # ガウス類似度
     # ========================================
     
     def _calculate_gaussian_score(
@@ -615,11 +617,6 @@ class FuzzyMultiPathMatcher:
         student: Dict[str, Any],
         lab: Dict[str, Any]
     ) -> Tuple[float, Dict[str, float]]:
-        """
-        ガウス類似度による基本スコア
-        
-        S_gaussian = Σ(similarity_i × weight_i) / Σ(weight_i)
-        """
         criteria_scores = {}
         weighted_sum = 0.0
         total_weight = 0.0
@@ -636,37 +633,17 @@ class FuzzyMultiPathMatcher:
             weighted_sum += similarity * weight
             total_weight += weight
         
-        gaussian_score = weighted_sum / total_weight if total_weight > 0 else 0.5
-        return gaussian_score, criteria_scores
+        return weighted_sum / total_weight if total_weight > 0 else 0.5, criteria_scores
     
-    def _calculate_gaussian_similarity(
-        self,
-        student_val: float,
-        lab_val: float
-    ) -> float:
-        """
-        ガウス類似度
-        
-        Similarity = exp(-(d²)/(2σ²))
-        """
+    def _calculate_gaussian_similarity(self, student_val: float, lab_val: float) -> float:
         d = abs(student_val - lab_val)
-        sigma = self.SIMILARITY_SIGMA
-        return math.exp(-(d ** 2) / (2 * sigma ** 2))
+        return math.exp(-(d ** 2) / (2 * self.SIMILARITY_SIGMA ** 2))
     
-    def _calculate_priority_weight(
-        self,
-        priority: float
-    ) -> float:
-        """
-        優先度から重みを計算
-        
-        weight = (priority / 10)^1.5
-        """
-        normalized = priority / 10.0
-        return normalized ** 1.5
+    def _calculate_priority_weight(self, priority: float) -> float:
+        return (priority / 10.0) ** 1.5
     
     # ========================================
-    # ★★★ 分野マッチング（重み付き平均方式） ★★★
+    # 分野マッチング（重み付き平均）
     # ========================================
     
     def _calculate_field_match_weighted_average(
@@ -674,22 +651,8 @@ class FuzzyMultiPathMatcher:
         field_interests: Dict[str, float],
         lab_field: str
     ) -> Tuple[float, Dict[str, Any]]:
-        """
-        分野マッチング（重み付き平均方式）
         
-        S_field = Σ(match_score_i × interest_i) / Σ(interest_i)
-        
-        各興味分野について研究室とのマッチ度を計算し、
-        興味度で重み付き平均を取る
-        """
-        
-        print(f"\n  【分野マッチング詳細】")
-        print(f"  研究室の分野: {lab_field}")
-        print(f"  学生の興味分野: {field_interests}")
-        
-        # 興味分野がない場合
         if not field_interests:
-            print(f"  → 興味分野が指定されていないため、デフォルトスコア 0.5")
             return 0.5, {
                 "match_type": "unknown",
                 "primary_match_type": "unknown",
@@ -698,9 +661,7 @@ class FuzzyMultiPathMatcher:
                 "field_details": []
             }
         
-        # 研究室の分野がない場合
         if not lab_field:
-            print(f"  → 研究室の分野が指定されていないため、デフォルトスコア 0.5")
             return 0.5, {
                 "match_type": "unknown",
                 "primary_match_type": "unknown",
@@ -709,38 +670,26 @@ class FuzzyMultiPathMatcher:
                 "field_details": []
             }
         
-        # 各興味分野についてマッチスコアを計算
         weighted_sum = 0.0
         total_weight = 0.0
         field_details = []
-        primary_match_type = "no_match"
         has_exact_match = False
         
-        print(f"\n  ┌{'─'*70}┐")
-        print(f"  │ {'興味分野':<20} │ {'興味度':>8} │ {'マッチタイプ':<15} │ {'スコア':>8} │")
-        print(f"  ├{'─'*70}┤")
-        
         for interest_field, interest_level in field_interests.items():
-            # マッチタイプとスコアを決定
             if interest_field == lab_field:
-                # 完全一致
                 match_type = "exact"
                 match_score = self.FIELD_EXACT_MATCH_SCORE
                 has_exact_match = True
             elif self._is_same_category(interest_field, lab_field):
-                # カテゴリ一致
                 match_type = "category"
                 match_score = self.FIELD_CATEGORY_DECAY
             else:
-                # 不一致
                 match_type = "no_match"
                 match_score = self.FIELD_NO_MATCH_SCORE
             
-            # 重み付き加算
             weighted_sum += match_score * interest_level
             total_weight += interest_level
             
-            # 詳細を記録
             field_details.append({
                 "field": interest_field,
                 "interest_level": interest_level,
@@ -748,18 +697,9 @@ class FuzzyMultiPathMatcher:
                 "match_score": match_score,
                 "contribution": match_score * interest_level
             })
-            
-            print(f"  │ {interest_field:<20} │ {interest_level:>8.1f} │ {match_type:<15} │ {match_score:>8.4f} │")
         
-        print(f"  └{'─'*70}┘")
+        field_score = weighted_sum / total_weight if total_weight > 0 else 0.5
         
-        # 重み付き平均を計算
-        if total_weight > 0:
-            field_score = weighted_sum / total_weight
-        else:
-            field_score = 0.5
-        
-        # 主要なマッチタイプを決定（ボーナス/ペナルティ判定用）
         if has_exact_match:
             primary_match_type = "exact"
         elif any(d["match_type"] == "category" for d in field_details):
@@ -767,14 +707,7 @@ class FuzzyMultiPathMatcher:
         else:
             primary_match_type = "no_match"
         
-        print(f"\n  【計算過程】")
-        print(f"  S_field = Σ(match_score × interest) / Σ(interest)")
-        print(f"         = {weighted_sum:.4f} / {total_weight:.4f}")
-        print(f"         = {field_score:.4f}")
-        print(f"\n  主要マッチタイプ: {primary_match_type}")
-        
-        # 詳細情報を構築
-        detail = {
+        return field_score, {
             "match_type": "weighted_average",
             "primary_match_type": primary_match_type,
             "lab_field": lab_field,
@@ -783,35 +716,23 @@ class FuzzyMultiPathMatcher:
             "field_details": field_details,
             "message": self._generate_field_match_message(primary_match_type, field_details)
         }
-        
-        return field_score, detail
     
     def _generate_field_match_message(
         self,
         primary_match_type: str,
         field_details: List[Dict[str, Any]]
     ) -> str:
-        """分野マッチングの説明メッセージを生成"""
-        exact_fields = [d for d in field_details if d["match_type"] == "exact"]
-        category_fields = [d for d in field_details if d["match_type"] == "category"]
+        exact = [d for d in field_details if d["match_type"] == "exact"]
+        category = [d for d in field_details if d["match_type"] == "category"]
         
-        if exact_fields:
-            field_name = exact_fields[0]["field"]
-            interest = exact_fields[0]["interest_level"]
-            return f"興味分野「{field_name}」と完全一致（興味度: {interest}/10）"
-        elif category_fields:
-            field_name = category_fields[0]["field"]
-            return f"興味分野「{field_name}」と同じカテゴリ"
+        if exact:
+            return f"興味分野「{exact[0]['field']}」と完全一致（興味度: {exact[0]['interest_level']}/10）"
+        elif category:
+            return f"興味分野「{category[0]['field']}」と同じカテゴリ"
         else:
             return "興味分野との一致なし"
     
-    def _is_same_category(
-        self,
-        field1: str,
-        field2: str
-    ) -> bool:
-        """2つの分野が同じカテゴリか判定"""
-        # カテゴリ定義
+    def _is_same_category(self, field1: str, field2: str) -> bool:
         FIELD_CATEGORIES = {
             "テクノロジー・システム": [
                 "ai_ml", "image_processing", "network_security",
@@ -830,123 +751,41 @@ class FuzzyMultiPathMatcher:
             ]
         }
         
-        # 各分野のカテゴリを検索
-        category1 = None
-        category2 = None
-        
+        cat1 = cat2 = None
         for category, fields in FIELD_CATEGORIES.items():
             if field1 in fields:
-                category1 = category
+                cat1 = category
             if field2 in fields:
-                category2 = category
+                cat2 = category
         
-        # 同じカテゴリかどうか
-        if category1 and category2 and category1 == category2:
-            return True
-        
-        return False
+        return cat1 and cat2 and cat1 == cat2
     
     # ========================================
     # ユーティリティ
     # ========================================
-    
-    def _normalize_value(
-        self,
-        value: float
-    ) -> float:
-        """値を0-1に正規化"""
-        if value > 1.0:
-            return (value - 1.0) / 9.0
-        return value
     
     def _generate_explanation(
         self,
         total: float,
         basic_score: float,
         field_score: float,
-        alpha: float,
-        beta: float,
+        lambda_weight: float,
         field_detail: Dict,
         num_paths: int,
         student: Dict[str, Any] = None,
         lab: Dict[str, Any] = None,
         criteria_scores: Dict[str, float] = None
     ) -> str:
-        """説明文を生成"""
-        if student is None or lab is None or criteria_scores is None:
-            if total >= 0.8:
-                return "非常に高い適合性があります。"
-            elif total >= 0.6:
-                return "条件によく合致しています。"
-            else:
-                return "検討の余地があります。"
-
-        priorities = self._get_sorted_priorities(student)
-        top_priorities = [p for p in priorities if p['priority'] >= 8]
-        
-        matched_points = []
-        compromise_points = []
-        
-        criteria_labels = {
-            "research_intensity": "研究強度",
-            "advisor_style": "指導方針",
-            "team_work": "チームワーク",
-            "workload": "活動量",
-            "theory_practice": "理論・実践",
-            "skill_development": "スキル習得",
-            "lab_atmosphere": "雰囲気",
-            "flexibility": "柔軟性",
-            "publication_opportunity": "発表機会",
-            "interdisciplinary": "学際性",
-            "communication_style": "交流頻度"
-        }
-
-        for p in top_priorities:
-            key = p['criterion']
-            if key == "research_field_match":
-                continue
-            score = criteria_scores.get(key, 0.0)
-            label = criteria_labels.get(key, key)
-            if score >= 0.75:
-                matched_points.append(label)
-            elif score <= 0.45:
-                compromise_points.append(label)
-
-        match_type = field_detail.get("primary_match_type", "unknown")
-        is_field_prioritized = student.get("research_field_match", 5) >= 7
-
-        sentences = []
-
-        if is_field_prioritized and match_type == "exact":
-            sentences.append("あなたが重視する研究分野が完全一致しており、専門性を高めるのに最適な環境です。")
-        elif matched_points:
-            points_str = "』『".join(matched_points[:2])
-            sentences.append(f"あなたが最優先した『{points_str}』の方針が、この研究室の実態と強く合致しています。")
-        elif total >= 0.85:
-            sentences.append("全体的なバランスが極めて良く、あなたの希望条件を高い水準で満たしています。")
-
-        if match_type == "exact" and not is_field_prioritized:
-            sentences.append("研究分野も一致しているため、スムーズに研究に着手できるでしょう。")
-        elif match_type != "exact" and basic_score >= 0.75:
-            sentences.append("分野は異なりますが、ゼミの雰囲気や指導方針といった「活動スタイル」の相性が抜群です。")
-        
-        if compromise_points:
-            point = compromise_points[0]
-            sentences.append(f"『{point}』に関しては希望と少し差がありますが、総合的な適合度は十分に高いです。")
-
-        if not sentences:
-            if total >= 0.7:
-                sentences.append("大きな欠点がなく、安定して研究に取り組める環境と言えます。")
-            else:
-                sentences.append("一部の条件で妥協が必要ですが、検討候補として有力です。")
-
-        return "".join(sentences)
+        if total >= 0.8:
+            return "非常に高い適合性があります。あなたの希望条件を高い水準で満たしています。"
+        elif total >= 0.6:
+            return "条件によく合致しています。大きな欠点がなく、安定して研究に取り組める環境です。"
+        elif total >= 0.4:
+            return "一部の条件で妥協が必要ですが、検討候補として有力です。"
+        else:
+            return "希望条件との差異が大きいため、慎重に検討してください。"
     
-    def _get_recommendation(
-        self,
-        score: float
-    ) -> str:
-        """推薦レベル"""
+    def _get_recommendation(self, score: float) -> str:
         if score >= 0.80:
             return "強く推薦"
         elif score >= 0.65:
@@ -957,26 +796,129 @@ class FuzzyMultiPathMatcher:
             return "要検討"
         else:
             return "慎重に検討"
+    
+    def precompute_lab_memberships(self, lab: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+        """
+        研究室のメンバーシップ値を事前計算
+        
+        データベースに保存して再利用可能
+        """
+        memberships = {}
+        for criterion in self.CRITERIA:
+            raw_value = lab.get(criterion, 5.0)
+            normalized = self._normalize_value(raw_value)
+            memberships[criterion] = {
+                "raw_value": raw_value,
+                "normalized": normalized,
+                "3level": MembershipFunctions.fuzzify_3level(normalized),
+                "2level": MembershipFunctions.fuzzify_2level(normalized)
+            }
+        return memberships
 
 
 # ========================================
 # テスト
 # ========================================
 if __name__ == "__main__":
-    print("=" * 80)
-    print("FuzzyMultiPathMatcher テスト（重み付き平均分野スコア対応版）")
+    print("\n" + "=" * 80)
+    print("FuzzyMultiPathMatcher v2.2 テスト")
+    print("（ボーナス削除、分野重視度計算変更）")
     print("=" * 80)
     
     matcher = FuzzyMultiPathMatcher()
     
-    # テスト用学生プロファイル（複数の興味分野）
-    student = {
+    # ========================================
+    # テスト1: 具体例（研究強度・チームワーク）
+    # ========================================
+    print("\n" + "=" * 80)
+    print("【テスト1】具体例: 研究強度=8(優先度9), チームワーク=5(優先度6)")
+    print("          研究室: 研究強度=6, チームワーク=8, 分野=ai_ml")
+    print("          学生興味分野: ai_ml(10), image_processing(7)")
+    print("          分野重視度=8")
+    print("=" * 80)
+    
+    # 研究強度とチームワークのみ決定木に含める
+    # 他の項目は優先度4以下にして決定木から除外
+    student_test1 = {
+        "research_intensity": 8.0,
+        "team_work": 5.0,
+        "research_intensity_priority": 9.0,  # 3分岐
+        "team_work_priority": 6.0,           # 2分岐
+        # 他の項目は優先度4以下（決定木から除外）
+        "advisor_style": 5.0, "advisor_style_priority": 4.0,
+        "workload": 5.0, "workload_priority": 4.0,
+        "theory_practice": 5.0, "theory_practice_priority": 4.0,
+        "skill_development": 5.0, "skill_development_priority": 4.0,
+        "lab_atmosphere": 5.0, "lab_atmosphere_priority": 4.0,
+        "flexibility": 5.0, "flexibility_priority": 4.0,
+        "publication_opportunity": 5.0, "publication_opportunity_priority": 4.0,
+        "interdisciplinary": 5.0, "interdisciplinary_priority": 4.0,
+        "communication_style": 5.0, "communication_style_priority": 4.0,
+        "field_interests": {"ai_ml": 10, "image_processing": 7},
+        "field_priority": 8.0  # 分野重視度
+    }
+    
+    lab_test1 = {
+        "name": "テスト研究室1",
+        "research_intensity": 6.0,
+        "team_work": 8.0,
+        # 他の項目はデフォルト
+        "advisor_style": 5.0,
+        "workload": 5.0,
+        "theory_practice": 5.0,
+        "skill_development": 5.0,
+        "lab_atmosphere": 5.0,
+        "flexibility": 5.0,
+        "publication_opportunity": 5.0,
+        "interdisciplinary": 5.0,
+        "communication_style": 5.0,
+        "field_id": "ai_ml"
+    }
+    
+    result1 = matcher.calculate_compatibility(student_test1, lab_test1)
+    
+    print(f"\n{'='*60}")
+    print(f"【テスト1 結果サマリー】")
+    print(f"{'='*60}")
+    print(f"S_fuzzy: {result1.fuzzy_score:.4f} ({result1.fuzzy_score*100:.2f}%)")
+    print(f"S_gaussian: {result1.gaussian_score:.4f} ({result1.gaussian_score*100:.2f}%)")
+    print(f"S_basic: {result1.basic_score:.4f} ({result1.basic_score*100:.2f}%)")
+    print(f"S_field: {result1.field_score:.4f} ({result1.field_score*100:.2f}%)")
+    print(f"λ (分野比重): {result1.field_weight_lambda:.2f}")
+    print(f"1-λ (基本比重): {result1.basic_weight:.2f}")
+    print(f"最終適合度: {result1.total_compatibility:.4f} ({result1.total_compatibility*100:.2f}%)")
+    print(f"有効パス数: {len(result1.fuzzy_paths)}")
+    print(f"推薦: {result1.recommendation}")
+    
+    # ========================================
+    # テスト2: 分野重視度を変えた比較
+    # ========================================
+    print("\n" + "=" * 80)
+    print("【テスト2】分野重視度を変えた比較")
+    print("=" * 80)
+    
+    print(f"\n  S_basic = {result1.basic_score:.4f}, S_field = {result1.field_score:.4f} の場合")
+    print(f"\n  {'分野重視度':>10} | {'λ':>6} | {'1-λ':>6} | {'最終適合度':>12}")
+    print(f"  {'-'*50}")
+    
+    for fp in [1, 3, 5, 7, 8, 10]:
+        lam = fp / 10.0
+        total = (1 - lam) * result1.basic_score + lam * result1.field_score
+        print(f"  {fp:>10} | {lam:>6.2f} | {1-lam:>6.2f} | {total:>10.4f} ({total*100:.2f}%)")
+    
+    # ========================================
+    # テスト3: フル機能テスト
+    # ========================================
+    print("\n" + "=" * 80)
+    print("【テスト3】フル機能テスト")
+    print("=" * 80)
+    
+    student_test3 = {
         "research_intensity": 8,
         "advisor_style": 7,
         "team_work": 5,
         "workload": 8,
         "theory_practice": 6,
-        "research_field_match": 8,
         "skill_development": 7,
         "lab_atmosphere": 6,
         "flexibility": 5,
@@ -984,7 +926,6 @@ if __name__ == "__main__":
         "interdisciplinary": 4,
         "communication_style": 6,
         
-        # 優先度
         "research_intensity_priority": 9,
         "publication_opportunity_priority": 9,
         "workload_priority": 7,
@@ -996,20 +937,17 @@ if __name__ == "__main__":
         "flexibility_priority": 4,
         "interdisciplinary_priority": 3,
         "communication_style_priority": 3,
-        "research_field_match_priority": 8,
         
-        # ★★★ 複数の興味分野 ★★★
         "field_interests": {
             "ai_ml": 10,
             "image_processing": 7,
             "web_design": 3
-        }
+        },
+        "field_priority": 8  # 分野重視度
     }
     
-    # テスト用研究室プロファイル
-    lab = {
+    lab_test3 = {
         "name": "AI研究室",
-        "research_area": "人工知能・機械学習",
         "research_intensity": 7,
         "advisor_style": 7,
         "team_work": 6,
@@ -1024,38 +962,31 @@ if __name__ == "__main__":
         "field_id": "ai_ml"
     }
     
-    result = matcher.calculate_compatibility(student, lab)
+    result3 = matcher.calculate_compatibility(student_test3, lab_test3)
     
-    print(f"\n{'='*80}")
-    print(f"【計算結果サマリー】")
-    print(f"{'='*80}")
-    print(f"総合適合度: {result.total_compatibility:.4f}")
-    print(f"基本スコア（統合）: {result.basic_score:.4f}")
-    print(f"  - S_fuzzy: {result.fuzzy_score:.4f}")
-    print(f"  - S_gaussian: {result.gaussian_score:.4f}")
-    print(f"分野スコア（重み付き平均）: {result.field_score:.4f}")
-    print(f"分野比重α: {result.field_weight_alpha:.4f}")
-    print(f"基本比重β: {result.basic_weight_beta:.4f}")
-    print(f"評価パス数: {len(result.fuzzy_paths)}")
-    print(f"推薦: {result.recommendation}")
-    print(f"\n【分野マッチング詳細】")
-    for detail in result.field_detail.get("field_details", []):
-        print(f"  {detail['field']}: 興味度={detail['interest_level']}, マッチ={detail['match_type']}, スコア={detail['match_score']:.2f}")
-    print(f"\n【説明】")
-    print(result.explanation)
+    print(f"\n{'='*60}")
+    print(f"【テスト3 結果サマリー】")
+    print(f"{'='*60}")
+    print(f"S_fuzzy: {result3.fuzzy_score:.4f} ({result3.fuzzy_score*100:.2f}%)")
+    print(f"S_gaussian: {result3.gaussian_score:.4f} ({result3.gaussian_score*100:.2f}%)")
+    print(f"S_basic: {result3.basic_score:.4f} ({result3.basic_score*100:.2f}%)")
+    print(f"S_field: {result3.field_score:.4f} ({result3.field_score*100:.2f}%)")
+    print(f"λ (分野比重): {result3.field_weight_lambda:.2f}")
+    print(f"1-λ (基本比重): {result3.basic_weight:.2f}")
+    print(f"最終適合度: {result3.total_compatibility:.4f} ({result3.total_compatibility*100:.2f}%)")
+    print(f"有効パス数: {len(result3.fuzzy_paths)}")
+    print(f"推薦: {result3.recommendation}")
     
-    print(f"\n{'='*80}")
-    print(f"【分野スコアの計算過程（再確認）】")
-    print(f"{'='*80}")
-    print(f"""
-  学生の興味分野:
-    ai_ml: 興味度 10 → 完全一致 → スコア 1.0
-    image_processing: 興味度 7 → カテゴリ一致 → スコア 0.7
-    web_design: 興味度 3 → カテゴリ一致 → スコア 0.7
-
-  重み付き平均:
-    S_field = (1.0×10 + 0.7×7 + 0.7×3) / (10 + 7 + 3)
-            = (10.0 + 4.9 + 2.1) / 20
-            = 17.0 / 20
-            = 0.85
-""")
+    # ========================================
+    # 事前計算のデモ
+    # ========================================
+    print(f"\n{'='*60}")
+    print(f"【研究室メンバーシップ値の事前計算（DB保存用）】")
+    print(f"{'='*60}")
+    precomputed = matcher.precompute_lab_memberships(lab_test3)
+    for criterion in ["research_intensity", "team_work", "publication_opportunity"]:
+        data = precomputed[criterion]
+        print(f"\n{criterion}:")
+        print(f"  生値: {data['raw_value']}, 正規化: {data['normalized']:.2f}")
+        print(f"  3分岐: 低={data['3level']['low']:.4f}, 中={data['3level']['medium']:.4f}, 高={data['3level']['high']:.4f}")
+        print(f"  2分岐: 低={data['2level']['low']:.4f}, 高={data['2level']['high']:.4f}")

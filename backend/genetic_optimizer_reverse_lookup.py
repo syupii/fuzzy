@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-遺伝的アルゴリズムによる逆引き分析
+遺伝的アルゴリズムによる逆引き分析 v2.2
 研究室ごとの理想的な学生プロファイルを探索
 
+【v2.2 変更点】
+- research_field_match を基本項目から削除（11項目）
+- field_priority（分野重視度）として別途管理
+- 最終スコア計算: S = (1 - λ) × S_basic + λ × S_field
+- ボーナス/ペナルティ削除
+- S_basic = γ × S_fuzzy + (1 - γ) × S_gaussian
+
 使用方法:
-    python genetic_optimizer_reverse_lookup.py --lab_id lab_001 --target_rank 1
+    python genetic_optimizer_reverse_lookup.py --lab_id lab_001
     python genetic_optimizer_reverse_lookup.py --all --output results/
 """
 
@@ -13,10 +20,11 @@ import json
 import numpy as np
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, Any
+from typing import Dict, List, Tuple, Any, Optional
 from dataclasses import dataclass
 import logging
 from datetime import datetime
+import math
 
 # ロギング設定
 logging.basicConfig(
@@ -87,14 +95,13 @@ FIELD_CATEGORIES = {
     ]
 }
 
-# 基本12項目
+# 基本11項目（research_field_matchを削除）
 BASIC_CRITERIA = [
     "research_intensity",
     "advisor_style",
     "team_work",
     "workload",
     "theory_practice",
-    "research_field_match",
     "skill_development",
     "lab_atmosphere",
     "flexibility",
@@ -103,24 +110,152 @@ BASIC_CRITERIA = [
     "communication_style"
 ]
 
+# 分野マッチングスコア
+FIELD_EXACT_MATCH_SCORE = 1.0
+FIELD_CATEGORY_DECAY = 0.7
+FIELD_NO_MATCH_SCORE = 0.3
+
+
+class MembershipFunctions:
+    """
+    メンバーシップ関数（v2.1準拠）
+    
+    【3分岐（優先度 ≥ 8）】
+    - 低（三角）: ピーク 0.1、終了 0.5
+    - 中（台形）: 開始 0.2、上辺 0.4-0.7、終了 0.9
+    - 高（三角）: 開始 0.6、ピーク 1.0
+    
+    【2分岐（優先度 5〜7）】
+    - 低（三角）: ピーク 0.1、終了 0.6
+    - 高（三角）: 開始 0.4、ピーク 1.0
+    """
+    
+    @staticmethod
+    def low_3level(x: float) -> float:
+        """低（三角形）- 3分岐用"""
+        if x <= 0.1:
+            return 1.0
+        elif x < 0.5:
+            return (0.5 - x) / 0.4
+        else:
+            return 0.0
+    
+    @staticmethod
+    def medium_3level(x: float) -> float:
+        """中（台形）- 3分岐用"""
+        if x <= 0.2:
+            return 0.0
+        elif x < 0.4:
+            return (x - 0.2) / 0.2
+        elif x <= 0.7:
+            return 1.0
+        elif x < 0.9:
+            return (0.9 - x) / 0.2
+        else:
+            return 0.0
+    
+    @staticmethod
+    def high_3level(x: float) -> float:
+        """高（三角形）- 3分岐用"""
+        if x <= 0.6:
+            return 0.0
+        elif x < 1.0:
+            return (x - 0.6) / 0.4
+        else:
+            return 1.0
+    
+    @staticmethod
+    def low_2level(x: float) -> float:
+        """低（三角形）- 2分岐用"""
+        if x <= 0.1:
+            return 1.0
+        elif x < 0.6:
+            return (0.6 - x) / 0.5
+        else:
+            return 0.0
+    
+    @staticmethod
+    def high_2level(x: float) -> float:
+        """高（三角形）- 2分岐用"""
+        if x <= 0.4:
+            return 0.0
+        elif x < 1.0:
+            return (x - 0.4) / 0.6
+        else:
+            return 1.0
+    
+    @staticmethod
+    def fuzzify_3level(x: float) -> Dict[str, float]:
+        """3段階ファジィ化（正規化済み）"""
+        raw_low = MembershipFunctions.low_3level(x)
+        raw_medium = MembershipFunctions.medium_3level(x)
+        raw_high = MembershipFunctions.high_3level(x)
+        
+        total = raw_low + raw_medium + raw_high
+        
+        if total > 0:
+            return {
+                "low": raw_low / total,
+                "medium": raw_medium / total,
+                "high": raw_high / total
+            }
+        else:
+            return {"low": 0.0, "medium": 1.0, "high": 0.0}
+    
+    @staticmethod
+    def fuzzify_2level(x: float) -> Dict[str, float]:
+        """2段階ファジィ化（正規化済み）"""
+        raw_low = MembershipFunctions.low_2level(x)
+        raw_high = MembershipFunctions.high_2level(x)
+        
+        total = raw_low + raw_high
+        
+        if total > 0:
+            return {
+                "low": raw_low / total,
+                "high": raw_high / total
+            }
+        else:
+            return {"low": 0.5, "high": 0.5}
+
+
+@dataclass
+class FuzzyPath:
+    """ファジィパス"""
+    path_id: int
+    layers: List[Tuple[str, str, float]]
+    total_membership: float
+    leaf_value: float
+
 
 class StudentProfile:
     """学生プロファイル（染色体）"""
     
-    def __init__(self, criteria_values: np.ndarray = None, field_interests: Dict[str, float] = None):
+    def __init__(
+        self,
+        criteria_values: np.ndarray = None,
+        criteria_priorities: np.ndarray = None,
+        field_interests: Dict[str, float] = None,
+        field_priority: float = None
+    ):
         """
         Args:
-            criteria_values: 12項目の評価値 [0, 1]の範囲
+            criteria_values: 11項目の評価値 [0, 1]の範囲
+            criteria_priorities: 11項目の優先度 [0, 1]の範囲
             field_interests: 分野興味度 {field_id: [0, 1]}
+            field_priority: 分野重視度 [0, 1]の範囲
         """
         if criteria_values is None:
-            # ランダム初期化
             self.criteria_values = np.random.uniform(0, 1, len(BASIC_CRITERIA))
         else:
             self.criteria_values = criteria_values.copy()
         
+        if criteria_priorities is None:
+            self.criteria_priorities = np.random.uniform(0, 1, len(BASIC_CRITERIA))
+        else:
+            self.criteria_priorities = criteria_priorities.copy()
+        
         if field_interests is None:
-            # ランダムに2-3分野を選択して興味を持つ
             num_interests = np.random.randint(2, 4)
             selected_fields = np.random.choice(list(RESEARCH_FIELDS.keys()), num_interests, replace=False)
             self.field_interests = {
@@ -130,22 +265,57 @@ class StudentProfile:
         else:
             self.field_interests = field_interests.copy()
         
+        if field_priority is None:
+            self.field_priority = np.random.uniform(0, 1)
+        else:
+            self.field_priority = field_priority
+        
         self.fitness = 0.0
     
     def to_dict(self) -> Dict[str, Any]:
         """辞書形式に変換（1-10スケールに戻す）"""
-        return {
-            **{criterion: float(val * 9 + 1) for criterion, val in zip(BASIC_CRITERIA, self.criteria_values)},
-            "field_interests": {field: float(val * 9 + 1) for field, val in self.field_interests.items()}
+        result = {}
+        
+        for i, criterion in enumerate(BASIC_CRITERIA):
+            result[criterion] = float(self.criteria_values[i] * 9 + 1)
+            result[f"{criterion}_priority"] = float(self.criteria_priorities[i] * 9 + 1)
+        
+        result["field_interests"] = {
+            field: float(val * 9 + 1) 
+            for field, val in self.field_interests.items()
         }
+        result["field_priority"] = float(self.field_priority * 9 + 1)
+        
+        return result
     
     def copy(self):
         """コピーを作成"""
-        return StudentProfile(self.criteria_values.copy(), self.field_interests.copy())
+        new_profile = StudentProfile(
+            self.criteria_values.copy(),
+            self.criteria_priorities.copy(),
+            self.field_interests.copy(),
+            self.field_priority
+        )
+        new_profile.fitness = self.fitness
+        return new_profile
 
 
 class LabMatcher:
-    """研究室マッチング評価器"""
+    """
+    研究室マッチング評価器（v2.2準拠）
+    
+    【計算式】
+    S_basic = γ × S_fuzzy + (1 - γ) × S_gaussian
+    λ = field_priority / 10
+    S = (1 - λ) × S_basic + λ × S_field
+    """
+    
+    # パラメータ
+    SIMILARITY_SIGMA = 0.3
+    PRUNING_THRESHOLD = 0.01
+    HIGH_PRIORITY_THRESHOLD = 0.8  # [0,1]スケールで8/10
+    MID_PRIORITY_THRESHOLD = 0.5   # [0,1]スケールで5/10
+    FUZZY_GAUSSIAN_GAMMA = 0.5
     
     def __init__(self, lab_profile: Dict[str, Any]):
         """
@@ -154,42 +324,270 @@ class LabMatcher:
         """
         self.lab_profile = lab_profile
         self.lab_criteria = self._normalize_criteria(lab_profile)
+        self.lab_field = lab_profile.get("field_id", "")
         self.lab_fields = lab_profile.get("research_fields", [])
         
-        # ガウス類似度のパラメータ
-        self.sigma = 0.2
+        if not self.lab_field and self.lab_fields:
+            self.lab_field = self.lab_fields[0]
     
     def _normalize_criteria(self, profile: Dict[str, Any]) -> np.ndarray:
         """評価値を正規化 [1, 10] -> [0, 1]"""
         values = []
         for criterion in BASIC_CRITERIA:
-            val = profile.get(criterion, 5.5)  # デフォルト中央値
-            normalized = (val - 1) / 9
+            val = profile.get(criterion, 5.5)
+            if val > 1:
+                normalized = val / 10.0
+            else:
+                normalized = val
             values.append(normalized)
         return np.array(values)
     
+    def _normalize_value(self, value: float) -> float:
+        """値を0-1に正規化"""
+        if value >= 1.0 and value <= 10.0:
+            return value / 10.0
+        elif value > 1.0:
+            return min(value / 10.0, 1.0)
+        return value
+    
+    def _calculate_priority_weight(self, priority: float) -> float:
+        """優先度から重みを計算"""
+        return priority ** 1.5
+    
     def _gaussian_similarity(self, val1: float, val2: float) -> float:
         """ガウス類似度計算"""
-        diff = abs(val1 - val2)
-        return np.exp(-(diff ** 2) / (2 * self.sigma ** 2))
+        d = abs(val1 - val2)
+        return math.exp(-(d ** 2) / (2 * self.SIMILARITY_SIGMA ** 2))
     
-    def _calculate_basic_score(self, student: StudentProfile) -> float:
-        """基本項目スコア計算"""
-        similarities = np.array([
-            self._gaussian_similarity(s, l)
-            for s, l in zip(student.criteria_values, self.lab_criteria)
-        ])
-        
-        # 優先度は遺伝的アルゴリズムでは一律1.0として扱う
-        # （最適化するのは学生の評価値のみ）
-        weights = np.ones(len(BASIC_CRITERIA))
-        
-        weighted_sum = np.sum(similarities * weights)
-        total_weight = np.sum(weights)
-        
-        return weighted_sum / total_weight if total_weight > 0 else 0.0
+    def _get_sorted_priorities(self, student: StudentProfile) -> List[Dict[str, Any]]:
+        """優先度でソートされた項目リストを取得"""
+        priorities = []
+        for i, criterion in enumerate(BASIC_CRITERIA):
+            priority = student.criteria_priorities[i]
+            priorities.append({"criterion": criterion, "priority": priority, "index": i})
+        priorities.sort(key=lambda x: x["priority"], reverse=True)
+        return priorities
     
-    def _get_field_category(self, field_id: str) -> str:
+    def _build_fuzzy_tree(self, priorities: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """ファジィ決定木を構築"""
+        tree_layers = []
+        for item in priorities:
+            priority = item["priority"]
+            criterion = item["criterion"]
+            index = item["index"]
+            
+            if priority >= self.HIGH_PRIORITY_THRESHOLD:
+                tree_layers.append({
+                    "criterion": criterion,
+                    "priority": priority,
+                    "index": index,
+                    "branches": 3,
+                    "labels": ["low", "medium", "high"]
+                })
+            elif priority >= self.MID_PRIORITY_THRESHOLD:
+                tree_layers.append({
+                    "criterion": criterion,
+                    "priority": priority,
+                    "index": index,
+                    "branches": 2,
+                    "labels": ["low", "high"]
+                })
+        return tree_layers
+    
+    def _fuzzify_lab(self, tree_layers: List[Dict[str, Any]]) -> Dict[str, Dict[str, float]]:
+        """研究室の各項目をファジィ化"""
+        lab_fuzzified = {}
+        for layer in tree_layers:
+            criterion = layer["criterion"]
+            branches = layer["branches"]
+            index = layer["index"]
+            normalized = self.lab_criteria[index]
+            
+            if branches == 3:
+                memberships = MembershipFunctions.fuzzify_3level(normalized)
+            else:
+                memberships = MembershipFunctions.fuzzify_2level(normalized)
+            
+            lab_fuzzified[criterion] = memberships
+        return lab_fuzzified
+    
+    def _generate_paths_recursive(
+        self,
+        tree_layers: List[Dict[str, Any]],
+        lab_fuzzified: Dict[str, Dict[str, float]],
+        layer_idx: int,
+        current_path: List[Tuple[str, str, float]],
+        cumulative_membership: float,
+        all_paths: List[FuzzyPath]
+    ):
+        """パスを再帰的に生成"""
+        if layer_idx >= len(tree_layers):
+            all_paths.append(FuzzyPath(
+                path_id=len(all_paths),
+                layers=current_path.copy(),
+                total_membership=cumulative_membership,
+                leaf_value=0.0
+            ))
+            return
+        
+        layer = tree_layers[layer_idx]
+        criterion = layer["criterion"]
+        labels = layer["labels"]
+        memberships = lab_fuzzified[criterion]
+        
+        for label in labels:
+            membership = memberships[label]
+            new_membership = cumulative_membership * membership
+            
+            if new_membership < self.PRUNING_THRESHOLD:
+                continue
+            
+            new_path = current_path + [(criterion, label, membership)]
+            self._generate_paths_recursive(
+                tree_layers, lab_fuzzified, layer_idx + 1,
+                new_path, new_membership, all_paths
+            )
+    
+    def _generate_paths_from_lab(
+        self,
+        tree_layers: List[Dict[str, Any]],
+        lab_fuzzified: Dict[str, Dict[str, float]]
+    ) -> List[FuzzyPath]:
+        """研究室からパスを生成"""
+        if not tree_layers:
+            return [FuzzyPath(path_id=0, layers=[], total_membership=1.0, leaf_value=0.0)]
+        
+        all_paths = []
+        self._generate_paths_recursive(tree_layers, lab_fuzzified, 0, [], 1.0, all_paths)
+        return all_paths
+    
+    def _prune_and_normalize_paths(self, paths: List[FuzzyPath]) -> List[FuzzyPath]:
+        """パスを枝刈りして正規化"""
+        paths = [p for p in paths if p.total_membership >= self.PRUNING_THRESHOLD]
+        if not paths:
+            return paths
+        total = sum(p.total_membership for p in paths)
+        if total > 0:
+            for path in paths:
+                path.total_membership = path.total_membership / total
+        return paths
+    
+    def _fuzzify_student(
+        self,
+        student: StudentProfile,
+        tree_layers: List[Dict[str, Any]]
+    ) -> Dict[str, Dict[str, float]]:
+        """学生の各項目をファジィ化"""
+        student_fuzzified = {}
+        for layer in tree_layers:
+            criterion = layer["criterion"]
+            branches = layer["branches"]
+            index = layer["index"]
+            normalized = student.criteria_values[index]
+            
+            if branches == 3:
+                memberships = MembershipFunctions.fuzzify_3level(normalized)
+            else:
+                memberships = MembershipFunctions.fuzzify_2level(normalized)
+            
+            student_fuzzified[criterion] = memberships
+        return student_fuzzified
+    
+    def _calculate_leaf_values(
+        self,
+        paths: List[FuzzyPath],
+        student_fuzzified: Dict[str, Dict[str, float]],
+        tree_layers: List[Dict[str, Any]],
+        student: StudentProfile
+    ) -> List[FuzzyPath]:
+        """各パスのリーフ値を計算"""
+        for path in paths:
+            weighted_sum = 0.0
+            total_weight = 0.0
+            
+            for criterion, label, _ in path.layers:
+                student_membership = student_fuzzified[criterion][label]
+                layer = next((l for l in tree_layers if l["criterion"] == criterion), None)
+                if layer:
+                    priority = layer["priority"]
+                    weight = self._calculate_priority_weight(priority)
+                    weighted_sum += student_membership * weight
+                    total_weight += weight
+            
+            path.leaf_value = weighted_sum / total_weight if total_weight > 0 else 0.5
+        return paths
+    
+    def _calculate_fuzzy_score(self, paths: List[FuzzyPath]) -> float:
+        """S_fuzzy を計算"""
+        if not paths:
+            return 0.5
+        return sum(path.total_membership * path.leaf_value for path in paths)
+    
+    def _calculate_gaussian_score(self, student: StudentProfile) -> float:
+        """S_gaussian を計算"""
+        weighted_sum = 0.0
+        total_weight = 0.0
+        
+        for i, criterion in enumerate(BASIC_CRITERIA):
+            student_val = student.criteria_values[i]
+            lab_val = self.lab_criteria[i]
+            similarity = self._gaussian_similarity(student_val, lab_val)
+            priority = student.criteria_priorities[i]
+            weight = self._calculate_priority_weight(priority)
+            
+            weighted_sum += similarity * weight
+            total_weight += weight
+        
+        return weighted_sum / total_weight if total_weight > 0 else 0.5
+    
+    def _calculate_basic_score(self, student: StudentProfile) -> Tuple[float, float, float]:
+        """
+        基本スコアを計算
+        
+        Returns:
+            (S_basic, S_fuzzy, S_gaussian)
+        """
+        # 決定木構築
+        priorities = self._get_sorted_priorities(student)
+        tree_layers = self._build_fuzzy_tree(priorities)
+        
+        if not tree_layers:
+            # 決定木が構築できない場合はガウス類似度のみ
+            gaussian_score = self._calculate_gaussian_score(student)
+            return gaussian_score, 0.5, gaussian_score
+        
+        # 研究室のファジィ化
+        lab_fuzzified = self._fuzzify_lab(tree_layers)
+        
+        # パス生成
+        fuzzy_paths = self._generate_paths_from_lab(tree_layers, lab_fuzzified)
+        fuzzy_paths = self._prune_and_normalize_paths(fuzzy_paths)
+        
+        if not fuzzy_paths:
+            gaussian_score = self._calculate_gaussian_score(student)
+            return gaussian_score, 0.5, gaussian_score
+        
+        # 学生のファジィ化
+        student_fuzzified = self._fuzzify_student(student, tree_layers)
+        
+        # リーフ値計算
+        fuzzy_paths = self._calculate_leaf_values(
+            fuzzy_paths, student_fuzzified, tree_layers, student
+        )
+        
+        # S_fuzzy
+        fuzzy_score = self._calculate_fuzzy_score(fuzzy_paths)
+        
+        # S_gaussian
+        gaussian_score = self._calculate_gaussian_score(student)
+        
+        # S_basic = γ × S_fuzzy + (1 - γ) × S_gaussian
+        gamma = self.FUZZY_GAUSSIAN_GAMMA
+        basic_score = gamma * fuzzy_score + (1 - gamma) * gaussian_score
+        
+        return basic_score, fuzzy_score, gaussian_score
+    
+    def _get_field_category(self, field_id: str) -> Optional[str]:
         """分野のカテゴリを取得"""
         for category, fields in FIELD_CATEGORIES.items():
             if field_id in fields:
@@ -197,47 +595,79 @@ class LabMatcher:
         return None
     
     def _calculate_field_score(self, student: StudentProfile) -> float:
-        """分野スコア計算"""
-        if not self.lab_fields:
-            return 0.3  # デフォルト
+        """
+        分野スコアを計算（重み付き平均）
         
-        max_score = 0.0
+        S_field = Σ(match_score × interest) / Σ(interest)
+        """
+        if not student.field_interests:
+            return 0.5
         
-        for lab_field in self.lab_fields:
-            if lab_field in student.field_interests:
+        if not self.lab_field:
+            return 0.5
+        
+        weighted_sum = 0.0
+        total_weight = 0.0
+        
+        lab_category = self._get_field_category(self.lab_field)
+        
+        for interest_field, interest_level in student.field_interests.items():
+            if interest_field == self.lab_field:
                 # 完全一致
-                interest = student.field_interests[lab_field]
-                score = interest
-                max_score = max(max_score, score)
+                match_score = FIELD_EXACT_MATCH_SCORE
+            elif lab_category:
+                student_category = self._get_field_category(interest_field)
+                if student_category and student_category == lab_category:
+                    # カテゴリ一致
+                    match_score = FIELD_CATEGORY_DECAY
+                else:
+                    # 不一致
+                    match_score = FIELD_NO_MATCH_SCORE
             else:
-                # カテゴリ一致をチェック
-                lab_category = self._get_field_category(lab_field)
-                for student_field, interest in student.field_interests.items():
-                    student_category = self._get_field_category(student_field)
-                    if lab_category and student_category and lab_category == student_category:
-                        # カテゴリ一致
-                        score = interest * 0.7
-                        max_score = max(max_score, score)
+                match_score = FIELD_NO_MATCH_SCORE
+            
+            weighted_sum += match_score * interest_level
+            total_weight += interest_level
         
-        # 全く一致しない場合
-        if max_score == 0.0:
-            max_score = 0.3
-        
-        return max_score
+        return weighted_sum / total_weight if total_weight > 0 else 0.5
     
     def evaluate(self, student: StudentProfile) -> float:
-        """総合評価"""
-        basic_score = self._calculate_basic_score(student)
+        """
+        総合評価（v2.2準拠）
+        
+        λ = field_priority / 10（ここでは field_priority は [0,1]）
+        S = (1 - λ) × S_basic + λ × S_field
+        """
+        # 基本スコア
+        basic_score, fuzzy_score, gaussian_score = self._calculate_basic_score(student)
+        
+        # 分野スコア
         field_score = self._calculate_field_score(student)
         
-        # research_field_matchを取得（分野重視度）
-        field_match_idx = BASIC_CRITERIA.index("research_field_match")
-        alpha = student.criteria_values[field_match_idx]  # [0, 1]
-        beta = 1 - alpha
+        # 最終スコア
+        # λ = field_priority（[0,1]スケール、つまり field_priority/10 に相当）
+        lambda_weight = student.field_priority
         
-        final_score = beta * basic_score + alpha * field_score
+        final_score = (1 - lambda_weight) * basic_score + lambda_weight * field_score
         
         return final_score
+    
+    def evaluate_detailed(self, student: StudentProfile) -> Dict[str, Any]:
+        """詳細な評価結果を返す"""
+        basic_score, fuzzy_score, gaussian_score = self._calculate_basic_score(student)
+        field_score = self._calculate_field_score(student)
+        lambda_weight = student.field_priority
+        final_score = (1 - lambda_weight) * basic_score + lambda_weight * field_score
+        
+        return {
+            "final_score": final_score,
+            "basic_score": basic_score,
+            "fuzzy_score": fuzzy_score,
+            "gaussian_score": gaussian_score,
+            "field_score": field_score,
+            "lambda_weight": lambda_weight,
+            "basic_weight": 1 - lambda_weight
+        }
 
 
 class GeneticOptimizer:
@@ -264,15 +694,24 @@ class GeneticOptimizer:
         tournament = np.random.choice(population, self.config.tournament_size, replace=False)
         return max(tournament, key=lambda x: x.fitness)
     
-    def crossover(self, parent1: StudentProfile, parent2: StudentProfile) -> Tuple[StudentProfile, StudentProfile]:
+    def crossover(
+        self,
+        parent1: StudentProfile,
+        parent2: StudentProfile
+    ) -> Tuple[StudentProfile, StudentProfile]:
         """交叉（一様交叉）"""
         if np.random.rand() > self.config.crossover_rate:
             return parent1.copy(), parent2.copy()
         
-        # 基本項目の交叉
-        mask = np.random.rand(len(BASIC_CRITERIA)) < 0.5
-        child1_criteria = np.where(mask, parent1.criteria_values, parent2.criteria_values)
-        child2_criteria = np.where(mask, parent2.criteria_values, parent1.criteria_values)
+        # 基本項目値の交叉
+        mask_values = np.random.rand(len(BASIC_CRITERIA)) < 0.5
+        child1_values = np.where(mask_values, parent1.criteria_values, parent2.criteria_values)
+        child2_values = np.where(mask_values, parent2.criteria_values, parent1.criteria_values)
+        
+        # 優先度の交叉
+        mask_priorities = np.random.rand(len(BASIC_CRITERIA)) < 0.5
+        child1_priorities = np.where(mask_priorities, parent1.criteria_priorities, parent2.criteria_priorities)
+        child2_priorities = np.where(mask_priorities, parent2.criteria_priorities, parent1.criteria_priorities)
         
         # 分野興味の交叉
         all_fields = set(parent1.field_interests.keys()) | set(parent2.field_interests.keys())
@@ -292,23 +731,35 @@ class GeneticOptimizer:
                 if field in parent1.field_interests:
                     child2_fields[field] = parent1.field_interests[field]
         
-        child1 = StudentProfile(child1_criteria, child1_fields)
-        child2 = StudentProfile(child2_criteria, child2_fields)
+        # 分野重視度の交叉
+        if np.random.rand() < 0.5:
+            child1_field_priority = parent1.field_priority
+            child2_field_priority = parent2.field_priority
+        else:
+            child1_field_priority = parent2.field_priority
+            child2_field_priority = parent1.field_priority
+        
+        child1 = StudentProfile(child1_values, child1_priorities, child1_fields, child1_field_priority)
+        child2 = StudentProfile(child2_values, child2_priorities, child2_fields, child2_field_priority)
         
         return child1, child2
     
     def mutate(self, individual: StudentProfile):
         """突然変異"""
-        # 基本項目の突然変異
+        # 基本項目値の突然変異
         for i in range(len(BASIC_CRITERIA)):
             if np.random.rand() < self.config.mutation_rate:
-                # ガウス変異
                 individual.criteria_values[i] += np.random.normal(0, 0.1)
                 individual.criteria_values[i] = np.clip(individual.criteria_values[i], 0, 1)
         
+        # 優先度の突然変異
+        for i in range(len(BASIC_CRITERIA)):
+            if np.random.rand() < self.config.mutation_rate:
+                individual.criteria_priorities[i] += np.random.normal(0, 0.1)
+                individual.criteria_priorities[i] = np.clip(individual.criteria_priorities[i], 0, 1)
+        
         # 分野興味の突然変異
         if np.random.rand() < self.config.mutation_rate:
-            # 新しい分野を追加 or 既存分野を削除
             if np.random.rand() < 0.5 and len(individual.field_interests) < 5:
                 # 追加
                 available_fields = [f for f in RESEARCH_FIELDS.keys() if f not in individual.field_interests]
@@ -325,6 +776,11 @@ class GeneticOptimizer:
             if np.random.rand() < self.config.mutation_rate:
                 individual.field_interests[field] += np.random.normal(0, 0.1)
                 individual.field_interests[field] = np.clip(individual.field_interests[field], 0, 1)
+        
+        # 分野重視度の突然変異
+        if np.random.rand() < self.config.mutation_rate:
+            individual.field_priority += np.random.normal(0, 0.1)
+            individual.field_priority = np.clip(individual.field_priority, 0, 1)
     
     def optimize(self, lab_profile: Dict[str, Any]) -> StudentProfile:
         """最適化実行"""
@@ -347,7 +803,7 @@ class GeneticOptimizer:
             elites = sorted(self.population, key=lambda x: x.fitness, reverse=True)[:self.config.elite_size]
             
             # 新世代生成
-            new_population = elites.copy()
+            new_population = [elite.copy() for elite in elites]
             
             while len(new_population) < self.config.population_size:
                 # 選択
@@ -388,20 +844,7 @@ class GeneticOptimizer:
 
 
 def flatten_lab_data(labs_data: List[Dict]) -> List[Dict]:
-    """
-    研究室データをフラット化
-    
-    labs_database.jsonの構造に対応:
-    - lab["features"]["research_intensity"] → lab["research_intensity"]
-    - lab["id"] → lab["lab_id"]
-    - lab["name"] → lab["lab_name"]
-    
-    Args:
-        labs_data: 元の研究室データ（ネスト構造）
-        
-    Returns:
-        フラット化・正規化された研究室データ
-    """
+    """研究室データをフラット化"""
     flattened = []
     
     for lab in labs_data:
@@ -412,11 +855,9 @@ def flatten_lab_data(labs_data: List[Dict]) -> List[Dict]:
             features = lab["features"]
             for key, value in features.items():
                 flat_lab[key] = value
-            # features キーは削除（冗長なので）
             del flat_lab["features"]
         
         # キー名の正規化
-        # id → lab_id
         if "lab_id" not in flat_lab:
             lab_id = flat_lab.get("id") or flat_lab.get("laboratory_id") or flat_lab.get("labId")
             if lab_id:
@@ -425,13 +866,11 @@ def flatten_lab_data(labs_data: List[Dict]) -> List[Dict]:
                 logger.warning(f"研究室IDが見つかりません: {flat_lab}")
                 continue
         
-        # name → lab_name
         if "lab_name" not in flat_lab:
             lab_name = flat_lab.get("name") or flat_lab.get("laboratory_name") or flat_lab.get("labName")
             if lab_name:
                 flat_lab["lab_name"] = lab_name
         
-        # field_id を確保
         if "field_id" not in flat_lab:
             research_fields = flat_lab.get("research_fields", [])
             if research_fields:
@@ -443,17 +882,8 @@ def flatten_lab_data(labs_data: List[Dict]) -> List[Dict]:
 
 
 def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
-    """
-    研究室データベースを読み込み
-    
-    Args:
-        use_lab_database_class: True=LabDatabaseクラスを使用（推奨）、False=直接JSON読み込み
-        
-    Returns:
-        フラット化・正規化された研究室データ
-    """
+    """研究室データベースを読み込み"""
     if use_lab_database_class:
-        # LabDatabaseクラスを使用（推奨）
         try:
             import sys
             import os
@@ -463,8 +893,6 @@ def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
             
             db = LabDatabase()
             raw_labs_data = db.get_all_labs()
-            
-            # データをフラット化
             labs_data = flatten_lab_data(raw_labs_data)
             
             logger.info(f"{len(labs_data)}件の研究室データを読み込みました（LabDatabaseクラス使用）")
@@ -476,7 +904,6 @@ def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
             use_lab_database_class = False
     
     if not use_lab_database_class:
-        # 直接JSON読み込み（フォールバック）
         import os
         
         possible_paths = [
@@ -501,7 +928,6 @@ def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
         with open(actual_path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
-        # データ構造の解析
         if isinstance(data, dict):
             labs = data.get("labs") or data.get("laboratories") or data.get("lab_list")
         elif isinstance(data, list):
@@ -512,7 +938,6 @@ def load_lab_database(use_lab_database_class: bool = True) -> List[Dict]:
         if not labs:
             raise ValueError("研究室データが空です")
         
-        # フラット化
         labs_data = flatten_lab_data(labs)
         logger.info(f"{len(labs_data)}件の研究室データを読み込みました（直接JSON読み込み）")
         return labs_data
@@ -539,6 +964,10 @@ def analyze_single_lab(lab_id: str, config: GAConfig) -> Dict[str, Any]:
     optimizer = GeneticOptimizer(config)
     best_student = optimizer.optimize(lab)
     
+    # 詳細評価
+    matcher = LabMatcher(lab)
+    detailed_eval = matcher.evaluate_detailed(best_student)
+    
     # 結果をまとめる
     result = {
         "lab_id": lab_id,
@@ -551,6 +980,15 @@ def analyze_single_lab(lab_id: str, config: GAConfig) -> Dict[str, Any]:
             "mutation_rate": config.mutation_rate
         },
         "optimal_student_profile": best_student.to_dict(),
+        "evaluation_details": {
+            "final_score": float(detailed_eval["final_score"]),
+            "basic_score": float(detailed_eval["basic_score"]),
+            "fuzzy_score": float(detailed_eval["fuzzy_score"]),
+            "gaussian_score": float(detailed_eval["gaussian_score"]),
+            "field_score": float(detailed_eval["field_score"]),
+            "lambda_weight": float(detailed_eval["lambda_weight"]),
+            "basic_weight": float(detailed_eval["basic_weight"])
+        },
         "final_compatibility_score": float(best_student.fitness),
         "fitness_history": [float(f) for f in optimizer.fitness_history],
         "analysis_timestamp": datetime.now().isoformat()
@@ -558,14 +996,22 @@ def analyze_single_lab(lab_id: str, config: GAConfig) -> Dict[str, Any]:
     
     logger.info(f"\n最適学生プロファイル:")
     logger.info(f"  最終適合度: {best_student.fitness:.4f} ({best_student.fitness*100:.2f}%)")
+    logger.info(f"  スコア内訳:")
+    logger.info(f"    S_fuzzy: {detailed_eval['fuzzy_score']:.4f}")
+    logger.info(f"    S_gaussian: {detailed_eval['gaussian_score']:.4f}")
+    logger.info(f"    S_basic: {detailed_eval['basic_score']:.4f}")
+    logger.info(f"    S_field: {detailed_eval['field_score']:.4f}")
+    logger.info(f"    λ (分野比重): {detailed_eval['lambda_weight']:.4f}")
     logger.info(f"  基本項目:")
-    for criterion, value in zip(BASIC_CRITERIA, best_student.criteria_values):
-        denorm_value = value * 9 + 1
-        logger.info(f"    {criterion}: {denorm_value:.2f}")
+    for i, criterion in enumerate(BASIC_CRITERIA):
+        value = best_student.criteria_values[i] * 9 + 1
+        priority = best_student.criteria_priorities[i] * 9 + 1
+        logger.info(f"    {criterion}: 値={value:.2f}, 優先度={priority:.2f}")
+    logger.info(f"  分野重視度: {best_student.field_priority * 9 + 1:.2f}")
     logger.info(f"  分野興味:")
     for field, interest in best_student.field_interests.items():
         denorm_interest = interest * 9 + 1
-        logger.info(f"    {RESEARCH_FIELDS[field]}: {denorm_interest:.2f}")
+        logger.info(f"    {RESEARCH_FIELDS.get(field, field)}: {denorm_interest:.2f}")
     
     return result
 
@@ -597,9 +1043,17 @@ def analyze_all_labs(config: GAConfig, output_dir: str = "results/genetic_optimi
     summary = {
         "total_labs": len(all_results),
         "analysis_date": datetime.now().isoformat(),
+        "algorithm_version": "v2.2",
         "config": {
             "population_size": config.population_size,
-            "generations": config.generations
+            "generations": config.generations,
+            "crossover_rate": config.crossover_rate,
+            "mutation_rate": config.mutation_rate
+        },
+        "formula": {
+            "S_basic": "γ × S_fuzzy + (1 - γ) × S_gaussian (γ=0.5)",
+            "S_final": "(1 - λ) × S_basic + λ × S_field",
+            "lambda": "field_priority / 10"
         },
         "results": all_results
     }
@@ -614,7 +1068,7 @@ def analyze_all_labs(config: GAConfig, output_dir: str = "results/genetic_optimi
 
 
 def main():
-    parser = argparse.ArgumentParser(description="遺伝的アルゴリズムによる逆引き分析")
+    parser = argparse.ArgumentParser(description="遺伝的アルゴリズムによる逆引き分析 v2.2")
     parser.add_argument("--lab_id", type=str, help="分析する研究室ID（例: lab_001）")
     parser.add_argument("--all", action="store_true", help="全研究室を分析")
     parser.add_argument("--output", type=str, default="results/genetic_optimization", help="出力ディレクトリ")
@@ -634,10 +1088,8 @@ def main():
     )
     
     if args.all:
-        # 全研究室分析
         analyze_all_labs(config, args.output)
     elif args.lab_id:
-        # 単一研究室分析
         result = analyze_single_lab(args.lab_id, config)
         if result:
             output_path = Path(args.output) / args.lab_id
