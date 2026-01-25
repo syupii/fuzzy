@@ -412,7 +412,7 @@ class FuzzyMultiPathMatcher:
         print(f"    = {total:.4f}")
         print(f"\n★★★ 最終適合度 = {total:.4f} ({total*100:.2f}%) ★★★")
         
-        explanation = self._generate_explanation(
+        explanation, explanation_detailed, explanation_short = self._generate_explanation(
             total, basic_score, field_score, lambda_weight,
             field_detail, len(fuzzy_paths),
             student=student, lab=lab, criteria_scores=criteria_scores
@@ -432,6 +432,8 @@ class FuzzyMultiPathMatcher:
             fuzzy_paths=fuzzy_paths,
             field_detail=field_detail,
             explanation=explanation,
+            explanation_detailed=explanation_detailed,
+            explanation_short=explanation_short,
             recommendation=recommendation
         )
     
@@ -764,6 +766,82 @@ class FuzzyMultiPathMatcher:
     # ユーティリティ
     # ========================================
     
+    # 項目名の日本語マッピング
+    CRITERIA_NAMES = {
+        "research_intensity": "研究強度",
+        "advisor_style": "指導スタイル",
+        "team_work": "チームワーク",
+        "workload": "ワークロード",
+        "theory_practice": "理論・実践バランス",
+        "skill_development": "スキル開発",
+        "lab_atmosphere": "研究室雰囲気",
+        "flexibility": "柔軟性",
+        "publication_opportunity": "論文発表機会",
+        "interdisciplinary": "学際性",
+        "communication_style": "コミュニケーション"
+    }
+    
+    # 項目の説明（低い値と高い値の意味）
+    CRITERIA_DESCRIPTIONS = {
+        "research_intensity": {"low": "軽い研究", "high": "集中的な研究"},
+        "advisor_style": {"low": "厳格な指導", "high": "自由な指導"},
+        "team_work": {"low": "個人研究中心", "high": "チーム研究中心"},
+        "workload": {"low": "軽い負荷", "high": "重い負荷"},
+        "theory_practice": {"low": "理論重視", "high": "実践重視"},
+        "skill_development": {"low": "専門特化", "high": "幅広いスキル"},
+        "lab_atmosphere": {"low": "静かで集中", "high": "活発な議論"},
+        "flexibility": {"low": "固定スケジュール", "high": "柔軟なスケジュール"},
+        "publication_opportunity": {"low": "論文発表少なめ", "high": "論文発表多め"},
+        "interdisciplinary": {"low": "単一分野", "high": "学際的連携"},
+        "communication_style": {"low": "少人数で密接", "high": "オープンな交流"}
+    }
+    
+    # 分野IDの日本語マッピング
+    FIELD_NAMES = {
+        "ai_ml": "AI・機械学習",
+        "image_processing": "画像処理",
+        "network_security": "ネットワーク・セキュリティ",
+        "database_systems": "データベースシステム",
+        "embedded_iot": "組込み・IoT",
+        "web_design": "Webデザイン",
+        "design_visual": "グラフィックデザイン",
+        "video_animation": "映像・アニメーション",
+        "computer_music": "コンピュータ音楽",
+        "game_esports": "ゲーム開発",
+        "vr_ar_media": "VR/AR・メディア",
+        "education_linguistics": "教育・言語学",
+        "philosophy_humanities": "哲学・人文学",
+        "sports_science": "スポーツ科学",
+        "tourism_regional": "観光・地域情報",
+        "business_decision": "経営・意思決定",
+        "natural_science_math": "自然科学・数学",
+        "audio_processing": "音声処理",
+        "system_ethics": "システム倫理",
+        "medical_healthcare": "医療・ヘルスケア"
+    }
+    
+    def _get_field_name(self, field_id: str) -> str:
+        """分野IDを日本語名に変換"""
+        return self.FIELD_NAMES.get(field_id, field_id)
+    
+    def _value_to_display(self, normalized_value: float) -> int:
+        """正規化値を1-10表示に変換"""
+        if normalized_value <= 1.0:
+            return max(1, min(10, round(normalized_value * 10)))
+        return max(1, min(10, round(normalized_value)))
+    
+    def _get_value_description(self, criterion: str, value: float) -> str:
+        """値に応じた説明を返す"""
+        display_val = self._value_to_display(value)
+        desc = self.CRITERIA_DESCRIPTIONS.get(criterion, {"low": "低い", "high": "高い"})
+        
+        if display_val <= 3:
+            return desc["low"]
+        elif display_val >= 8:
+            return desc["high"]
+        else:
+            return f"{desc['low']}と{desc['high']}の中間"
+    
     def _generate_explanation(
         self,
         total: float,
@@ -775,15 +853,220 @@ class FuzzyMultiPathMatcher:
         student: Dict[str, Any] = None,
         lab: Dict[str, Any] = None,
         criteria_scores: Dict[str, float] = None
-    ) -> str:
+    ) -> Tuple[str, str, str]:
+        """
+        説明文を生成（3種類）
+        
+        Returns:
+            Tuple[str, str, str]: (従来版, 詳細版, 短縮版)
+        """
+        # 従来版（シンプルな閾値ベース）
         if total >= 0.8:
-            return "非常に高い適合性があります。あなたの希望条件を高い水準で満たしています。"
+            legacy = "非常に高い適合性があります。あなたの希望条件を高い水準で満たしています。"
         elif total >= 0.6:
-            return "条件によく合致しています。大きな欠点がなく、安定して研究に取り組める環境です。"
+            legacy = "条件によく合致しています。大きな欠点がなく、安定して研究に取り組める環境です。"
         elif total >= 0.4:
-            return "一部の条件で妥協が必要ですが、検討候補として有力です。"
+            legacy = "一部の条件で妥協が必要ですが、検討候補として有力です。"
         else:
-            return "希望条件との差異が大きいため、慎重に検討してください。"
+            legacy = "希望条件との差異が大きいため、慎重に検討してください。"
+        
+        # criteria_scoresがない場合は従来版のみ返す
+        if not criteria_scores or not student or not lab:
+            return legacy, "", ""
+        
+        # ========================================
+        # 優先度情報を収集
+        # ========================================
+        priority_info = []
+        for criterion in self.CRITERIA:
+            priority = student.get(f"{criterion}_priority", 5.0)
+            student_val = student.get(criterion, 0.5)
+            lab_val = lab.get(criterion, 0.5)
+            similarity = criteria_scores.get(criterion, 0.5)
+            
+            priority_info.append({
+                "criterion": criterion,
+                "name": self.CRITERIA_NAMES.get(criterion, criterion),
+                "priority": priority,
+                "student_val": student_val,
+                "lab_val": lab_val,
+                "similarity": similarity,
+                "student_display": self._value_to_display(student_val),
+                "lab_display": self._value_to_display(lab_val)
+            })
+        
+        # 優先度でソート
+        priority_info.sort(key=lambda x: x["priority"], reverse=True)
+        
+        # 高優先度項目（優先度8以上）
+        high_priority = [p for p in priority_info if p["priority"] >= 8]
+        # 中優先度項目（優先度5-7）
+        mid_priority = [p for p in priority_info if 5 <= p["priority"] < 8]
+        
+        # ========================================
+        # 詳細版の生成
+        # ========================================
+        detailed_parts = []
+        
+        # 1. 総合評価サマリー
+        lab_name = lab.get("name", "この研究室")
+        if total >= 0.8:
+            detailed_parts.append(
+                f"◆ 総合適合度 {total*100:.1f}%\n"
+                f"{lab_name}は、あなたの希望条件を非常に高い水準で満たしています。"
+            )
+        elif total >= 0.6:
+            detailed_parts.append(
+                f"◆ 総合適合度 {total*100:.1f}%\n"
+                f"{lab_name}は、あなたの希望条件によく合致しています。"
+            )
+        elif total >= 0.4:
+            detailed_parts.append(
+                f"◆ 総合適合度 {total*100:.1f}%\n"
+                f"{lab_name}は、一部の条件で妥協が必要ですが、検討に値する研究室です。"
+            )
+        else:
+            detailed_parts.append(
+                f"◆ 総合適合度 {total*100:.1f}%\n"
+                f"{lab_name}は、希望条件との差異が見られます。慎重にご検討ください。"
+            )
+        
+        # 2. 分野マッチングの詳細説明
+        if field_detail and lambda_weight > 0.3:
+            primary_match = field_detail.get("primary_match_type", "unknown")
+            lab_field = field_detail.get("lab_field", "")
+            lab_field_name = self._get_field_name(lab_field)
+            
+            field_text = f"\n◆ 研究分野について（適合度への寄与: {lambda_weight*100:.0f}%）\n"
+            
+            if primary_match == "exact":
+                field_details = field_detail.get("field_details", [])
+                exact_fields = [d for d in field_details if d.get("match_type") == "exact"]
+                if exact_fields:
+                    interest_field = exact_fields[0]['field']
+                    interest_level = exact_fields[0]['interest_level']
+                    field_text += (
+                        f"あなたが興味を持つ「{self._get_field_name(interest_field)}」と"
+                        f"この研究室の専門分野が完全に一致しています。\n"
+                        f"興味度 {interest_level}/10 で設定されており、分野適合度は {field_score*100:.0f}% です。"
+                    )
+            elif primary_match == "category":
+                field_text += (
+                    f"この研究室の専門分野「{lab_field_name}」は、\n"
+                    f"あなたの興味分野と同じカテゴリに属しています。\n"
+                    f"関連性があるため、分野適合度は {field_score*100:.0f}% となっています。"
+                )
+            else:
+                field_text += (
+                    f"あなたの興味分野とこの研究室の専門分野「{lab_field_name}」は\n"
+                    f"直接的な一致はありませんが、他の評価項目での適合性を重視しています。"
+                )
+            detailed_parts.append(field_text)
+        
+        # 3. 高優先度項目の詳細分析
+        if high_priority:
+            hp_text = f"\n◆ あなたが重視する項目の分析"
+            
+            for item in high_priority[:4]:  # 上位4項目まで
+                criterion = item["criterion"]
+                name = item["name"]
+                student_display = item["student_display"]
+                lab_display = item["lab_display"]
+                similarity = item["similarity"]
+                priority = item["priority"]
+                
+                # 値の解釈
+                student_desc = self._get_value_description(criterion, item["student_val"])
+                lab_desc = self._get_value_description(criterion, item["lab_val"])
+                
+                hp_text += f"\n\n【{name}】優先度 {priority:.0f}/10"
+                hp_text += f"\n  あなたの希望: {student_display}/10（{student_desc}）"
+                hp_text += f"\n  この研究室: {lab_display}/10（{lab_desc}）"
+                
+                diff = abs(student_display - lab_display)
+                if similarity >= 0.8:
+                    hp_text += f"\n  → 類似度 {similarity*100:.0f}%：希望とよく一致しています ✓"
+                elif similarity >= 0.6:
+                    hp_text += f"\n  → 類似度 {similarity*100:.0f}%：概ね希望に沿っています"
+                elif similarity >= 0.4:
+                    hp_text += f"\n  → 類似度 {similarity*100:.0f}%：やや差異があります（{diff}ポイント差）"
+                else:
+                    hp_text += f"\n  → 類似度 {similarity*100:.0f}%：希望と異なる点があります（{diff}ポイント差）"
+            
+            detailed_parts.append(hp_text)
+        
+        # 4. 強みと注意点のまとめ
+        strengths = [p for p in priority_info if p["similarity"] >= 0.8]
+        concerns = [p for p in priority_info if p["similarity"] < 0.5 and p["priority"] >= 5]
+        
+        summary_text = "\n◆ まとめ"
+        
+        if strengths:
+            strength_names = [p["name"] for p in strengths[:4]]
+            summary_text += f"\n【強み】{', '.join(strength_names)}で高い適合性があります。"
+        
+        if concerns:
+            concern_items = []
+            for p in concerns[:2]:
+                diff = abs(p["student_display"] - p["lab_display"])
+                concern_items.append(f"{p['name']}（{diff}ポイント差）")
+            summary_text += f"\n【確認推奨】{', '.join(concern_items)}については、実際の雰囲気を確認されることをお勧めします。"
+        
+        if not concerns:
+            summary_text += "\n【注意点】特に大きな懸念点はありません。"
+        
+        detailed_parts.append(summary_text)
+        
+        # 5. スコア内訳
+        score_text = (
+            f"\n◆ スコア内訳\n"
+            f"  基本項目適合度: {basic_score*100:.1f}%\n"
+            f"  研究分野適合度: {field_score*100:.1f}%\n"
+            f"  分野重視度: {lambda_weight*10:.0f}/10\n"
+            f"  → 最終適合度 = {(1-lambda_weight)*100:.0f}% × 基本 + {lambda_weight*100:.0f}% × 分野 = {total*100:.1f}%"
+        )
+        detailed_parts.append(score_text)
+        
+        detailed = "\n".join(detailed_parts)
+        
+        # ========================================
+        # 短縮版の生成（カード表示用）
+        # ========================================
+        short_parts = []
+        
+        # 分野一致
+        if field_detail:
+            primary_match = field_detail.get("primary_match_type", "unknown")
+            if primary_match == "exact":
+                field_details = field_detail.get("field_details", [])
+                exact_fields = [d for d in field_details if d.get("match_type") == "exact"]
+                if exact_fields:
+                    field_name = self._get_field_name(exact_fields[0]['field'])
+                    short_parts.append(f"興味分野「{field_name}」と完全一致")
+        
+        # 高適合の高優先度項目
+        high_match_high_priority = [
+            p for p in high_priority if p["similarity"] >= 0.8
+        ][:2]
+        if high_match_high_priority:
+            items = [p["name"] for p in high_match_high_priority]
+            short_parts.append(f"重視する{', '.join(items)}が希望と一致")
+        
+        # 強み（優先度関係なく高適合）
+        if not high_match_high_priority and strengths:
+            items = [p["name"] for p in strengths[:2]]
+            short_parts.append(f"{', '.join(items)}で高い適合性")
+        
+        # 注意点（優先度が高く、低適合の項目）
+        high_priority_concerns = [p for p in concerns if p["priority"] >= 7]
+        if high_priority_concerns:
+            item = high_priority_concerns[0]
+            diff = abs(item["student_display"] - item["lab_display"])
+            short_parts.append(f"※{item['name']}に{diff}ポイント差あり")
+        
+        short = "。".join(short_parts) if short_parts else legacy
+        
+        return legacy, detailed, short
     
     def _get_recommendation(self, score: float) -> str:
         if score >= 0.80:
